@@ -12,6 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Di belakang reverse-proxy (Caddy) → percayai header X-Forwarded-* agar
+        // Laravel tahu request datang via HTTPS dan menghasilkan URL https (bukan
+        // http). Aman: app hanya dijangkau lewat Caddy di jaringan 'edge'.
+        $middleware->trustProxies(at: '*');
+
         // Inertia middleware — wajib ada di web group agar share() (auth, flash, errors)
         // dikirim ke setiap Inertia response dan validation errors di-handle dengan benar.
         $middleware->web(append: [
