@@ -35,9 +35,9 @@ WORKDIR /var/www/html
 # Ekstensi PHP + nginx + supervisor
 RUN apk add --no-cache \
         nginx supervisor bash \
-        icu-dev oniguruma-dev libzip-dev libpng-dev freetype-dev libjpeg-turbo-dev \
+        icu-dev oniguruma-dev libzip-dev libpng-dev freetype-dev libjpeg-turbo-dev libwebp-dev \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j"$(nproc)" \
         pdo_mysql mbstring bcmath gd zip exif pcntl intl opcache \
     && apk del .build-deps

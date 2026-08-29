@@ -126,10 +126,13 @@ class PengumumanController extends Controller
     {
         $src = $file->getRealPath();
         $info = @getimagesize($src);
+        // function_exists: cegah fatal "Call to undefined function" bila GD di
+        // server tak mendukung format tertentu (mis. WebP tanpa --with-webp).
+        // Bila tak didukung → biarkan fallback simpan apa adanya di bawah.
         $img  = match ($info['mime'] ?? null) {
-            'image/jpeg' => @imagecreatefromjpeg($src),
-            'image/png'  => @imagecreatefrompng($src),
-            'image/webp' => @imagecreatefromwebp($src),
+            'image/jpeg' => function_exists('imagecreatefromjpeg') ? @imagecreatefromjpeg($src) : false,
+            'image/png'  => function_exists('imagecreatefrompng')  ? @imagecreatefrompng($src)  : false,
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($src) : false,
             default      => false,
         };
 
