@@ -1,0 +1,19 @@
+name: Deploy (VPS Docker)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH (git pull + docker build)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}        # private key SSH (rekomendasi) — atau pakai password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT }}          # mis. 22
+          script: bash /opt/annur-smart-system/deploy.sh

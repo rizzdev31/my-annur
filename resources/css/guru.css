@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --guru-primary: #0C78FF;
+    --guru-navy: #06346B;
+}
+
+@layer base {
+    html, body {
+        @apply antialiased;
+        font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+        background: #F7F9FB;
+        /* cegah tarik-refresh & bounce di mobile */
+        overscroll-behavior-y: contain;
+    }
+    #guru-app { min-height: 100dvh; }
+}
+
+/* Aman dari area notch/gesture-bar */
+.safe-b { padding-bottom: env(safe-area-inset-bottom); }
+.safe-t { padding-top: env(safe-area-inset-top); }

@@ -1,0 +1,8 @@
+# Pastikan skrip & config Docker selalu LF (CRLF akan membuat entrypoint.sh gagal di container Linux)
+*.sh              text eol=lf
+docker/entrypoint.sh text eol=lf
+deploy.sh         text eol=lf
+Dockerfile        text eol=lf
+*.conf            text eol=lf
+Caddyfile         text eol=lf
+*.ini             text eol=lf

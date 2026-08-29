@@ -1,0 +1,46 @@
+name: annur-smart
+
+services:
+  app:
+    build: .
+    image: annur-smart:latest
+    container_name: smart_app          # dipakai Caddy & RA untuk menjangkau via jaringan 'edge'
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - internal
+      - edge
+    volumes:
+      - storage_data:/var/www/html/storage   # persist upload/log lintas rebuild
+
+  mysql:
+    image: mysql:8.0
+    container_name: smart_mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-systemdb}
+      MYSQL_USER: ${DB_USERNAME:-annur}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD di .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD di .env}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+networks:
+  internal:            # privat: app ↔ mysql
+  edge:                # bersama: Caddy ↔ app, Smart ↔ RA (dibuat sekali: docker network create edge)
+    external: true
+
+volumes:
+  db_data:
+  storage_data:

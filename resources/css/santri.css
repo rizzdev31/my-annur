@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --santri-primary: #0C78FF; /* biru utama, senada app guru & admin */
+    --santri-dark: #06346B;
+}
+
+@layer base {
+    html, body {
+        @apply antialiased;
+        font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+        background: #F5F7F7;
+        overscroll-behavior-y: contain;
+    }
+    #santri-app { min-height: 100dvh; }
+}
+
+.safe-b { padding-bottom: env(safe-area-inset-bottom); }
+.safe-t { padding-top: env(safe-area-inset-top); }

@@ -1,0 +1,28 @@
+name: annur-proxy
+
+# Reverse-proxy tunggal untuk KEDUA aplikasi + HTTPS otomatis (Let's Encrypt).
+# Menjangkau container 'smart_app' dan 'ra_app' lewat jaringan eksternal 'edge'.
+# Jalankan sekali; tak perlu diubah saat update aplikasi.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # sertifikat TLS (persist!)
+      - caddy_config:/config
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,20 @@
+# Reverse-proxy tunggal untuk KEDUA aplikasi + HTTPS otomatis (Let's Encrypt).
+# Arahkan A-record tiap domain ke IP VPS dulu; Caddy menerbitkan & memperbarui
+# sertifikat HTTPS sendiri. Jalankan sekali; tak perlu diubah saat update app.
+
+# ── An-Nur Smart System ─────────────────────────────────────────────
+myannur.id, www.myannur.id {
+    encode zstd gzip
+    # www → apex (satu URL kanonik)
+    @www host www.myannur.id
+    redir @www https://myannur.id{uri} permanent
+    reverse_proxy smart_app:80
+}
+
+# ── RamahAnak ───────────────────────────────────────────────────────
+ramahanak.id, www.ramahanak.id {
+    encode zstd gzip
+    @www host www.ramahanak.id
+    redir @www https://ramahanak.id{uri} permanent
+    reverse_proxy ra_app:80
+}

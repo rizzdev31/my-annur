@@ -1,0 +1,16 @@
+{
+    "name": "An-Nur Smart · Guru",
+    "short_name": "An-Nur Guru",
+    "description": "Portal tenaga pendidik Pondok Pesantren An-Nur",
+    "start_url": "/guru",
+    "scope": "/guru/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#06346B",
+    "theme_color": "#06346B",
+    "icons": [
+        { "src": "/guru-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+        { "src": "/guru-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+        { "src": "/guru-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    ]
+}
