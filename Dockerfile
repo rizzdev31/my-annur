@@ -9,7 +9,11 @@
 FROM node:20-alpine AS assets
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# npm ci strict pada package-lock.json (dibuat di Windows) tidak memasang
+# binary native rollup utk Linux-musl (Alpine) → "Cannot find module
+# @rollup/rollup-linux-x64-musl". Pakai npm install agar optional deps
+# per-platform ikut terpasang. (Bug npm optional deps lintas-OS.)
+RUN npm install --no-audit --no-fund
 COPY . .
 RUN npm run build
 
