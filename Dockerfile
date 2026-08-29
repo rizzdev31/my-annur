@@ -5,7 +5,15 @@
 # Runtime = php-fpm + nginx + supervisor (php-fpm, nginx, queue:work, scheduler)
 # ─────────────────────────────────────────────────────────────
 
-# ---- Stage 1: build frontend (Vite) ----
+# ---- Stage 1: composer dependencies (prod) ----
+# Didahulukan karena stage asset butuh vendor/tightenco/ziggy saat build Vite.
+FROM composer:2 AS vendor
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --prefer-dist \
+    --no-interaction --optimize-autoloader --ignore-platform-reqs
+
+# ---- Stage 2: build frontend (Vite) ----
 FROM node:20-alpine AS assets
 WORKDIR /app
 COPY package*.json ./
@@ -15,14 +23,10 @@ COPY package*.json ./
 # ulang optional deps sesuai platform/arch container. (Bug npm optional deps.)
 RUN rm -f package-lock.json && npm install --no-audit --no-fund
 COPY . .
+# app.js mengimpor ZiggyVue dari vendor/tightenco/ziggy (bukan npm) → sediakan
+# paket itu dari stage vendor sebelum build agar Vite bisa me-resolve.
+COPY --from=vendor /app/vendor/tightenco/ziggy ./vendor/tightenco/ziggy
 RUN npm run build
-
-# ---- Stage 2: composer dependencies (prod) ----
-FROM composer:2 AS vendor
-WORKDIR /app
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --prefer-dist \
-    --no-interaction --optimize-autoloader --ignore-platform-reqs
 
 # ---- Stage 3: runtime ----
 FROM php:8.2-fpm-alpine AS runtime
