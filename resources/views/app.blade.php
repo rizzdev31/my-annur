@@ -9,8 +9,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}" />
     <title>{{ config('app.name', 'An Nur Smart System') }}</title>
 
-    {{-- Favicon --}}
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    {{-- Favicon (logo An-Nur, sinkron dgn PWA guru) --}}
+    <link rel="icon" type="image/png" href="/guru-icon-192.png" />
+    <link rel="apple-touch-icon" href="/guru-icon-192.png" />
 
     {{-- Vite: CSS + JS --}}
     @vite(['resources/js/app.js'])

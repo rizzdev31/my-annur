@@ -11,10 +11,13 @@ myannur.id, www.myannur.id {
     reverse_proxy smart_app:80
 }
 
-# ── RamahAnak ───────────────────────────────────────────────────────
-ramahanak.id, www.ramahanak.id {
-    encode zstd gzip
-    @www host www.ramahanak.id
-    redir @www https://ramahanak.id{uri} permanent
-    reverse_proxy ra_app:80
-}
+# ── RamahAnak (TAHAP 2 — aktifkan saat RA sudah di-deploy) ──────────
+# Biarkan dikomentari dulu: container ra_app belum ada & DNS ramahanak.id
+# belum diarahkan. Buka komentar saat RA menyusul, lalu `docker compose
+# restart caddy` (atau reload) untuk menerbitkan sertifikatnya.
+# ramahanak.id, www.ramahanak.id {
+#     encode zstd gzip
+#     @www host www.ramahanak.id
+#     redir @www https://ramahanak.id{uri} permanent
+#     reverse_proxy ra_app:80
+# }
