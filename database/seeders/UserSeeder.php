@@ -13,11 +13,11 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        // Super Admin
+        // Super Admin — password dari env (repo publik), bukan hardcode.
         User::firstOrCreate(['email' => 'superadmin@annur.sch.id'], [
             'name'     => 'Super Admin An Nur',
             'username' => 'superadmin',
-            'password' => Hash::make('annur@2025'),
+            'password' => Hash::make(env('SUPERADMIN_PASSWORD', 'ubah-password-ini-segera')),
             'role'     => 'super_admin',
             'status'   => 'aktif',
         ]);
