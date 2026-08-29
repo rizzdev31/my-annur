@@ -7,6 +7,13 @@ cd "$(dirname "$0")"
 echo "==> [1/5] git pull"
 git pull --ff-only
 
+# APP_KEY wajib terisi nilai asli (compose env_file tak menjalankan
+# key:generate otomatis). Isi sekali bila belum ada.
+if [ -f .env ] && ! grep -qE '^APP_KEY=base64:' .env; then
+  echo "    generate APP_KEY baru"
+  sed -i "s|^APP_KEY=.*|APP_KEY=base64:$(openssl rand -base64 32)|" .env
+fi
+
 echo "==> [2/5] build & up container"
 docker compose up -d --build
 
