@@ -22,7 +22,7 @@
         #guru-splash{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;
             background:radial-gradient(130% 130% at 50% -10%,#0C78FF 0%,#0A4C9E 42%,#06346B 100%);
             transition:opacity .4s ease,visibility .4s ease}
-        #guru-splash.gs-hide{opacity:0;visibility:hidden}
+        #guru-splash.gs-hide{opacity:0;visibility:hidden;pointer-events:none}
         #guru-splash .gs-in{text-align:center;color:#fff;padding:24px}
         #guru-splash .gs-logo{width:92px;height:92px;margin:0 auto;border-radius:26px;overflow:hidden;
             background:rgba(255,255,255,.12);box-shadow:0 14px 40px rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.18);

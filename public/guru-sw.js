@@ -1,6 +1,6 @@
 // Service worker minimal untuk PWA guru (installable + shell cache ringan).
 // Strategi: network-first untuk navigasi; jangan cache API (/api/*) agar data live.
-const CACHE = 'guru-shell-v1'
+const CACHE = 'guru-shell-v2'
 const SHELL = ['/guru', '/logo.png', '/guru-manifest.json']
 
 self.addEventListener('install', (e) => {
