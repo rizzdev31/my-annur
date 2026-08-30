@@ -92,15 +92,17 @@
                         <label class="block text-sm font-medium text-gray-700 mb-1.5">
                             Jam Mulai <span class="text-red-500">*</span>
                         </label>
-                        <input v-model="form.jam_mulai" type="time" :class="inputCls(form.errors.jam_mulai)" />
+                        <input v-model="form.jam_mulai" type="time" lang="id-ID" step="60" :class="inputCls(form.errors.jam_mulai)" />
                         <ErrMsg :e="form.errors.jam_mulai" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1.5">
                             Jam Selesai <span class="text-red-500">*</span>
                         </label>
-                        <input v-model="form.jam_selesai" type="time" :class="inputCls(form.errors.jam_selesai)" />
+                        <input v-model="form.jam_selesai" type="time" lang="id-ID" step="60" :class="inputCls(form.errors.jam_selesai)" />
                         <ErrMsg :e="form.errors.jam_selesai" />
+                        <p v-if="jamTerbalik" class="text-xs text-red-500 mt-1">Jam selesai harus SETELAH jam mulai. Gunakan 24 jam: siang = 13:00, bukan 01:00.</p>
+                        <p v-else class="text-[11px] text-gray-400 mt-1">Format 24 jam — mis. 13:00, 14:30 (bukan AM/PM).</p>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1.5">
@@ -212,6 +214,10 @@ function inputCls(e) {
     const b = 'w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-all bg-white'
     return e ? `${b} border-red-300 focus:ring-red-100` : `${b} border-gray-200 focus:border-indigo-500 focus:ring-indigo-100`
 }
+
+const jamTerbalik = computed(() =>
+    form.jam_mulai && form.jam_selesai && form.jam_selesai <= form.jam_mulai
+)
 
 function submit() {
     isEdit.value
