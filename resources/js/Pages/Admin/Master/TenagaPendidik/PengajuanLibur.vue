@@ -64,7 +64,7 @@ const labelHari = (k) => hariOpsi[k] ?? k
 async function setujui(p) {
     p.busy = true; msg.value = null
     try {
-        await window.axios.post(route('admin.master.tenaga-pendidik.libur.setujui', p.id))
+        await window.axios.post(`/admin/master/tenaga-pendidik/${p.id}/libur/setujui`)
         list.value = list.value.filter(x => x.id !== p.id)
         msg.value = { ok: true, text: `Libur ${p.nama} disetujui. Jangan lupa Generate Jam Kerja.` }
     } catch (e) {
@@ -76,7 +76,7 @@ async function setujui(p) {
 async function tolak(p) {
     p.busy = true; msg.value = null
     try {
-        await window.axios.post(route('admin.master.tenaga-pendidik.libur.tolak', p.id))
+        await window.axios.post(`/admin/master/tenaga-pendidik/${p.id}/libur/tolak`)
         list.value = list.value.filter(x => x.id !== p.id)
         msg.value = { ok: true, text: `Pengajuan ${p.nama} ditolak.` }
     } catch (e) {

@@ -357,7 +357,7 @@ const liburBusy = ref(false)
 async function setujuiLibur() {
     liburBusy.value = true
     try {
-        const res = await window.axios.post(route('admin.master.tenaga-pendidik.libur.setujui', props.guru.id))
+        const res = await window.axios.post(`/admin/master/tenaga-pendidik/${props.guru.id}/libur/setujui`)
         form.hari_libur = res.data.data?.hari_libur ?? form.hari_libur
         liburDiajukan.value = null
     } catch (e) { alert(e.response?.data?.message || 'Gagal menyetujui.') }
@@ -366,7 +366,7 @@ async function setujuiLibur() {
 async function tolakLibur() {
     liburBusy.value = true
     try {
-        await window.axios.post(route('admin.master.tenaga-pendidik.libur.tolak', props.guru.id))
+        await window.axios.post(`/admin/master/tenaga-pendidik/${props.guru.id}/libur/tolak`)
         liburDiajukan.value = null
     } catch (e) { alert(e.response?.data?.message || 'Gagal menolak.') }
     finally { liburBusy.value = false }
