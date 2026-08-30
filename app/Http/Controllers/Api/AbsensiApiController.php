@@ -1644,6 +1644,7 @@ class AbsensiApiController extends Controller
     {
         $izin = \App\Models\PengajuanIzin::where('tenaga_pendidik_id', $tpId)
             ->where('status', 'disetujui')
+            ->where('is_sementara', false)   // izin sementara TIDAK memengaruhi absen harian/check-in
             ->where('tanggal_mulai', '<=', $tanggal)
             ->where('tanggal_selesai', '>=', $tanggal)
             ->with('jenisPengajuan')

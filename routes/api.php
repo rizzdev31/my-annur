@@ -266,6 +266,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('/jenis', [IzinApiController::class, 'jenisIzin']);    // daftar jenis + sisa kuota
                 Route::get('/',     [IzinApiController::class, 'riwayat']);       // riwayat pengajuan guru
                 Route::post('/',    [IzinApiController::class, 'buat']);          // buat pengajuan baru
+                // Izin Sementara (partial-day) — preview sesi terdampak & buat (auto-approve)
+                Route::get('/sementara/preview', [IzinApiController::class, 'sementaraPreview']);
+                Route::post('/sementara',        [IzinApiController::class, 'sementaraBuat']);
                 Route::delete('/{id}', [IzinApiController::class, 'batalkan']);   // batalkan pengajuan
             });
 

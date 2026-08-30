@@ -206,6 +206,7 @@ class LokasiAbsensiService
         // FIX: relasi di model PengajuanIzin adalah 'jenisPengajuan()', bukan 'settingJenisPengajuan'
         $izin = PengajuanIzin::where('tenaga_pendidik_id', $guru->id)
             ->where('status', 'disetujui')
+            ->where('is_sementara', false)   // izin sementara tak membebaskan validasi lokasi check-in
             ->where('tanggal_mulai', '<=', $tanggal)
             ->where('tanggal_selesai', '>=', $tanggal)
             ->with('jenisPengajuan')

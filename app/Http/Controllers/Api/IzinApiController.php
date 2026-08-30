@@ -3,16 +3,21 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AbsensiHarian;
+use App\Models\JadwalMengajar;
 use App\Models\PengajuanIzin;
 use App\Models\SettingJenisPengajuan;
+use App\Services\IzinSementaraService;
 use App\Services\PengajuanIzinService;
+use App\Services\TimezoneHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class IzinApiController extends Controller
 {
     public function __construct(
-        private readonly PengajuanIzinService $service
+        private readonly PengajuanIzinService $service,
+        private readonly IzinSementaraService $izinSementara,
     ) {}
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -176,6 +181,99 @@ class IzinApiController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // IZIN SEMENTARA (partial-day) — preview sesi & buat (auto-approve)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** GET /izin/sementara/preview?jam_mulai=&jam_selesai= — sesi mengajar terdampak (tanpa membuat). */
+    public function sementaraPreview(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'jam_mulai'   => 'required|date_format:H:i,H:i:s',
+            'jam_selesai' => 'required|date_format:H:i,H:i:s',
+        ]);
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return $this->notFound();
+
+        if (!$this->izinSementara->windowValid($data['jam_mulai'], $data['jam_selesai'])) {
+            return response()->json(['success' => false, 'message' => 'Jam selesai harus setelah jam mulai.'], 422);
+        }
+
+        $sesi = $this->izinSementara->sesiTerdampak($tp, TimezoneHelper::now(), $data['jam_mulai'], $data['jam_selesai']);
+
+        return response()->json([
+            'success' => true,
+            'data'    => ['sesi_terdampak' => $sesi->map(fn ($j) => $this->formatSesi($j))->values()],
+        ]);
+    }
+
+    /** POST /izin/sementara — buat izin sementara (langsung disetujui) + kembalikan sesi terdampak. */
+    public function sementaraBuat(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'jam_mulai'   => 'required|date_format:H:i,H:i:s',
+            'jam_selesai' => 'required|date_format:H:i,H:i:s',
+            'alasan'      => 'required|string|max:255',
+        ]);
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return $this->notFound();
+
+        if (!$this->izinSementara->windowValid($data['jam_mulai'], $data['jam_selesai'])) {
+            return response()->json(['success' => false, 'message' => 'Jam selesai harus setelah jam mulai.'], 422);
+        }
+
+        // Edge #1: hanya untuk yang SUDAH check-in hari ini.
+        $now = TimezoneHelper::now();
+        $sudahCheckin = AbsensiHarian::where('tenaga_pendidik_id', $tp->id)
+            ->whereDate('tanggal', $now->toDateString())
+            ->whereNotNull('jam_masuk')->exists();
+        if (!$sudahCheckin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Izin sementara hanya untuk yang sudah check-in. Jika belum masuk, gunakan izin harian biasa.',
+            ], 422);
+        }
+
+        // Edge #8: cegah dua izin sementara aktif tumpang tindih di hari sama.
+        $bentrokIzin = PengajuanIzin::sementaraAktif($tp->id, $now->toDateString())
+            ->where('jam_mulai', '<', strlen($data['jam_selesai']) === 5 ? $data['jam_selesai'] . ':00' : $data['jam_selesai'])
+            ->where('jam_selesai', '>', strlen($data['jam_mulai']) === 5 ? $data['jam_mulai'] . ':00' : $data['jam_mulai'])
+            ->exists();
+        if ($bentrokIzin) {
+            return response()->json(['success' => false, 'message' => 'Sudah ada izin sementara di rentang jam yang tumpang tindih.'], 422);
+        }
+
+        $izin = $this->izinSementara->ajukan(
+            $tp, $data['jam_mulai'], $data['jam_selesai'], $data['alasan'], $now, $request->user()->id
+        );
+        $sesi = $this->izinSementara->sesiTerdampak($tp, $now, $data['jam_mulai'], $data['jam_selesai']);
+
+        return response()->json([
+            'success' => true,
+            'message' => $sesi->isEmpty()
+                ? 'Izin sementara tercatat. Tidak ada sesi mengajar yang terdampak.'
+                : 'Izin sementara tercatat. ' . $sesi->count() . ' sesi mengajar butuh pengganti.',
+            'data' => [
+                'izin_id'         => $izin->id,
+                'jam_mulai'       => substr((string) $izin->jam_mulai, 0, 5),
+                'jam_selesai'     => substr((string) $izin->jam_selesai, 0, 5),
+                'sesi_terdampak'  => $sesi->map(fn ($j) => $this->formatSesi($j))->values(),
+            ],
+        ]);
+    }
+
+    private function formatSesi(JadwalMengajar $j): array
+    {
+        return [
+            'jadwal_mengajar_id' => $j->id,
+            'mapel'              => $j->mataPelajaran?->nama ?? '—',
+            'kelas'              => $j->kelasRel?->nama ?? $j->kelas ?? '—',
+            'jam_mulai'          => substr((string) $j->jam_mulai, 0, 5),
+            'jam_selesai'        => substr((string) $j->jam_selesai, 0, 5),
+            'jumlah_jp'          => $j->jumlah_jp,
+        ];
     }
 
     // ══════════════════════════════════════════════════════════════════════════
