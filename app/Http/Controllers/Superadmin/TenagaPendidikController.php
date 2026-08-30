@@ -97,6 +97,7 @@ class TenagaPendidikController extends Controller
             'tenagaPendidik' => $tenagaPendidik,
             'jabatan'        => Jabatan::aktif()->get(['id', 'nama_jabatan']),
             'filters'        => $request->only(['search', 'jabatan_id', 'jenis_guru', 'status_kepegawaian']),
+            'pengajuanLiburCount' => TenagaPendidik::whereNotNull('hari_libur_diajukan')->count(),
             'summary'        => [
                 'total'              => TenagaPendidik::count(),
                 'aktif'              => TenagaPendidik::where('status_kepegawaian', 'aktif')->count(),
@@ -431,6 +432,25 @@ class TenagaPendidikController extends Controller
             );
         }
         return response()->json(['success' => true, 'message' => 'Pengajuan libur ditolak.']);
+    }
+
+    /** Halaman daftar semua pengajuan hari libur dari guru (untuk approval massal). */
+    public function pengajuanLiburIndex()
+    {
+        $pengajuan = TenagaPendidik::whereNotNull('hari_libur_diajukan')
+            ->with(['user:id,name', 'jabatan:id,nama_jabatan'])
+            ->get()->map(fn ($g) => [
+                'id'                  => $g->id,
+                'nama'                => $g->user?->name ?? ('Guru #' . $g->id),
+                'foto'                => $g->user?->foto ? asset('storage/' . $g->user->foto) : null,
+                'jabatan'             => $g->jabatan?->nama_jabatan ?? '-',
+                'hari_libur'          => $g->hari_libur ?? [],
+                'hari_libur_diajukan' => $g->hari_libur_diajukan ?? [],
+            ])->values();
+
+        return Inertia::render('Admin/Master/TenagaPendidik/PengajuanLibur', [
+            'pengajuan' => $pengajuan,
+        ]);
     }
 
     public function destroy(TenagaPendidik $tenagaPendidik)

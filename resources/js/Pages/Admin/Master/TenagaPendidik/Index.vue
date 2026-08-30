@@ -10,6 +10,12 @@
                 <p class="text-sm text-gray-400 mt-0.5">Kelola data seluruh tenaga pendidik</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
+                <Link :href="route('admin.master.tenaga-pendidik.pengajuan-libur')"
+                    class="relative inline-flex items-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-semibold rounded-xl transition-colors">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Pengajuan Libur
+                    <span v-if="pengajuanLiburCount" class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center">{{ pengajuanLiburCount }}</span>
+                </Link>
                 <ImportExcel :template-url="route('admin.master.tenaga-pendidik.template-import')"
                     :import-url="route('admin.master.tenaga-pendidik.import')" label="Import Guru" />
                 <Link :href="route('admin.master.tenaga-pendidik.create')"
@@ -351,6 +357,7 @@ const props = defineProps({
     jabatan: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({}) },
     summary: { type: Object, default: () => ({}) },
+    pengajuanLiburCount: { type: Number, default: 0 },
 })
 
 // ── Filter ────────────────────────────────────────────────────────────────────

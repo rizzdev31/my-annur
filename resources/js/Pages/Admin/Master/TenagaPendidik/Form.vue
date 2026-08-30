@@ -92,7 +92,7 @@
                             <FormField :label="isEdit ? 'Password Baru' : 'Password'" :required="!isEdit"
                                 :error="form.errors.password">
                                 <div class="relative">
-                                    <input v-model="form.password" :type="showPass ? 'text' : 'password'"
+                                    <input v-model="form.password" :type="showPass ? 'text' : 'password'" autocomplete="new-password"
                                         :placeholder="isEdit ? 'Kosongkan jika tidak diubah' : 'Min. 8 karakter'"
                                         :class="inputClass(form.errors.password)" />
                                     <button type="button" @click="showPass = !showPass"
@@ -110,7 +110,7 @@
 
                             <FormField v-if="form.password" label="Konfirmasi Password"
                                 :error="form.errors.password_confirmation">
-                                <input v-model="form.password_confirmation" :type="showPass ? 'text' : 'password'"
+                                <input v-model="form.password_confirmation" :type="showPass ? 'text' : 'password'" autocomplete="new-password"
                                     placeholder="Ulangi password"
                                     :class="inputClass(form.errors.password_confirmation)" />
                             </FormField>

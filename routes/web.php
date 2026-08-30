@@ -170,6 +170,8 @@ Route::prefix('admin')
                 [TenagaPendidikController::class, 'setujuiLibur'])->name('tenaga-pendidik.libur.setujui');
             Route::post('tenaga-pendidik/{tenagaPendidik}/libur/tolak',
                 [TenagaPendidikController::class, 'tolakLibur'])->name('tenaga-pendidik.libur.tolak');
+            Route::get('tenaga-pendidik/pengajuan-libur',
+                [TenagaPendidikController::class, 'pengajuanLiburIndex'])->name('tenaga-pendidik.pengajuan-libur');
 
             // Jabatan Guru (pivot multi-jabatan)
             Route::get('tenaga-pendidik/{tenagaPendidik}/jabatan',
