@@ -145,6 +145,7 @@ class AbsensiWindowService
         $izin = PengajuanIzin::where('tenaga_pendidik_id', $tpId)
             ->where('status', 'disetujui')
             ->where('is_sementara', false)   // izin sementara TIDAK memengaruhi absen harian
+            ->where('is_datang_terlambat', false)   // datang terlambat: guru tetap hadir (bukan izin sehari)
             ->where('tanggal_mulai', '<=', $tanggal)
             ->where('tanggal_selesai', '>=', $tanggal)
             ->with('jenisPengajuan')

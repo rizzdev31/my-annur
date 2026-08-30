@@ -338,7 +338,12 @@
                             </p>
                             <p>📝 {{ aksiTarget?.alasan }}</p>
                         </div>
-                        <p class="text-sm text-indigo-600 bg-indigo-50 rounded-xl px-4 py-3 mb-4">
+                        <template v-if="aksiTarget?.is_datang_terlambat">
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Boleh datang s/d (jam)</label>
+                            <input v-model="jamSetujui" type="time" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 mb-3" />
+                            <p class="text-xs text-gray-500 bg-orange-50 rounded-xl px-3 py-2 mb-4">🕗 Guru datang ≤ jam ini dicatat <b>hadir</b>; lewat itu terlambat dihitung dari jam ini. Kamu boleh menyesuaikan jamnya.</p>
+                        </template>
+                        <p v-else class="text-sm text-indigo-600 bg-indigo-50 rounded-xl px-4 py-3 mb-4">
                             ℹ️ Absensi <strong>{{ aksiTarget?.jumlah_hari }} hari</strong> akan diupdate otomatis
                             setelah disetujui.
                         </p>
@@ -532,20 +537,24 @@ function resetFilter() {
 // ── Modal Setujui ─────────────────────────────────────────────────────────────
 const showModalSetujui = ref(false)
 const catatanSetujui = ref('')
+const jamSetujui = ref('')
 const aksiTarget = ref(null)
 const loading = ref(false)
 
 function bukaModalSetujui(p) {
     aksiTarget.value = p
     catatanSetujui.value = ''
+    jamSetujui.value = (p.jam_mulai || '').slice(0, 5)
     showModalSetujui.value = true
 }
 
 function doSetujui() {
     loading.value = true
+    const payload = { catatan: catatanSetujui.value }
+    if (aksiTarget.value.is_datang_terlambat && jamSetujui.value) payload.jam_mulai = jamSetujui.value
     router.post(
         route('admin.smart-payroll.pengajuan-izin.setujui', aksiTarget.value.id),
-        { catatan: catatanSetujui.value },
+        payload,
         {
             onSuccess: () => { showModalSetujui.value = false },
             onFinish: () => { loading.value = false },

@@ -55,6 +55,8 @@ class PengajuanIzinController extends Controller
             'tanggal_mulai'    => $p->tanggal_mulai->format('d M Y'),
             'tanggal_selesai'  => $p->tanggal_selesai->format('d M Y'),
             'jumlah_hari'      => $p->jumlah_hari,
+            'is_datang_terlambat' => (bool) $p->is_datang_terlambat,
+            'jam_mulai'        => $p->jam_mulai ? substr((string) $p->jam_mulai, 0, 5) : null,
             'alasan'           => $p->alasan,
             'file_dokumen'     => $p->file_dokumen ? asset('storage/' . $p->file_dokumen) : null,
             'nama_dokumen'     => $p->nama_dokumen,
@@ -138,8 +140,34 @@ class PengajuanIzinController extends Controller
     public function setujui(Request $request, PengajuanIzin $pengajuanIzin)
     {
         $request->validate([
-            'catatan' => 'nullable|string|max:500',
+            'catatan'   => 'nullable|string|max:500',
+            'jam_mulai' => 'nullable|date_format:H:i,H:i:s',   // admin bisa atur jam (datang terlambat)
         ]);
+
+        // Izin datang terlambat: TIDAK lewat alur absensi harian. Cukup set disetujui
+        // (+ atur jam batas). Efeknya di check-in (AbsensiKalkulasiService).
+        if ($pengajuanIzin->is_datang_terlambat) {
+            $update = [
+                'status'            => 'disetujui',
+                'catatan_admin'     => $request->catatan,
+                'diproses_oleh'     => $request->user()->id,
+                'tanggal_keputusan' => now(),
+            ];
+            if ($request->filled('jam_mulai')) {
+                $update['jam_mulai'] = strlen($request->jam_mulai) === 5 ? $request->jam_mulai . ':00' : $request->jam_mulai;
+            }
+            $pengajuanIzin->update($update);
+
+            if ($pengajuanIzin->tenagaPendidik?->user) {
+                \App\Services\NotifikasiService::kirim(
+                    $pengajuanIzin->tenagaPendidik->user->id, 'Izin Datang Terlambat Disetujui',
+                    'Kamu boleh datang s/d ' . substr((string) $pengajuanIzin->jam_mulai, 0, 5)
+                        . ' pada ' . $pengajuanIzin->tanggal_mulai?->format('d/m/Y') . '. Dalam batas itu tetap dihitung hadir.',
+                    'izin', ['type' => 'izin', 'route' => '/izin']
+                );
+            }
+            return back()->with('success', 'Izin datang terlambat disetujui (boleh datang s/d ' . substr((string) $pengajuanIzin->jam_mulai, 0, 5) . ').');
+        }
 
         try {
             $this->pengajuanService->setujui($pengajuanIzin, $request->catatan);

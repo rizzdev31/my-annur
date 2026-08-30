@@ -296,6 +296,53 @@ class IzinApiController extends Controller
         ]);
     }
 
+    /** POST /izin/datang-terlambat — guru mengajukan izin datang terlambat (perlu approval admin). */
+    public function datangTerlambat(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'tanggal' => 'required|date|after_or_equal:today',
+            'jam'     => 'required|date_format:H:i,H:i:s',   // usul jam boleh datang
+            'alasan'  => 'required|string|max:255',
+        ]);
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return $this->notFound();
+
+        $jenis = SettingJenisPengajuan::where('kode', 'DATANG_TERLAMBAT')->firstOrFail();
+
+        $ada = PengajuanIzin::where('tenaga_pendidik_id', $tp->id)
+            ->where('is_datang_terlambat', true)->whereIn('status', ['pending', 'disetujui'])
+            ->whereDate('tanggal_mulai', $data['tanggal'])->exists();
+        if ($ada) {
+            return response()->json(['success' => false, 'message' => 'Sudah ada izin datang terlambat untuk tanggal itu.'], 422);
+        }
+
+        $jam = strlen($data['jam']) === 5 ? $data['jam'] . ':00' : $data['jam'];
+        $izin = PengajuanIzin::create([
+            'tenaga_pendidik_id'         => $tp->id,
+            'setting_jenis_pengajuan_id' => $jenis->id,
+            'tanggal_mulai'              => $data['tanggal'],
+            'tanggal_selesai'            => $data['tanggal'],
+            'jam_mulai'                  => $jam,
+            'is_datang_terlambat'        => true,
+            'jumlah_hari'                => 1,
+            'alasan'                     => $data['alasan'],
+            'status'                     => 'pending',
+        ]);
+
+        \App\Services\NotifikasiService::keSuperadmin(
+            'Izin Datang Terlambat',
+            ($request->user()->name ?? 'Guru') . ' mengajukan datang terlambat ' . $data['tanggal']
+                . ' (boleh datang s/d ' . substr($jam, 0, 5) . ').',
+            'izin', ['type' => 'izin', 'route' => '/pengajuan-izin']
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pengajuan datang terlambat terkirim. Menunggu persetujuan admin.',
+            'data'    => ['id' => $izin->id],
+        ]);
+    }
+
     private function formatSesi(JadwalMengajar $j): array
     {
         return [

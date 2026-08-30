@@ -19,6 +19,7 @@ class PengajuanIzin extends Model
         'jam_mulai',
         'jam_selesai',
         'is_sementara',
+        'is_datang_terlambat',
         'jumlah_hari',
         'alasan',
         'file_dokumen',
@@ -38,6 +39,7 @@ class PengajuanIzin extends Model
             'tanggal_selesai'              => 'date',
             'tanggal_keputusan'            => 'datetime',
             'is_sementara'                 => 'boolean',
+            'is_datang_terlambat'          => 'boolean',
             'absensi_sudah_diupdate'       => 'boolean',
             'status_kepegawaian_diupdate'  => 'boolean',
         ];

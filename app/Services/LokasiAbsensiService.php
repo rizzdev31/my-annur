@@ -207,6 +207,7 @@ class LokasiAbsensiService
         $izin = PengajuanIzin::where('tenaga_pendidik_id', $guru->id)
             ->where('status', 'disetujui')
             ->where('is_sementara', false)   // izin sementara tak membebaskan validasi lokasi check-in
+            ->where('is_datang_terlambat', false)   // datang terlambat: check-in lokasi tetap normal
             ->where('tanggal_mulai', '<=', $tanggal)
             ->where('tanggal_selesai', '>=', $tanggal)
             ->with('jenisPengajuan')

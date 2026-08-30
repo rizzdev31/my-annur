@@ -45,6 +45,30 @@ class AbsensiKalkulasiService
         $masukJadwal    = TimezoneHelper::parse($tanggal . ' ' . $jadwal['jam_masuk']);
         $batasTerlambat = $masukJadwal->copy()->addMinutes($jadwal['toleransi'] ?? 15);
 
+        // ── Izin Datang Terlambat (disetujui) ────────────────────────────────
+        // Jam batas ada di jam_mulai izin. Datang ≤ batas → HADIR (bukan telat);
+        // lewat batas → terlambat dihitung dari batas izin (bukan jam jadwal).
+        if ($tp) {
+            $izinTelat = \App\Models\PengajuanIzin::where('tenaga_pendidik_id', $tp->id)
+                ->where('is_datang_terlambat', true)
+                ->where('status', 'disetujui')
+                ->whereDate('tanggal_mulai', $tanggal)
+                ->whereNotNull('jam_mulai')
+                ->first();
+
+            if ($izinTelat) {
+                $batasIzin = TimezoneHelper::parse($tanggal . ' ' . $izinTelat->jam_mulai);
+                if ($masukAktual->lte($batasIzin)) {
+                    return ['status' => 'hadir', 'menit_terlambat' => 0, 'jadwal' => $jadwal];
+                }
+                return [
+                    'status'          => 'terlambat',
+                    'menit_terlambat' => (int) abs($masukAktual->diffInMinutes($batasIzin)),
+                    'jadwal'          => $jadwal,
+                ];
+            }
+        }
+
         if ($masukAktual->gt($batasTerlambat)) {
             // Terlambat — hitung dari jam masuk jadwal (bukan dari batas toleransi).
             // abs(): Carbon 3 (Laravel 12) diffInMinutes bertanda; tanpa abs hasil negatif.

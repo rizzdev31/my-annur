@@ -60,6 +60,28 @@ async function ajukan() {
     } finally { saving.value = false }
 }
 
+// ── Izin Datang Terlambat ───────────────────────────────────────────────────
+const showTelat = ref(false)
+const telatForm = ref({ tanggal: '', jam: '', alasan: '' })
+const telatSaving = ref(false)
+async function ajukanTelat() {
+    msg.value = null
+    const f = telatForm.value
+    if (!f.tanggal || !f.jam || f.alasan.trim().length < 3) {
+        msg.value = { ok: false, text: 'Isi tanggal, jam boleh datang, dan alasan.' }; return
+    }
+    telatSaving.value = true
+    try {
+        const res = await api.post('/izin/datang-terlambat', { tanggal: f.tanggal, jam: f.jam, alasan: f.alasan.trim() })
+        msg.value = { ok: true, text: res.data.message }
+        showTelat.value = false
+        telatForm.value = { tanggal: '', jam: '', alasan: '' }
+        await load()
+    } catch (e) {
+        msg.value = { ok: false, text: e.response?.data?.message || 'Gagal mengajukan.' }
+    } finally { telatSaving.value = false }
+}
+
 // ── Izin Sementara (partial-day) ────────────────────────────────────────────
 const showSem = ref(false)
 const semForm = ref({ jam_mulai: '', jam_selesai: '', alasan: '' })
@@ -164,9 +186,35 @@ async function tunjukPengganti(sesi) {
                     class="py-3 rounded-2xl bg-[#0C78FF] text-white font-bold text-sm active:scale-[0.99] transition">
                     {{ showForm ? 'Tutup' : '+ Ajukan Izin' }}
                 </button>
-                <button @click="showSem = !showSem; showForm = false"
+                <button @click="showSem = !showSem; showForm = false; showTelat = false"
                     class="py-3 rounded-2xl bg-amber-500 text-white font-bold text-sm active:scale-[0.99] transition">
                     {{ showSem ? 'Tutup' : '⏱ Izin Sementara' }}
+                </button>
+            </div>
+            <button @click="showTelat = !showTelat; showForm = false; showSem = false"
+                class="w-full py-3 rounded-2xl bg-orange-500 text-white font-bold text-sm mb-4 active:scale-[0.99] transition">
+                {{ showTelat ? 'Tutup' : '🕗 Izin Datang Terlambat' }}
+            </button>
+
+            <!-- Sheet Datang Terlambat -->
+            <div v-if="showTelat" class="rounded-2xl bg-white border border-orange-100 p-4 mb-4 space-y-3">
+                <p class="text-xs text-gray-500 -mt-1">Ajukan izin datang terlambat pada jam tertentu. Bila disetujui admin & kamu datang dalam batas jam itu, tetap dicatat <b>hadir</b> (bukan terlambat).</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal</label>
+                        <input v-model="telatForm.tanggal" type="date" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-orange-500" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Boleh datang s/d</label>
+                        <input v-model="telatForm.jam" type="time" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-orange-500" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Alasan</label>
+                    <textarea v-model="telatForm.alasan" rows="2" placeholder="cth: ada keperluan pagi…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-orange-500"></textarea>
+                </div>
+                <button @click="ajukanTelat" :disabled="telatSaving" class="w-full py-3 rounded-xl bg-orange-500 text-white font-bold text-sm disabled:opacity-60">
+                    {{ telatSaving ? 'Mengirim…' : 'Ajukan Datang Terlambat' }}
                 </button>
             </div>
 
