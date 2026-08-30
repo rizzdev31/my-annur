@@ -16,6 +16,9 @@ class PengajuanIzin extends Model
         'setting_jenis_pengajuan_id',
         'tanggal_mulai',
         'tanggal_selesai',
+        'jam_mulai',
+        'jam_selesai',
+        'is_sementara',
         'jumlah_hari',
         'alasan',
         'file_dokumen',
@@ -34,6 +37,7 @@ class PengajuanIzin extends Model
             'tanggal_mulai'                => 'date',
             'tanggal_selesai'              => 'date',
             'tanggal_keputusan'            => 'datetime',
+            'is_sementara'                 => 'boolean',
             'absensi_sudah_diupdate'       => 'boolean',
             'status_kepegawaian_diupdate'  => 'boolean',
         ];
@@ -72,6 +76,16 @@ class PengajuanIzin extends Model
     public function isPending(): bool    { return $this->status === 'pending'; }
     public function isDisetujui(): bool  { return $this->status === 'disetujui'; }
     public function isDitolak(): bool    { return $this->status === 'ditolak'; }
+    public function isSementara(): bool  { return (bool) $this->is_sementara; }
+
+    /** Izin sementara (partial-day) yang disetujui pada tanggal tertentu. */
+    public function scopeSementaraAktif($query, int $tpId, string $tanggal)
+    {
+        return $query->where('tenaga_pendidik_id', $tpId)
+            ->where('is_sementara', true)
+            ->where('status', 'disetujui')
+            ->whereDate('tanggal_mulai', $tanggal);
+    }
 
     /**
      * Konversi kategori jenis ke status absensi.
