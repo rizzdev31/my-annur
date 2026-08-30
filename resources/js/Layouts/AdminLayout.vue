@@ -226,13 +226,14 @@
                 <!-- Konfigurasi penggajian (superadmin) -->
                 <template v-if="isSuper">
                 <SidebarGroup icon="dollar" label="Setting Gaji"
-                    :active="isActive('admin.smart-payroll.setting-gaji') || isActive('admin.smart-payroll.setting-potongan') || isActive('admin.smart-payroll.jadwal-shift')"
+                    :active="isActive('admin.smart-payroll.setting-gaji') || isActive('admin.smart-payroll.setting-potongan') || isActive('admin.smart-payroll.potongan') || isActive('admin.smart-payroll.jadwal-shift')"
                     :collapsed="!sidebarOpen">
                     <SidebarSubItem :href="route('admin.smart-payroll.setting-gaji.pokok.index')" label="Gaji Pokok" />
                     <SidebarSubItem :href="route('admin.smart-payroll.setting-gaji.vakasi.index')" label="Vakasi" />
                     <SidebarSubItem :href="route('admin.smart-payroll.setting-gaji.jam-kerja.index')" label="Jam Kerja" />
                     <SidebarSubItem :href="route('admin.smart-payroll.jadwal-shift.index')" label="Shift Satpam" />
-                    <SidebarSubItem :href="route('admin.smart-payroll.setting-potongan.index')" label="Potongan Gaji" />
+                    <SidebarSubItem :href="route('admin.smart-payroll.setting-potongan.index')" label="Potongan Absensi" />
+                    <SidebarSubItem :href="route('admin.smart-payroll.potongan.index')" label="Potongan per Guru" />
                 </SidebarGroup>
                 <SidebarGroup icon="sliders" label="Setting Operasional"
                     :active="isActive('admin.smart-payroll.setting-kinerja') || isActive('admin.smart-payroll.setting-lokasi') || isActive('admin.smart-payroll.setting-pengajuan') || isActive('admin.smart-payroll.setting-notifikasi')"

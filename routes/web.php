@@ -512,6 +512,15 @@ Route::prefix('admin')
                 [SettingPotonganController::class, 'toggleStatus'])->name('setting-potongan.toggle');
             Route::resource('setting-potongan', SettingPotonganController::class);
 
+            // ── Potongan Gaji per Guru (murni, terpisah dari absensi) ─────
+            Route::get('potongan',                 [\App\Http\Controllers\Superadmin\PotonganController::class, 'index'])->name('potongan.index');
+            Route::get('potongan/guru/{tenagaPendidik}',  [\App\Http\Controllers\Superadmin\PotonganController::class, 'guru'])->name('potongan.guru');
+            Route::post('potongan/guru/{tenagaPendidik}', [\App\Http\Controllers\Superadmin\PotonganController::class, 'simpanGuru'])->name('potongan.guru.simpan');
+            Route::post('potongan/jenis',                 [\App\Http\Controllers\Superadmin\PotonganController::class, 'storeJenis'])->name('potongan.jenis.store');
+            Route::put('potongan/jenis/{jenisPotongan}',  [\App\Http\Controllers\Superadmin\PotonganController::class, 'updateJenis'])->name('potongan.jenis.update');
+            Route::patch('potongan/jenis/{jenisPotongan}/toggle', [\App\Http\Controllers\Superadmin\PotonganController::class, 'toggleJenis'])->name('potongan.jenis.toggle');
+            Route::delete('potongan/jenis/{jenisPotongan}', [\App\Http\Controllers\Superadmin\PotonganController::class, 'destroyJenis'])->name('potongan.jenis.destroy');
+
             // ── Setting Jenis Pengajuan Izin ──────────────────────────────
             Route::patch('setting-pengajuan/{settingPengajuan}/toggle-aktif',
                 [SettingJenisPengajuanController::class, 'toggleAktif'])->name('setting-pengajuan.toggle-aktif');

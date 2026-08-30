@@ -100,6 +100,10 @@ class SlipGajiBuilder
         if (($penggajian->potongan_liburan ?? 0) > 0) {
             $potongan[] = ['label' => $penggajian->keterangan_liburan ?: 'Penyesuaian Liburan', 'qty' => null, 'nominal' => (float) $penggajian->potongan_liburan];
         }
+        // Potongan gaji per-guru (murni) — itemized dari detail (tipe potongan_guru).
+        foreach ($detail->where('tipe', 'potongan_guru') as $d) {
+            $potongan[] = ['label' => $d->keterangan, 'qty' => null, 'nominal' => (float) $d->nilai_per_satuan];
+        }
         if ($penggajian->potongan_lainnya > 0) {
             $potongan[] = ['label' => 'Potongan Lainnya', 'qty' => null, 'nominal' => (float) $penggajian->potongan_lainnya];
         }

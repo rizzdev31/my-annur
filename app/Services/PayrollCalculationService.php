@@ -155,6 +155,37 @@ class PayrollCalculationService
         }
         $potonganLainnyaTotal = $potongan['lainnya'] + $punishmentPotongan;
 
+        // ── 7c-2. Potongan gaji per-guru (MURNI, terpisah absensi/mengajar) ───
+        // Nominal tetap per guru (voucher/simpanan/lazismu/pinjaman). Dijumlah &
+        // ditampilkan di slip per item (bila tampil_di_slip).
+        $potonganManualGuru = 0;
+        $detailPotonganGuru = [];
+        try {
+            $rows = \App\Models\PotonganGuru::where('tenaga_pendidik_id', $guru->id)
+                ->where('is_aktif', true)
+                ->whereHas('jenis', fn ($q) => $q->where('is_aktif', true))
+                ->with('jenis')->get();
+            foreach ($rows as $r) {
+                $n = (float) $r->nominal;
+                if ($n <= 0) continue;
+                $potonganManualGuru += $n;
+                if ($r->jenis?->tampil_di_slip) {
+                    $detailPotonganGuru[] = [
+                        'tipe'             => 'potongan_guru',
+                        'keterangan'       => $r->jenis->nama,
+                        'jumlah_satuan'    => 1,
+                        'satuan'           => 'bulan',
+                        'nilai_per_satuan' => $n,
+                        'subtotal'         => -$n,
+                        'referensi_ids'    => [],
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            $errors[] = "Potongan per-guru: " . $e->getMessage();
+            Log::warning("Payroll [{$guru->id}] potongan per-guru error: " . $e->getMessage());
+        }
+
         // ── 7d. Totalisasi ────────────────────────────────────────────────────
         $totalPendapatan = $gajiPokok
             + $vakasiAbsen['total']
@@ -170,7 +201,8 @@ class PayrollCalculationService
             + $potongan['alfa']
             + $potongan['tetap']
             + $potonganLainnyaTotal      // potongan lain + punishment
-            + $potonganLiburan;          // penyesuaian liburan manual
+            + $potonganLiburan           // penyesuaian liburan manual
+            + $potonganManualGuru;       // potongan gaji per-guru (murni)
 
         $gajiBersih = max(0, $totalPendapatan - $totalPotongan);
 
@@ -235,6 +267,7 @@ class PayrollCalculationService
                 ...$vakasiPiket['detail'],
                 ...$vakasiEkskul['detail'],
                 ...$potongan['detail'],
+                ...$detailPotonganGuru,   // potongan gaji per-guru (murni)
                 // Detail penyesuaian liburan (jika ada) — transparan di slip
                 ...($potonganLiburan > 0 ? [[
                     'tipe'             => 'penyesuaian_liburan',
