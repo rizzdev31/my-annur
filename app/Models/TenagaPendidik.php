@@ -38,6 +38,7 @@ class TenagaPendidik extends Model
         'no_rekening', 'nama_bank', 'nama_rekening',
         'jenis_guru', 'is_aktif',
         'is_mukim',                 // guru mukim asrama → punya libur individu rolling
+        'hari_libur',               // hari libur mingguan tetap (array, mis. ["sabtu"])
         // Status kepegawaian (dari file user)
         'status_kepegawaian',
         'tanggal_nonaktif',
@@ -53,6 +54,7 @@ class TenagaPendidik extends Model
             'tanggal_keluar'   => 'date',
             'tanggal_nonaktif' => 'date',
             'is_aktif'         => 'boolean',
+            'hari_libur'       => 'array',
             'is_mukim'         => 'boolean',
         ];
     }

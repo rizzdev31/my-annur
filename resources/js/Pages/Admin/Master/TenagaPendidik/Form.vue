@@ -242,6 +242,18 @@
                                 </label>
                             </FormField>
 
+                            <FormField label="Hari Libur Mingguan" :error="form.errors.hari_libur">
+                                <div class="flex flex-wrap gap-2">
+                                    <label v-for="h in hariOpsi" :key="h.key"
+                                        class="flex items-center gap-1.5 px-3 py-2 rounded-xl border cursor-pointer transition-colors"
+                                        :class="form.hari_libur.includes(h.key) ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 text-gray-600 hover:border-amber-300'">
+                                        <input type="checkbox" :value="h.key" v-model="form.hari_libur" class="w-4 h-4 rounded text-amber-600" />
+                                        <span class="text-xs font-medium">{{ h.label }}</span>
+                                    </label>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-1.5">Hari libur tetap mingguan (mis. Sabtu). Dipakai saat Generate Jam Kerja "Dari Hari Libur Guru". Kosongkan bila tidak ada.</p>
+                            </FormField>
+
                         </div>
                     </div>
 
@@ -320,6 +332,12 @@ const showPass = ref(false)
 const fotoPreview = ref(props.guru?.foto ?? null)
 
 // Inisialisasi form
+const hariOpsi = [
+    { key: 'senin', label: 'Sen' }, { key: 'selasa', label: 'Sel' }, { key: 'rabu', label: 'Rab' },
+    { key: 'kamis', label: 'Kam' }, { key: 'jumat', label: 'Jum' }, { key: 'sabtu', label: 'Sab' },
+    { key: 'ahad', label: 'Ahd' },
+]
+
 const form = useForm({
     // Akun
     name: props.guru?.name ?? '',
@@ -342,6 +360,7 @@ const form = useForm({
     tanggal_masuk: props.guru?.tanggal_masuk ?? '',
     setting_jam_kerja_id: props.guru?.setting_jam_kerja_id ?? '',
     is_mukim: props.guru?.is_mukim ?? false,
+    hari_libur: props.guru?.hari_libur ?? [],
     // Rekening
     no_rekening: props.guru?.no_rekening ?? '',
     nama_bank: props.guru?.nama_bank ?? '',

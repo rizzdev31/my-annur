@@ -143,6 +143,19 @@
                 </div>
 
                 <template v-if="!genResult">
+                    <div class="px-5 py-3 border-b border-gray-50">
+                        <p class="text-xs font-semibold text-gray-500 mb-2">Sumber hari libur:</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label :class="['flex items-start gap-2 px-3 py-2 rounded-xl border cursor-pointer text-xs', genMode === 'mengajar' ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200']">
+                                <input type="radio" value="mengajar" v-model="genMode" class="mt-0.5 text-emerald-600" />
+                                <span><b class="text-gray-700">Dari Jadwal Mengajar</b><br><span class="text-gray-400">Masuk hari yang ada jam ngajar</span></span>
+                            </label>
+                            <label :class="['flex items-start gap-2 px-3 py-2 rounded-xl border cursor-pointer text-xs', genMode === 'libur' ? 'border-amber-400 bg-amber-50' : 'border-gray-200']">
+                                <input type="radio" value="libur" v-model="genMode" class="mt-0.5 text-amber-600" />
+                                <span><b class="text-gray-700">Dari Hari Libur Guru</b><br><span class="text-gray-400">Masuk semua hari kecuali libur guru</span></span>
+                            </label>
+                        </div>
+                    </div>
                     <div class="px-5 py-3 border-b border-gray-50 flex items-center gap-2">
                         <input v-model="genSearch" placeholder="Cari guru…" class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-emerald-500" />
                         <button @click="pilihSemua" class="text-xs font-semibold text-emerald-600 whitespace-nowrap">{{ semuaTerpilih ? 'Batal semua' : 'Pilih semua' }}</button>
@@ -212,6 +225,7 @@ const genSel = ref([])
 const genSearch = ref('')
 const genSaving = ref(false)
 const genResult = ref(null)
+const genMode = ref('mengajar')   // 'mengajar' | 'libur'
 
 const guruTersaring = computed(() => {
     const q = genSearch.value.trim().toLowerCase()
@@ -220,7 +234,7 @@ const guruTersaring = computed(() => {
 const semuaTerpilih = computed(() => guruTersaring.value.length > 0 && guruTersaring.value.every(g => genSel.value.includes(g.id)))
 
 function bukaGenerate(s) {
-    genTemplate.value = s; genSel.value = []; genSearch.value = ''; genResult.value = null; showGen.value = true
+    genTemplate.value = s; genSel.value = []; genSearch.value = ''; genResult.value = null; genMode.value = 'mengajar'; showGen.value = true
 }
 function toggleGuru(id) {
     const i = genSel.value.indexOf(id)
@@ -242,7 +256,7 @@ async function jalankanGenerate() {
     try {
         const res = await window.axios.post(
             route('admin.smart-payroll.setting-gaji.jam-kerja.generate', genTemplate.value.id),
-            { guru_ids: genSel.value },
+            { guru_ids: genSel.value, mode: genMode.value },
         )
         genResult.value = res.data.data
     } catch (e) {

@@ -36,47 +36,54 @@ class GenerateJamKerjaService
      * @param  int[]  $guruIds
      * @return array{generated:string[], dilewati:string[], peringatan:string[]}
      */
-    public function generate(SettingJamKerja $template, array $guruIds): array
+    /**
+     * @param  string  $mode  'mengajar' (libur=hari tanpa jadwal) | 'libur' (libur=hari_libur guru)
+     */
+    public function generate(SettingJamKerja $template, array $guruIds, string $mode = 'mengajar'): array
     {
-        $tpl        = $template->jadwal_per_hari ?? [];
-        $generated  = [];
-        $dilewati   = [];
-        $peringatan = [];
+        $tpl          = $template->jadwal_per_hari ?? [];
+        $hariTemplate = $this->hariTemplate($tpl);   // hari yg aktif & punya jam di template
+        $generated    = [];
+        $dilewati     = [];
+        $peringatan   = [];
+
+        [$repMasuk, $repPulang] = $this->jamRepresentatif($template, $tpl);
 
         $gurus = TenagaPendidik::with('user')->whereIn('id', $guruIds)->get();
 
         foreach ($gurus as $guru) {
             $nama = $guru->user?->name ?? ('Guru #' . $guru->id);
-            $hariMengajar = $this->hariMengajar($guru);
 
-            // Keputusan: guru tanpa jadwal mengajar → DILEWATI (cegah libur total).
-            if (empty($hariMengajar)) {
-                $dilewati[] = $nama;
-                continue;
+            // Tentukan HARI MASUK menurut mode.
+            if ($mode === 'libur') {
+                // Kerja semua hari template KECUALI hari libur mingguan guru.
+                $liburGuru = array_map('strtolower', (array) ($guru->hari_libur ?? []));
+                $hariMasuk = array_values(array_diff($hariTemplate, $liburGuru));
+                // Guru tanpa hari_libur → kerja semua hari template (keputusan).
+            } else {
+                $hariMengajarSemua = $this->hariMengajar($guru);
+                if (empty($hariMengajarSemua)) {   // tanpa jadwal → dilewati
+                    $dilewati[] = $nama;
+                    continue;
+                }
+                $hariMasuk = array_values(array_intersect($hariMengajarSemua, $hariTemplate));
+                $luar = array_diff($hariMengajarSemua, $hariTemplate);
+                if ($luar) {
+                    $peringatan[] = $nama . ' mengajar di hari (' . implode(', ', $luar)
+                        . ') yang tidak aktif di template — hari itu tidak diaktifkan.';
+                }
             }
 
             $jadwal = [];
-            $hariTanpaTemplate = [];
             foreach (self::HARI as $hari) {
-                $td      = $tpl[$hari] ?? null;
-                $ngajar  = in_array($hari, $hariMengajar, true);
-                $adaWaktu = $td && !empty($td['jam_masuk']) && !empty($td['jam_pulang']);
-
-                if ($ngajar && !$adaWaktu) {
-                    $hariTanpaTemplate[] = $hari;   // ngajar tapi template tak punya jam hari itu
-                }
-
+                $td = $tpl[$hari] ?? null;
                 $jadwal[$hari] = [
                     'jam_masuk'  => $td['jam_masuk']  ?? null,
                     'jam_pulang' => $td['jam_pulang'] ?? null,
                     'toleransi'  => $td['toleransi']  ?? $template->toleransi_terlambat ?? 15,
-                    'aktif'      => $ngajar && $adaWaktu,   // masuk hanya jika ngajar & template punya jam
+                    'aktif'      => in_array($hari, $hariMasuk, true),
                 ];
             }
-
-            // Kolom legacy global (NOT NULL) — mode per-hari tak memakainya, tapi
-            // tetap diisi agar valid. Ambil dari template atau hari pertama yg ada.
-            [$repMasuk, $repPulang] = $this->jamRepresentatif($template, $tpl);
 
             // Satu setting per-guru (re-generate memperbarui baris yang sama).
             $setting = SettingJamKerja::updateOrCreate(
@@ -98,14 +105,22 @@ class GenerateJamKerjaService
 
             $guru->update(['setting_jam_kerja_id' => $setting->id]);
             $generated[] = $nama;
-
-            if ($hariTanpaTemplate) {
-                $peringatan[] = $nama . ' mengajar di hari (' . implode(', ', $hariTanpaTemplate)
-                    . ') yang tidak ada di template — hari itu tidak diaktifkan.';
-            }
         }
 
         return ['generated' => $generated, 'dilewati' => $dilewati, 'peringatan' => $peringatan];
+    }
+
+    /** Hari yang AKTIF & punya jam di template (kandidat hari kerja). */
+    private function hariTemplate(array $tpl): array
+    {
+        $days = [];
+        foreach (self::HARI as $h) {
+            $td = $tpl[$h] ?? null;
+            if ($td && ($td['aktif'] ?? false) && !empty($td['jam_masuk']) && !empty($td['jam_pulang'])) {
+                $days[] = $h;
+            }
+        }
+        return $days;
     }
 
     /** Jam masuk/pulang representatif utk isi kolom legacy NOT NULL. */
