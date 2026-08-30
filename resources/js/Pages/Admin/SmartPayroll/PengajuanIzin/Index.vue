@@ -458,7 +458,7 @@ async function ajukanSementara() {
     }
     semSaving.value = true
     try {
-        const res = await window.axios.post(route('admin.smart-payroll.pengajuan-izin.sementara.store'), { ...f, alasan: f.alasan.trim() })
+        const res = await window.axios.post('/admin/smart-payroll/pengajuan-izin/sementara', { ...f, alasan: f.alasan.trim() })
         semIzinId.value = res.data.data?.izin_id ?? null
         semSesi.value = (res.data.data?.sesi_terdampak ?? []).map(s => ({ ...s, pengganti_id: '', pengganti_nama: null, assigning: false }))
         semDone.value = true
@@ -474,7 +474,7 @@ async function batalSementaraAdmin() {
     if (!confirm('Batalkan izin sementara ini? Penunjukan pengganti yang belum mengajar akan dibatalkan.')) return
     semBatal.value = true
     try {
-        const res = await window.axios.post(route('admin.smart-payroll.pengajuan-izin.sementara-batal', semIzinId.value))
+        const res = await window.axios.post(`/admin/smart-payroll/pengajuan-izin/${semIzinId.value}/sementara-batal`)
         semMsg.value = { ok: true, text: res.data.message || 'Dibatalkan.' }
         showSem.value = false; router.reload()
     } catch (e) {
@@ -486,7 +486,7 @@ async function tunjukPenggantiAdmin(s) {
     if (!s.pengganti_id) return
     s.assigning = true
     try {
-        await window.axios.post(route('admin.smart-payroll.pengajuan-izin.sementara.tunjuk-pengganti'), {
+        await window.axios.post('/admin/smart-payroll/pengajuan-izin/sementara/tunjuk-pengganti', {
             jadwal_mengajar_id: s.jadwal_mengajar_id,
             tenaga_pendidik_id: semForm.value.tenaga_pendidik_id,
             pengganti_id: s.pengganti_id,

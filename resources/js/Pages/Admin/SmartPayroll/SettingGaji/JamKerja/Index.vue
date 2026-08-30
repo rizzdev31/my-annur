@@ -255,7 +255,7 @@ async function jalankanGenerate() {
     genSaving.value = true
     try {
         const res = await window.axios.post(
-            route('admin.smart-payroll.setting-gaji.jam-kerja.generate', genTemplate.value.id),
+            `/admin/smart-payroll/setting-gaji/jam-kerja/${genTemplate.value.id}/generate`,
             { guru_ids: genSel.value, mode: genMode.value },
         )
         genResult.value = res.data.data
