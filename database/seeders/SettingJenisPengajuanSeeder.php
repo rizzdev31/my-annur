@@ -97,9 +97,9 @@ class SettingJenisPengajuanSeeder extends Seeder
                 'deskripsi'                     => 'Perjalanan dinas atas perintah pesantren',
                 'max_hari_per_pengajuan'        => 30,
                 'kuota_per_tahun'               => null,
-                'min_hari_pengajuan_sebelumnya' => 1,
-                'butuh_dokumen'                 => true,
-                'keterangan_dokumen'            => 'Surat tugas dari pimpinan',
+                'min_hari_pengajuan_sebelumnya' => 0,     // boleh hari itu juga (dinas sering mendadak)
+                'butuh_dokumen'                 => false,  // dokumen (surat tugas) opsional, tak wajib saat ajukan
+                'keterangan_dokumen'            => 'Surat tugas dari pimpinan (opsional)',
                 'auto_approve'                  => false,
                 'pengaruh_gaji'                 => 'tidak_potong',
                 'update_status_kepegawaian'     => false,
