@@ -1,3 +1,4 @@
+import "./bootstrap";   // set window.axios + header CSRF (WAJIB utk POST via window.axios)
 import { createApp, h } from "vue";
 import { createInertiaApp } from "@inertiajs/vue3";
 import { resolvePageComponent } from "laravel-vite-plugin/inertia-helpers";
