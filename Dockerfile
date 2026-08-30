@@ -40,7 +40,11 @@ RUN apk add --no-cache \
     && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j"$(nproc)" \
         pdo_mysql mbstring bcmath gd zip exif pcntl intl opcache \
-    && apk del .build-deps
+    && apk del .build-deps \
+    # nginx dijalankan sbg www-data → folder kerja/temp-nya (default milik user
+    # 'nginx', mode 700) harus dimiliki www-data, jika tidak upload besar (foto
+    # kamera) yang di-buffer ke client_body_temp → "Permission denied" → 500 nginx.
+    && chown -R www-data:www-data /var/lib/nginx
 
 # Kode aplikasi + hasil build dari stage sebelumnya
 COPY . .
