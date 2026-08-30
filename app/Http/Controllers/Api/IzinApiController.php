@@ -250,6 +250,16 @@ class IzinApiController extends Controller
         );
         $sesi = $this->izinSementara->sesiTerdampak($tp, $now, $data['jam_mulai'], $data['jam_selesai']);
 
+        // Info ke admin (izin sementara berlaku seketika tanpa approval).
+        \App\Services\NotifikasiService::keSuperadmin(
+            'Izin Sementara',
+            ($request->user()->name ?? 'Guru') . ' izin sementara '
+                . substr((string) $izin->jam_mulai, 0, 5) . '–' . substr((string) $izin->jam_selesai, 0, 5)
+                . ' (' . $sesi->count() . ' sesi mengajar terdampak).',
+            'izin',
+            ['type' => 'izin', 'route' => '/perizinan']
+        );
+
         return response()->json([
             'success' => true,
             'message' => $sesi->isEmpty()
