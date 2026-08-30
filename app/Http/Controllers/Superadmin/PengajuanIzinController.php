@@ -3,17 +3,22 @@
 namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Controller;
+use App\Models\JadwalMengajar;
 use App\Models\PengajuanIzin;
 use App\Models\TenagaPendidik;
 use App\Models\SettingJenisPengajuan;
+use App\Services\IzinSementaraService;
 use App\Services\PengajuanIzinService;
+use App\Services\TimezoneHelper;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class PengajuanIzinController extends Controller
 {
     public function __construct(
-        private readonly PengajuanIzinService $pengajuanService
+        private readonly PengajuanIzinService $pengajuanService,
+        private readonly IzinSementaraService $izinSementara,
     ) {}
 
     /**
@@ -215,5 +220,94 @@ class PengajuanIzinController extends Controller
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // IZIN SEMENTARA (admin buatkan atas nama guru) — endpoint JSON (axios)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** POST pengajuan-izin/sementara/preview — sesi mengajar terdampak (tanpa membuat). */
+    public function sementaraPreview(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'tenaga_pendidik_id' => 'required|exists:tenaga_pendidik,id',
+            'jam_mulai'          => 'required|date_format:H:i,H:i:s',
+            'jam_selesai'        => 'required|date_format:H:i,H:i:s',
+        ]);
+        if (!$this->izinSementara->windowValid($data['jam_mulai'], $data['jam_selesai'])) {
+            return response()->json(['success' => false, 'message' => 'Jam selesai harus setelah jam mulai.'], 422);
+        }
+        $guru = TenagaPendidik::findOrFail($data['tenaga_pendidik_id']);
+        $sesi = $this->izinSementara->sesiTerdampak($guru, TimezoneHelper::now(), $data['jam_mulai'], $data['jam_selesai']);
+
+        return response()->json(['success' => true, 'data' => ['sesi_terdampak' => $sesi->map(fn ($j) => $this->formatSesiAdmin($j))->values()]]);
+    }
+
+    /** POST pengajuan-izin/sementara — buat izin sementara atas nama guru (langsung disetujui). */
+    public function sementaraStore(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'tenaga_pendidik_id' => 'required|exists:tenaga_pendidik,id',
+            'jam_mulai'          => 'required|date_format:H:i,H:i:s',
+            'jam_selesai'        => 'required|date_format:H:i,H:i:s',
+            'alasan'             => 'required|string|max:255',
+        ]);
+        if (!$this->izinSementara->windowValid($data['jam_mulai'], $data['jam_selesai'])) {
+            return response()->json(['success' => false, 'message' => 'Jam selesai harus setelah jam mulai.'], 422);
+        }
+        $guru = TenagaPendidik::with('user')->findOrFail($data['tenaga_pendidik_id']);
+        $now  = TimezoneHelper::now();
+
+        $izin = $this->izinSementara->ajukan($guru, $data['jam_mulai'], $data['jam_selesai'], $data['alasan'], $now, $request->user()->id);
+        $sesi = $this->izinSementara->sesiTerdampak($guru, $now, $data['jam_mulai'], $data['jam_selesai']);
+
+        // Info ke guru yang bersangkutan (dibuatkan admin).
+        if ($guru->user) {
+            \App\Services\NotifikasiService::kirim(
+                $guru->user->id,
+                'Izin Sementara Dibuatkan',
+                'Admin membuatkan izin sementara Anda ' . substr((string) $izin->jam_mulai, 0, 5) . '–' . substr((string) $izin->jam_selesai, 0, 5) . '.',
+                'izin',
+                ['type' => 'izin', 'route' => '/izin']
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $sesi->isEmpty() ? 'Izin sementara dibuat. Tidak ada sesi terdampak.' : 'Izin sementara dibuat. ' . $sesi->count() . ' sesi butuh pengganti.',
+            'data'    => ['izin_id' => $izin->id, 'sesi_terdampak' => $sesi->map(fn ($j) => $this->formatSesiAdmin($j))->values()],
+        ]);
+    }
+
+    /** POST pengajuan-izin/sementara/tunjuk-pengganti — admin tunjuk pengganti atas nama guru. */
+    public function sementaraTunjukPengganti(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'jadwal_mengajar_id' => 'required|exists:jadwal_mengajar,id',
+            'tenaga_pendidik_id' => 'required|exists:tenaga_pendidik,id',
+            'pengganti_id'       => 'required|exists:tenaga_pendidik,id',
+            'keterangan'         => 'nullable|string|max:255',
+        ]);
+        try {
+            $absensi = (new \App\Services\PenggantiMengajarService())->tunjukPengganti(
+                (int) $data['jadwal_mengajar_id'], (int) $data['tenaga_pendidik_id'], (int) $data['pengganti_id'],
+                TimezoneHelper::now(), $data['keterangan'] ?? 'Izin sementara (dibuatkan admin)'
+            );
+        } catch (\DomainException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+        return response()->json(['success' => true, 'message' => 'Pengganti ditunjuk.', 'data' => ['absensi_id' => $absensi->id]]);
+    }
+
+    private function formatSesiAdmin(JadwalMengajar $j): array
+    {
+        return [
+            'jadwal_mengajar_id' => $j->id,
+            'mapel'              => $j->mataPelajaran?->nama ?? '—',
+            'kelas'              => $j->kelasRel?->nama ?? $j->kelas ?? '—',
+            'jam_mulai'          => substr((string) $j->jam_mulai, 0, 5),
+            'jam_selesai'        => substr((string) $j->jam_selesai, 0, 5),
+            'jumlah_jp'          => $j->jumlah_jp,
+        ];
     }
 }

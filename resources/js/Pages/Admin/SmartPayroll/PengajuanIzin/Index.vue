@@ -9,13 +9,20 @@
                 <h2 class="text-xl font-semibold text-gray-900">Pengajuan Izin</h2>
                 <p class="text-sm text-gray-400 mt-0.5">Monitor dan proses semua pengajuan tenaga pendidik</p>
             </div>
-            <button @click="showModalBuat = true"
-                class="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm shadow-indigo-200">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                Input Manual
-            </button>
+            <div class="flex items-center gap-2">
+                <button @click="bukaSementara"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm shadow-amber-200">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Izin Sementara
+                </button>
+                <button @click="showModalBuat = true"
+                    class="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm shadow-indigo-200">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Input Manual
+                </button>
+            </div>
         </div>
 
         <!-- Summary Cards -->
@@ -232,6 +239,73 @@
         <!-- ── Modal Input Manual ─────────────────────────────────────────── -->
         <ModalInputManual :show="showModalBuat" :guru-list="guruList" :jenis-list="jenisList"
             @close="showModalBuat = false" @success="router.reload()" />
+
+        <!-- Modal Izin Sementara (admin buatkan) -->
+        <div v-if="showSem" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showSem = false" />
+            <div class="relative bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-base font-bold text-gray-900">⏱ Izin Sementara (buatkan)</h3>
+                    <button @click="showSem = false" class="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">Buat izin sementara (berbasis jam, hari ini) atas nama guru. Guru tetap tercatat hadir; sesi mengajar yang beririsan bisa dialihkan ke pengganti.</p>
+
+                <p v-if="semMsg" :class="semMsg.ok ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'" class="text-sm rounded-xl px-3 py-2 mb-3">{{ semMsg.text }}</p>
+
+                <template v-if="!semDone">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Guru</label>
+                            <select v-model="semForm.tenaga_pendidik_id" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-500">
+                                <option value="">— pilih guru —</option>
+                                <option v-for="g in guruList" :key="g.id" :value="g.id">{{ g.nama }} — {{ g.jabatan }}</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Jam mulai</label>
+                                <input v-model="semForm.jam_mulai" type="time" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-500" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Jam selesai</label>
+                                <input v-model="semForm.jam_selesai" type="time" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-500" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Alasan</label>
+                            <textarea v-model="semForm.alasan" rows="2" placeholder="cth: dipanggil keperluan mendadak…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-amber-500"></textarea>
+                        </div>
+                        <button @click="ajukanSementara" :disabled="semSaving" class="w-full py-3 rounded-xl bg-amber-500 text-white font-bold text-sm disabled:opacity-60">
+                            {{ semSaving ? 'Memproses…' : 'Buat Izin Sementara' }}
+                        </button>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <p v-if="!semSesi.length" class="text-sm text-gray-500 bg-gray-50 rounded-xl px-3 py-2">Tidak ada sesi mengajar terdampak.</p>
+                    <div v-else class="space-y-2.5">
+                        <p class="text-xs text-gray-500">{{ semSesi.length }} sesi beririsan — tunjuk pengganti (opsional).</p>
+                        <div v-for="s in semSesi" :key="s.jadwal_mengajar_id" class="rounded-xl border border-gray-100 p-3">
+                            <div class="flex items-center justify-between">
+                                <p class="text-sm font-semibold text-gray-800">{{ s.mapel }} <span class="text-gray-400 font-normal">· {{ s.kelas }}</span></p>
+                                <span class="text-[11px] text-gray-400 tabular-nums">{{ s.jam_mulai }}–{{ s.jam_selesai }}</span>
+                            </div>
+                            <div v-if="s.pengganti_nama" class="mt-2 text-xs text-emerald-600 font-semibold">✓ Pengganti: {{ s.pengganti_nama }}</div>
+                            <div v-else class="mt-2 flex gap-2">
+                                <select v-model="s.pengganti_id" class="flex-1 px-2.5 py-2 rounded-lg border border-gray-200 text-xs outline-none focus:border-amber-500">
+                                    <option value="">— pilih pengganti —</option>
+                                    <option v-for="g in guruList.filter(x => x.id != semForm.tenaga_pendidik_id)" :key="g.id" :value="g.id">{{ g.nama }}</option>
+                                </select>
+                                <button @click="tunjukPenggantiAdmin(s)" :disabled="!s.pengganti_id || s.assigning" class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold disabled:opacity-50">
+                                    {{ s.assigning ? '…' : 'Tunjuk' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <button @click="showSem = false; router.reload()" class="w-full mt-4 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm">Selesai</button>
+                </template>
+            </div>
+        </div>
         <Transition name="modal">
             <div v-if="showModalSetujui" class="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showModalSetujui = false" />
@@ -357,6 +431,52 @@ const filterTahun = ref(props.filters.tahun ?? new Date().getFullYear())
 
 // ── Modal Input Manual ────────────────────────────────────────────────────────
 const showModalBuat = ref(false)
+
+// ── Izin Sementara (admin buatkan atas nama guru) ──────────────────────────────
+const showSem = ref(false)
+const semForm = ref({ tenaga_pendidik_id: '', jam_mulai: '', jam_selesai: '', alasan: '' })
+const semSaving = ref(false)
+const semDone = ref(false)
+const semMsg = ref(null)
+const semSesi = ref([])
+
+function bukaSementara() {
+    showSem.value = true; semDone.value = false; semMsg.value = null; semSesi.value = []
+    semForm.value = { tenaga_pendidik_id: '', jam_mulai: '', jam_selesai: '', alasan: '' }
+}
+
+async function ajukanSementara() {
+    semMsg.value = null
+    const f = semForm.value
+    if (!f.tenaga_pendidik_id || !f.jam_mulai || !f.jam_selesai || f.alasan.trim().length < 3) {
+        semMsg.value = { ok: false, text: 'Lengkapi guru, jam mulai/selesai, dan alasan.' }; return
+    }
+    semSaving.value = true
+    try {
+        const res = await window.axios.post(route('admin.smart-payroll.pengajuan-izin.sementara.store'), { ...f, alasan: f.alasan.trim() })
+        semSesi.value = (res.data.data?.sesi_terdampak ?? []).map(s => ({ ...s, pengganti_id: '', pengganti_nama: null, assigning: false }))
+        semDone.value = true
+        semMsg.value = { ok: true, text: res.data.message }
+    } catch (e) {
+        const errs = e.response?.data?.errors
+        semMsg.value = { ok: false, text: errs ? Object.values(errs)[0][0] : (e.response?.data?.message || 'Gagal membuat izin sementara.') }
+    } finally { semSaving.value = false }
+}
+
+async function tunjukPenggantiAdmin(s) {
+    if (!s.pengganti_id) return
+    s.assigning = true
+    try {
+        await window.axios.post(route('admin.smart-payroll.pengajuan-izin.sementara.tunjuk-pengganti'), {
+            jadwal_mengajar_id: s.jadwal_mengajar_id,
+            tenaga_pendidik_id: semForm.value.tenaga_pendidik_id,
+            pengganti_id: s.pengganti_id,
+        })
+        s.pengganti_nama = props.guruList.find(g => g.id == s.pengganti_id)?.nama || 'Pengganti'
+    } catch (e) {
+        semMsg.value = { ok: false, text: e.response?.data?.message || 'Gagal menunjuk pengganti.' }
+    } finally { s.assigning = false }
+}
 
 const tahunList = computed(() => {
     const y = new Date().getFullYear()
