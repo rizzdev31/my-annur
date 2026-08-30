@@ -21,6 +21,9 @@ class SettingJamKerja extends Model
         'gunakan_jadwal_per_hari',
         'is_default',
         'is_aktif',
+        'is_template',
+        'induk_template_id',
+        'tenaga_pendidik_id',
     ];
 
     protected function casts(): array
@@ -31,7 +34,14 @@ class SettingJamKerja extends Model
             'gunakan_jadwal_per_hari' => 'boolean',
             'is_default'              => 'boolean',
             'is_aktif'                => 'boolean',
+            'is_template'             => 'boolean',
         ];
+    }
+
+    /** Hanya template (jam kerja bersama) — sembunyikan hasil generate per-guru. */
+    public function scopeTemplate($query)
+    {
+        return $query->where('is_template', true);
     }
 
     // ─── Helper ──────────────────────────────────────────────────────────────

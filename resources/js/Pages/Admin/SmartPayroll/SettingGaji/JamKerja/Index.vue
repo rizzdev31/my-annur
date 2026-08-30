@@ -71,6 +71,14 @@
                                     d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                         </Link>
+                        <button v-if="s.gunakan_jadwal_per_hari" @click="bukaGenerate(s)"
+                            class="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                            title="Generate ke guru (libur otomatis ikut jadwal mengajar)">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.83-4M7 12a3 3 0 10-2.83-4" />
+                            </svg>
+                        </button>
                         <button @click="duplikat(s)"
                             class="p-2 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                             title="Duplikat setting">
@@ -122,21 +130,125 @@
                     sekarang</Link>
             </div>
         </div>
+        <!-- Modal Generate ke Guru -->
+        <div v-if="showGen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showGen = false" />
+            <div class="relative bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h3 class="text-base font-bold text-gray-900">Generate ke Guru</h3>
+                        <p class="text-xs text-gray-400 mt-0.5">Template: <b>{{ genTemplate?.nama }}</b> · libur otomatis ikut jadwal mengajar</p>
+                    </div>
+                    <button @click="showGen = false" class="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+
+                <template v-if="!genResult">
+                    <div class="px-5 py-3 border-b border-gray-50 flex items-center gap-2">
+                        <input v-model="genSearch" placeholder="Cari guru…" class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-emerald-500" />
+                        <button @click="pilihSemua" class="text-xs font-semibold text-emerald-600 whitespace-nowrap">{{ semuaTerpilih ? 'Batal semua' : 'Pilih semua' }}</button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto px-5 py-2">
+                        <label v-for="g in guruTersaring" :key="g.id" class="flex items-center gap-3 py-2 border-b border-gray-50 cursor-pointer">
+                            <input type="checkbox" :checked="genSel.includes(g.id)" @change="toggleGuru(g.id)" class="w-4 h-4 rounded text-emerald-600" />
+                            <div class="min-w-0">
+                                <p class="text-sm font-medium text-gray-800 truncate">{{ g.nama }}</p>
+                                <p class="text-xs text-gray-400">{{ g.jabatan }}</p>
+                            </div>
+                        </label>
+                        <p v-if="!guruTersaring.length" class="text-sm text-gray-400 text-center py-6">Tidak ada guru.</p>
+                    </div>
+                    <div class="px-5 py-4 border-t border-gray-100 flex items-center gap-3">
+                        <span class="text-xs text-gray-500">{{ genSel.length }} guru dipilih</span>
+                        <button @click="jalankanGenerate" :disabled="!genSel.length || genSaving"
+                            class="ml-auto px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">
+                            {{ genSaving ? 'Memproses…' : 'Generate' }}
+                        </button>
+                    </div>
+                </template>
+
+                <!-- Hasil -->
+                <template v-else>
+                    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+                        <div class="rounded-xl bg-emerald-50 text-emerald-700 text-sm px-3 py-2">
+                            ✓ {{ genResult.generated.length }} guru di-generate.
+                        </div>
+                        <div v-if="genResult.dilewati.length" class="rounded-xl bg-amber-50 text-amber-700 text-sm px-3 py-2">
+                            <p class="font-semibold mb-1">Dilewati (tanpa jadwal mengajar):</p>
+                            <p class="text-xs">{{ genResult.dilewati.join(', ') }}</p>
+                        </div>
+                        <div v-if="genResult.peringatan.length" class="rounded-xl bg-orange-50 text-orange-700 text-sm px-3 py-2">
+                            <p class="font-semibold mb-1">Peringatan:</p>
+                            <ul class="text-xs list-disc pl-4 space-y-0.5"><li v-for="(w, i) in genResult.peringatan" :key="i">{{ w }}</li></ul>
+                        </div>
+                    </div>
+                    <div class="px-5 py-4 border-t border-gray-100">
+                        <button @click="showGen = false" class="w-full py-2.5 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm">Selesai</button>
+                    </div>
+                </template>
+            </div>
+        </div>
+
         <AppConfirm ref="confirm" />
     </AdminLayout>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AppConfirm from '@/Components/AppConfirm.vue'
 
 const confirm = ref(null)
 
-defineProps({
+const props = defineProps({
     settings: { type: Array, default: () => [] },
+    guruList: { type: Array, default: () => [] },
 })
+
+// ── Generate ke Guru ───────────────────────────────────────────────────────
+const showGen = ref(false)
+const genTemplate = ref(null)
+const genSel = ref([])
+const genSearch = ref('')
+const genSaving = ref(false)
+const genResult = ref(null)
+
+const guruTersaring = computed(() => {
+    const q = genSearch.value.trim().toLowerCase()
+    return q ? props.guruList.filter(g => g.nama.toLowerCase().includes(q)) : props.guruList
+})
+const semuaTerpilih = computed(() => guruTersaring.value.length > 0 && guruTersaring.value.every(g => genSel.value.includes(g.id)))
+
+function bukaGenerate(s) {
+    genTemplate.value = s; genSel.value = []; genSearch.value = ''; genResult.value = null; showGen.value = true
+}
+function toggleGuru(id) {
+    const i = genSel.value.indexOf(id)
+    if (i === -1) genSel.value.push(id); else genSel.value.splice(i, 1)
+}
+function pilihSemua() {
+    if (semuaTerpilih.value) {
+        const ids = guruTersaring.value.map(g => g.id)
+        genSel.value = genSel.value.filter(id => !ids.includes(id))
+    } else {
+        const set = new Set(genSel.value)
+        guruTersaring.value.forEach(g => set.add(g.id))
+        genSel.value = [...set]
+    }
+}
+async function jalankanGenerate() {
+    if (!genSel.value.length) return
+    genSaving.value = true
+    try {
+        const res = await window.axios.post(
+            route('admin.smart-payroll.setting-gaji.jam-kerja.generate', genTemplate.value.id),
+            { guru_ids: genSel.value },
+        )
+        genResult.value = res.data.data
+    } catch (e) {
+        alert(e.response?.data?.message || 'Gagal generate.')
+    } finally { genSaving.value = false }
+}
 
 const hariAll = [
     { key: 'senin', short: 'Sen' }, { key: 'selasa', short: 'Sel' },

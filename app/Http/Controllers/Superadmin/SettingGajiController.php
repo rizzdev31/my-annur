@@ -284,7 +284,36 @@ class SettingGajiController extends Controller
     public function jamKerjaIndex()
     {
         return Inertia::render('Admin/SmartPayroll/SettingGaji/JamKerja/Index', [
-            'settings' => SettingJamKerja::orderByDesc('is_default')->orderBy('nama')->get(),
+            // Hanya template (hasil generate per-guru disembunyikan).
+            'settings' => SettingJamKerja::template()->orderByDesc('is_default')->orderBy('nama')->get(),
+            // Guru untuk pemilih generate.
+            'guruList' => TenagaPendidik::aktif()->with(['user:id,name', 'jabatan:id,nama_jabatan'])
+                ->get()->map(fn ($g) => [
+                    'id'      => $g->id,
+                    'nama'    => $g->user?->name ?? ('Guru #' . $g->id),
+                    'jabatan' => $g->jabatan?->nama_jabatan ?? '-',
+                ])->sortBy('nama')->values(),
+        ]);
+    }
+
+    /** POST jam-kerja/{jamKerja}/generate — generate jam kerja per-guru dari jadwal mengajar. */
+    public function jamKerjaGenerate(Request $request, SettingJamKerja $jamKerja)
+    {
+        $data = $request->validate([
+            'guru_ids'   => 'required|array|min:1',
+            'guru_ids.*' => 'integer|exists:tenaga_pendidik,id',
+        ]);
+        if (!$jamKerja->gunakan_jadwal_per_hari || empty($jamKerja->jadwal_per_hari)) {
+            return response()->json(['success' => false, 'message' => 'Template harus memakai jadwal per-hari (isi jam Sen–Sab dulu).'], 422);
+        }
+
+        $hasil = (new \App\Services\GenerateJamKerjaService())->generate($jamKerja, $data['guru_ids']);
+
+        return response()->json([
+            'success' => true,
+            'message' => count($hasil['generated']) . ' guru di-generate.'
+                . (count($hasil['dilewati']) ? ' ' . count($hasil['dilewati']) . ' dilewati (tanpa jadwal mengajar).' : ''),
+            'data'    => $hasil,
         ]);
     }
 
@@ -312,7 +341,7 @@ class SettingGajiController extends Controller
             'jadwal_per_hari.*.toleransi'  => 'nullable|integer|min:0|max:120',
         ]);
 
-        SettingJamKerja::create(array_merge($data, ['is_aktif' => true]));
+        SettingJamKerja::create(array_merge($data, ['is_aktif' => true, 'is_template' => true]));
 
         return redirect()->route('admin.smart-payroll.setting-gaji.jam-kerja.index')
             ->with('success', 'Setting jam kerja berhasil disimpan.');

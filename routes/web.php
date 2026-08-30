@@ -443,6 +443,8 @@ Route::prefix('admin')
                     [SettingGajiController::class, 'setDefault'])->name('jam-kerja.set-default');
                 Route::post('jam-kerja/{jamKerja}/duplicate',
                     [SettingGajiController::class, 'jamKerjaDuplicate'])->name('jam-kerja.duplicate');
+                Route::post('jam-kerja/{jamKerja}/generate',
+                    [SettingGajiController::class, 'jamKerjaGenerate'])->name('jam-kerja.generate');
                 Route::get('jam-kerja',                 [SettingGajiController::class, 'jamKerjaIndex'])->name('jam-kerja.index');
                 Route::get('jam-kerja/create',          [SettingGajiController::class, 'jamKerjaCreate'])->name('jam-kerja.create');
                 Route::post('jam-kerja',                [SettingGajiController::class, 'jamKerjaStore'])->name('jam-kerja.store');
