@@ -74,6 +74,10 @@ class GenerateJamKerjaService
                 ];
             }
 
+            // Kolom legacy global (NOT NULL) — mode per-hari tak memakainya, tapi
+            // tetap diisi agar valid. Ambil dari template atau hari pertama yg ada.
+            [$repMasuk, $repPulang] = $this->jamRepresentatif($template, $tpl);
+
             // Satu setting per-guru (re-generate memperbarui baris yang sama).
             $setting = SettingJamKerja::updateOrCreate(
                 ['tenaga_pendidik_id' => $guru->id, 'is_template' => false],
@@ -81,7 +85,11 @@ class GenerateJamKerjaService
                     'nama'                    => 'Jam Kerja — ' . $nama,
                     'jadwal_per_hari'         => $jadwal,
                     'gunakan_jadwal_per_hari' => true,
-                    'toleransi_terlambat'     => $template->toleransi_terlambat,
+                    'toleransi_terlambat'     => $template->toleransi_terlambat ?? 15,
+                    'jam_masuk'               => $repMasuk,
+                    'jam_pulang'              => $repPulang,
+                    'hari_kerja'              => [],
+                    'total_jam_kerja_sehari'  => $template->total_jam_kerja_sehari ?? 480,
                     'is_default'              => false,
                     'is_aktif'                => true,
                     'induk_template_id'       => $template->id,
@@ -98,5 +106,22 @@ class GenerateJamKerjaService
         }
 
         return ['generated' => $generated, 'dilewati' => $dilewati, 'peringatan' => $peringatan];
+    }
+
+    /** Jam masuk/pulang representatif utk isi kolom legacy NOT NULL. */
+    private function jamRepresentatif(SettingJamKerja $template, array $tpl): array
+    {
+        $masuk = $template->jam_masuk;
+        $pulang = $template->jam_pulang;
+        if (!$masuk || !$pulang) {
+            foreach (self::HARI as $h) {
+                if (!empty($tpl[$h]['jam_masuk']) && !empty($tpl[$h]['jam_pulang'])) {
+                    $masuk = $masuk ?: $tpl[$h]['jam_masuk'];
+                    $pulang = $pulang ?: $tpl[$h]['jam_pulang'];
+                    break;
+                }
+            }
+        }
+        return [$masuk ?: '07:00', $pulang ?: '15:00'];
     }
 }
