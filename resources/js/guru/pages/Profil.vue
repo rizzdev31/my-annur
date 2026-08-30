@@ -168,27 +168,40 @@ const sections = computed(() => {
             <!-- ══ HARI LIBUR MINGGUAN ══ -->
             <section class="mt-4 bg-white rounded-2xl border border-gray-100 p-4">
                 <p class="text-sm font-bold text-gray-800">Hari Libur Mingguan</p>
-                <p class="text-[11px] text-gray-400 mt-0.5">Ajukan hari libur tetapmu. Berlaku setelah disetujui admin.</p>
 
-                <div v-if="profil?.hari_libur_diajukan" class="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-                    ⏳ Menunggu persetujuan admin: <b>{{ profil.hari_libur_diajukan.length ? profil.hari_libur_diajukan.map(labelHari).join(', ') : 'tidak ada libur' }}</b>
-                </div>
-                <div v-else-if="profil?.hari_libur?.length" class="mt-3 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
-                    ✓ Disetujui: <b>{{ profil.hari_libur.map(labelHari).join(', ') }}</b>
-                </div>
+                <!-- 1) Menunggu persetujuan → terkunci -->
+                <template v-if="profil?.hari_libur_diajukan">
+                    <div class="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-3 text-xs text-amber-700 leading-relaxed">
+                        ⏳ <b>Menunggu persetujuan admin.</b><br>
+                        Diajukan: <b>{{ profil.hari_libur_diajukan.length ? profil.hari_libur_diajukan.map(labelHari).join(', ') : 'tidak ada libur' }}</b>
+                    </div>
+                    <p class="text-[11px] text-gray-400 mt-1.5">🔒 Terkunci sampai admin memproses. Jika ditolak, kamu bisa mengajukan ulang.</p>
+                </template>
 
-                <div class="mt-3 flex flex-wrap gap-2">
-                    <button v-for="h in hariOpsi" :key="h.key" type="button" @click="toggleLibur(h.key)"
-                        :class="['px-3 py-2 rounded-xl border text-xs font-medium transition-colors',
-                            liburSel.includes(h.key) ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 text-gray-500']">
-                        {{ h.label }}
+                <!-- 2) Sudah disetujui → terkunci (hanya admin yang bisa ubah) -->
+                <template v-else-if="profil?.hari_libur?.length">
+                    <div class="mt-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-3 text-xs text-emerald-700">
+                        ✓ <b>Hari libur sudah ditetapkan:</b> {{ profil.hari_libur.map(labelHari).join(', ') }}
+                    </div>
+                    <p class="text-[11px] text-gray-400 mt-1.5">🔒 Terkunci. Untuk mengubah, hubungi admin.</p>
+                </template>
+
+                <!-- 3) Belum mengajukan / ditolak → form (sekali ajukan) -->
+                <template v-else>
+                    <p class="text-[11px] text-gray-400 mt-0.5 mb-2">Ajukan hari libur tetapmu (sekali). Berlaku setelah disetujui admin.</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button v-for="h in hariOpsi" :key="h.key" type="button" @click="toggleLibur(h.key)"
+                            :class="['px-3 py-2 rounded-xl border text-xs font-medium transition-colors',
+                                liburSel.includes(h.key) ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 text-gray-500']">
+                            {{ h.label }}
+                        </button>
+                    </div>
+                    <p v-if="liburMsg" :class="liburMsg.ok ? 'text-emerald-600' : 'text-red-500'" class="text-xs mt-2">{{ liburMsg.text }}</p>
+                    <button @click="ajukanLibur" :disabled="liburSaving"
+                        class="mt-3 w-full py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm disabled:opacity-60">
+                        {{ liburSaving ? 'Mengirim…' : 'Ajukan Hari Libur' }}
                     </button>
-                </div>
-                <p v-if="liburMsg" :class="liburMsg.ok ? 'text-emerald-600' : 'text-red-500'" class="text-xs mt-2">{{ liburMsg.text }}</p>
-                <button @click="ajukanLibur" :disabled="liburSaving"
-                    class="mt-3 w-full py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm disabled:opacity-60">
-                    {{ liburSaving ? 'Mengirim…' : 'Ajukan Hari Libur' }}
-                </button>
+                </template>
             </section>
 
             <!-- ══ LOGOUT ══ -->

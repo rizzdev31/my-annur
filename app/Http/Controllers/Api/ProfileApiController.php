@@ -160,6 +160,14 @@ class ProfileApiController extends Controller
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return response()->json(['success' => false, 'message' => 'Bukan tenaga pendidik.'], 404);
 
+        // Sekali ajukan: terkunci bila masih menunggu, atau sudah ditetapkan.
+        if ($tp->hari_libur_diajukan !== null) {
+            return response()->json(['success' => false, 'message' => 'Pengajuan hari libur masih menunggu persetujuan admin.'], 422);
+        }
+        if (!empty($tp->hari_libur)) {
+            return response()->json(['success' => false, 'message' => 'Hari libur sudah ditetapkan. Hubungi admin untuk mengubah.'], 422);
+        }
+
         $tp->update(['hari_libur_diajukan' => array_values(array_unique($data['hari_libur']))]);
 
         \App\Services\NotifikasiService::keSuperadmin(
