@@ -127,19 +127,17 @@ class JadwalMengajarController extends Controller
             return back()->with('error', $err);
         }
 
-        // Cek bentrok jam (guru yang sama, hari yang sama, waktu tumpang tindih)
+        // Cek bentrok jam (guru sama, hari sama, waktu tumpang tindih).
+        // Overlap STRICT (interval setengah-terbuka): dua sesi bentrok HANYA bila
+        //   jam_mulai < jam_selesai_baru  DAN  jam_selesai > jam_mulai_baru.
+        // Sesi BERURUTAN (mis. 10:20–11:30 lalu 11:30/11:31–12:40) TIDAK bentrok,
+        // karena batas yang bersinggungan tidak dihitung tumpang tindih.
         $bentrok = JadwalMengajar::where('tenaga_pendidik_id', $data['tenaga_pendidik_id'])
             ->where('tahun_ajaran_id', $data['tahun_ajaran_id'])
             ->where('hari', $data['hari'])
             ->where('is_aktif', true)
-            ->where(fn($q) =>
-                $q->whereBetween('jam_mulai', [$data['jam_mulai'], $data['jam_selesai']])
-                  ->orWhereBetween('jam_selesai', [$data['jam_mulai'], $data['jam_selesai']])
-                  ->orWhere(fn($q2) =>
-                      $q2->where('jam_mulai', '<=', $data['jam_mulai'])
-                         ->where('jam_selesai', '>=', $data['jam_selesai'])
-                  )
-            )
+            ->where('jam_mulai', '<', $data['jam_selesai'])
+            ->where('jam_selesai', '>', $data['jam_mulai'])
             ->exists();
 
         if ($bentrok) {
