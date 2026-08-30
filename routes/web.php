@@ -166,6 +166,10 @@ Route::prefix('admin')
                 [TenagaPendidikController::class, 'rekapAbsensi'])->name('tenaga-pendidik.rekap-absensi');
             Route::patch('tenaga-pendidik/{tenagaPendidik}/toggle-status',
                 [TenagaPendidikController::class, 'toggleStatus'])->name('tenaga-pendidik.toggle-status');
+            Route::post('tenaga-pendidik/{tenagaPendidik}/libur/setujui',
+                [TenagaPendidikController::class, 'setujuiLibur'])->name('tenaga-pendidik.libur.setujui');
+            Route::post('tenaga-pendidik/{tenagaPendidik}/libur/tolak',
+                [TenagaPendidikController::class, 'tolakLibur'])->name('tenaga-pendidik.libur.tolak');
 
             // Jabatan Guru (pivot multi-jabatan)
             Route::get('tenaga-pendidik/{tenagaPendidik}/jabatan',

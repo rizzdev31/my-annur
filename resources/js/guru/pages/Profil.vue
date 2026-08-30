@@ -11,12 +11,38 @@ const loading = ref(true)
 const konfirmKeluar = ref(false)
 const keluarBusy = ref(false)
 
+// Hari libur mingguan (ajukan ke admin)
+const hariOpsi = [
+    { key: 'senin', label: 'Sen' }, { key: 'selasa', label: 'Sel' }, { key: 'rabu', label: 'Rab' },
+    { key: 'kamis', label: 'Kam' }, { key: 'jumat', label: 'Jum' }, { key: 'sabtu', label: 'Sab' }, { key: 'ahad', label: 'Ahd' },
+]
+const labelHari = (k) => hariOpsi.find(h => h.key === k)?.label ?? k
+const liburSel = ref([])
+const liburSaving = ref(false)
+const liburMsg = ref(null)
+
+function toggleLibur(k) {
+    const i = liburSel.value.indexOf(k)
+    if (i === -1) liburSel.value.push(k); else liburSel.value.splice(i, 1)
+}
+async function ajukanLibur() {
+    liburSaving.value = true; liburMsg.value = null
+    try {
+        await api.post('/profile/hari-libur', { hari_libur: liburSel.value })
+        liburMsg.value = { ok: true, text: 'Usulan terkirim. Menunggu persetujuan admin.' }
+        await load()
+    } catch (e) {
+        liburMsg.value = { ok: false, text: e.response?.data?.message || 'Gagal mengirim usulan.' }
+    } finally { liburSaving.value = false }
+}
+
 async function load() {
     loading.value = true
     try {
         const res = await api.get('/profile')
         profil.value = res.data.data ?? res.data
         auth.user = profil.value
+        liburSel.value = [...(profil.value.hari_libur_diajukan ?? profil.value.hari_libur ?? [])]
     } catch (_) {/* diamkan */} finally {
         loading.value = false
     }
@@ -138,6 +164,32 @@ const sections = computed(() => {
                     </div>
                 </section>
             </div>
+
+            <!-- ══ HARI LIBUR MINGGUAN ══ -->
+            <section class="mt-4 bg-white rounded-2xl border border-gray-100 p-4">
+                <p class="text-sm font-bold text-gray-800">Hari Libur Mingguan</p>
+                <p class="text-[11px] text-gray-400 mt-0.5">Ajukan hari libur tetapmu. Berlaku setelah disetujui admin.</p>
+
+                <div v-if="profil?.hari_libur_diajukan" class="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                    ⏳ Menunggu persetujuan admin: <b>{{ profil.hari_libur_diajukan.length ? profil.hari_libur_diajukan.map(labelHari).join(', ') : 'tidak ada libur' }}</b>
+                </div>
+                <div v-else-if="profil?.hari_libur?.length" class="mt-3 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+                    ✓ Disetujui: <b>{{ profil.hari_libur.map(labelHari).join(', ') }}</b>
+                </div>
+
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <button v-for="h in hariOpsi" :key="h.key" type="button" @click="toggleLibur(h.key)"
+                        :class="['px-3 py-2 rounded-xl border text-xs font-medium transition-colors',
+                            liburSel.includes(h.key) ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 text-gray-500']">
+                        {{ h.label }}
+                    </button>
+                </div>
+                <p v-if="liburMsg" :class="liburMsg.ok ? 'text-emerald-600' : 'text-red-500'" class="text-xs mt-2">{{ liburMsg.text }}</p>
+                <button @click="ajukanLibur" :disabled="liburSaving"
+                    class="mt-3 w-full py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm disabled:opacity-60">
+                    {{ liburSaving ? 'Mengirim…' : 'Ajukan Hari Libur' }}
+                </button>
+            </section>
 
             <!-- ══ LOGOUT ══ -->
             <button @click="konfirmKeluar = true"

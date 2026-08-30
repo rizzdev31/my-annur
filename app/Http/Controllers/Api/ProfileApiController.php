@@ -141,6 +141,39 @@ class ProfileApiController extends Controller
             'no_rekening'         => $tp?->no_rekening,
             'nama_bank'           => $tp?->nama_bank,
             'nama_rekening'       => $tp?->nama_rekening,
+            // Hari libur mingguan
+            'hari_libur'          => $tp?->hari_libur ?? [],
+            'hari_libur_diajukan' => $tp?->hari_libur_diajukan,   // null = tak ada usulan tertunda
         ];
+    }
+
+    /**
+     * POST /profile/hari-libur — guru MENGAJUKAN usulan hari libur (menunggu approval admin).
+     * Tidak langsung berlaku; admin yang menyetujui lalu generate jam kerja.
+     */
+    public function ajukanLibur(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'hari_libur'   => ['present', 'array'],
+            'hari_libur.*' => [Rule::in(['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'ahad'])],
+        ]);
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Bukan tenaga pendidik.'], 404);
+
+        $tp->update(['hari_libur_diajukan' => array_values(array_unique($data['hari_libur']))]);
+
+        \App\Services\NotifikasiService::keSuperadmin(
+            'Pengajuan Hari Libur',
+            ($request->user()->name ?? 'Guru') . ' mengajukan hari libur: '
+                . (empty($data['hari_libur']) ? '(tidak ada)' : implode(', ', $data['hari_libur'])) . '.',
+            'izin',
+            ['type' => 'libur', 'route' => '/master/tenaga-pendidik']
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Usulan hari libur terkirim. Menunggu persetujuan admin.',
+            'data'    => ['hari_libur_diajukan' => $tp->hari_libur_diajukan],
+        ]);
     }
 }

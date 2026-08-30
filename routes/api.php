@@ -54,6 +54,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/profile', [ProfileApiController::class, 'show']);
         Route::put('/profile', [ProfileApiController::class, 'update']);
         Route::post('/profile/foto', [ProfileApiController::class, 'updateFoto']);
+        Route::post('/profile/hari-libur', [ProfileApiController::class, 'ajukanLibur']);
         Route::put('/profile/password', [ProfileApiController::class, 'updatePassword']);
 
         // Pengumuman/pamflet pop-up (semua user aplikasi)

@@ -303,6 +303,7 @@ class TenagaPendidikController extends Controller
                 'setting_jam_kerja_id'=> $tenagaPendidik->setting_jam_kerja_id,
                 'is_mukim'            => $tenagaPendidik->is_mukim,
                 'hari_libur'          => $tenagaPendidik->hari_libur ?? [],
+                'hari_libur_diajukan' => $tenagaPendidik->hari_libur_diajukan,
                 'jenis_kelamin'       => $tenagaPendidik->jenis_kelamin,
                 'jenis_guru'          => $tenagaPendidik->jenis_guru,
                 'tempat_lahir'        => $tenagaPendidik->tempat_lahir,
@@ -396,6 +397,40 @@ class TenagaPendidikController extends Controller
 
         return redirect()->route('admin.master.tenaga-pendidik.index')
             ->with('success', "Data {$request->name} berhasil diperbarui.");
+    }
+
+    /** Setujui usulan hari libur guru → salin ke hari_libur (berlaku setelah generate). */
+    public function setujuiLibur(TenagaPendidik $tenagaPendidik): \Illuminate\Http\JsonResponse
+    {
+        $diajukan = $tenagaPendidik->hari_libur_diajukan;
+        if ($diajukan === null) {
+            return response()->json(['success' => false, 'message' => 'Tidak ada pengajuan libur.'], 422);
+        }
+        $tenagaPendidik->update(['hari_libur' => $diajukan, 'hari_libur_diajukan' => null]);
+
+        if ($tenagaPendidik->user) {
+            \App\Services\NotifikasiService::kirim(
+                $tenagaPendidik->user->id, 'Hari Libur Disetujui',
+                'Hari libur Anda: ' . (empty($diajukan) ? '(tidak ada)' : implode(', ', $diajukan))
+                    . '. Berlaku setelah admin men-generate jam kerja.',
+                'izin', ['type' => 'libur', 'route' => '/profil']
+            );
+        }
+        return response()->json(['success' => true, 'message' => 'Pengajuan libur disetujui.', 'data' => ['hari_libur' => $tenagaPendidik->hari_libur]]);
+    }
+
+    /** Tolak usulan hari libur guru (hapus pengajuan, hari_libur tak berubah). */
+    public function tolakLibur(TenagaPendidik $tenagaPendidik): \Illuminate\Http\JsonResponse
+    {
+        $tenagaPendidik->update(['hari_libur_diajukan' => null]);
+        if ($tenagaPendidik->user) {
+            \App\Services\NotifikasiService::kirim(
+                $tenagaPendidik->user->id, 'Pengajuan Hari Libur Ditolak',
+                'Usulan hari libur Anda belum disetujui admin. Silakan koordinasi.',
+                'izin', ['type' => 'libur', 'route' => '/profil']
+            );
+        }
+        return response()->json(['success' => true, 'message' => 'Pengajuan libur ditolak.']);
     }
 
     public function destroy(TenagaPendidik $tenagaPendidik)

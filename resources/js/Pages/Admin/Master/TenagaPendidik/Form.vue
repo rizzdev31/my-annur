@@ -252,6 +252,18 @@
                                     </label>
                                 </div>
                                 <p class="text-xs text-gray-400 mt-1.5">Hari libur tetap mingguan (mis. Sabtu). Dipakai saat Generate Jam Kerja "Dari Hari Libur Guru". Kosongkan bila tidak ada.</p>
+
+                                <!-- Pengajuan libur dari guru (via PWA) -->
+                                <div v-if="liburDiajukan !== null" class="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
+                                    <p class="text-xs font-semibold text-amber-800">Guru mengajukan hari libur:
+                                        <span v-if="liburDiajukan.length">{{ liburDiajukan.map(labelHari).join(', ') }}</span>
+                                        <span v-else class="italic">(tidak ada libur)</span>
+                                    </p>
+                                    <div class="flex gap-2 mt-2">
+                                        <button type="button" @click="setujuiLibur" :disabled="liburBusy" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">Setujui</button>
+                                        <button type="button" @click="tolakLibur" :disabled="liburBusy" class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 text-xs font-semibold disabled:opacity-50">Tolak</button>
+                                    </div>
+                                </div>
                             </FormField>
 
                         </div>
@@ -337,6 +349,28 @@ const hariOpsi = [
     { key: 'kamis', label: 'Kam' }, { key: 'jumat', label: 'Jum' }, { key: 'sabtu', label: 'Sab' },
     { key: 'ahad', label: 'Ahd' },
 ]
+const labelHari = (k) => hariOpsi.find(h => h.key === k)?.label ?? k
+
+// Pengajuan libur dari guru (PWA) → admin setujui/tolak
+const liburDiajukan = ref(props.guru?.hari_libur_diajukan ?? null)
+const liburBusy = ref(false)
+async function setujuiLibur() {
+    liburBusy.value = true
+    try {
+        const res = await window.axios.post(route('admin.master.tenaga-pendidik.libur.setujui', props.guru.id))
+        form.hari_libur = res.data.data?.hari_libur ?? form.hari_libur
+        liburDiajukan.value = null
+    } catch (e) { alert(e.response?.data?.message || 'Gagal menyetujui.') }
+    finally { liburBusy.value = false }
+}
+async function tolakLibur() {
+    liburBusy.value = true
+    try {
+        await window.axios.post(route('admin.master.tenaga-pendidik.libur.tolak', props.guru.id))
+        liburDiajukan.value = null
+    } catch (e) { alert(e.response?.data?.message || 'Gagal menolak.') }
+    finally { liburBusy.value = false }
+}
 
 const form = useForm({
     // Akun
