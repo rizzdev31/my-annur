@@ -345,6 +345,7 @@ Route::prefix('admin')
             Route::post('pengajuan-izin/sementara/preview',          [PengajuanIzinController::class, 'sementaraPreview'])->name('pengajuan-izin.sementara.preview');
             Route::post('pengajuan-izin/sementara',                  [PengajuanIzinController::class, 'sementaraStore'])->name('pengajuan-izin.sementara.store');
             Route::post('pengajuan-izin/sementara/tunjuk-pengganti', [PengajuanIzinController::class, 'sementaraTunjukPengganti'])->name('pengajuan-izin.sementara.tunjuk-pengganti');
+            Route::post('pengajuan-izin/{pengajuanIzin}/sementara-batal', [PengajuanIzinController::class, 'sementaraBatal'])->name('pengajuan-izin.sementara-batal');
             Route::resource('pengajuan-izin', PengajuanIzinController::class)
                 ->only(['index', 'create', 'store', 'show']);
 

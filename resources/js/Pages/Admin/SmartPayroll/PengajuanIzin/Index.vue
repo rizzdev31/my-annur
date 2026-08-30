@@ -302,7 +302,10 @@
                             </div>
                         </div>
                     </div>
-                    <button @click="showSem = false; router.reload()" class="w-full mt-4 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm">Selesai</button>
+                    <div class="flex gap-2 mt-4">
+                        <button @click="batalSementaraAdmin" :disabled="semBatal" class="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold text-sm disabled:opacity-50">{{ semBatal ? '…' : 'Batalkan Izin' }}</button>
+                        <button @click="showSem = false; router.reload()" class="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm">Selesai</button>
+                    </div>
                 </template>
             </div>
         </div>
@@ -439,6 +442,8 @@ const semSaving = ref(false)
 const semDone = ref(false)
 const semMsg = ref(null)
 const semSesi = ref([])
+const semIzinId = ref(null)
+const semBatal = ref(false)
 
 function bukaSementara() {
     showSem.value = true; semDone.value = false; semMsg.value = null; semSesi.value = []
@@ -454,6 +459,7 @@ async function ajukanSementara() {
     semSaving.value = true
     try {
         const res = await window.axios.post(route('admin.smart-payroll.pengajuan-izin.sementara.store'), { ...f, alasan: f.alasan.trim() })
+        semIzinId.value = res.data.data?.izin_id ?? null
         semSesi.value = (res.data.data?.sesi_terdampak ?? []).map(s => ({ ...s, pengganti_id: '', pengganti_nama: null, assigning: false }))
         semDone.value = true
         semMsg.value = { ok: true, text: res.data.message }
@@ -461,6 +467,19 @@ async function ajukanSementara() {
         const errs = e.response?.data?.errors
         semMsg.value = { ok: false, text: errs ? Object.values(errs)[0][0] : (e.response?.data?.message || 'Gagal membuat izin sementara.') }
     } finally { semSaving.value = false }
+}
+
+async function batalSementaraAdmin() {
+    if (!semIzinId.value) return
+    if (!confirm('Batalkan izin sementara ini? Penunjukan pengganti yang belum mengajar akan dibatalkan.')) return
+    semBatal.value = true
+    try {
+        const res = await window.axios.post(route('admin.smart-payroll.pengajuan-izin.sementara-batal', semIzinId.value))
+        semMsg.value = { ok: true, text: res.data.message || 'Dibatalkan.' }
+        showSem.value = false; router.reload()
+    } catch (e) {
+        semMsg.value = { ok: false, text: e.response?.data?.message || 'Gagal membatalkan.' }
+    } finally { semBatal.value = false }
 }
 
 async function tunjukPenggantiAdmin(s) {

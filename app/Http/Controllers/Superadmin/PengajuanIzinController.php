@@ -299,6 +299,20 @@ class PengajuanIzinController extends Controller
         return response()->json(['success' => true, 'message' => 'Pengganti ditunjuk.', 'data' => ['absensi_id' => $absensi->id]]);
     }
 
+    /** POST pengajuan-izin/{izin}/sementara-batal — batalkan izin sementara + rollback pengganti. */
+    public function sementaraBatal(PengajuanIzin $pengajuanIzin): JsonResponse
+    {
+        if (!$pengajuanIzin->is_sementara) {
+            return response()->json(['success' => false, 'message' => 'Bukan izin sementara.'], 422);
+        }
+        try {
+            $r = $this->izinSementara->batalkan($pengajuanIzin);
+        } catch (\DomainException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+        return response()->json(['success' => true, 'message' => 'Izin sementara dibatalkan.', 'data' => $r]);
+    }
+
     private function formatSesiAdmin(JadwalMengajar $j): array
     {
         return [

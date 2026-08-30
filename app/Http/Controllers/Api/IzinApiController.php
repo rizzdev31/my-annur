@@ -274,6 +274,28 @@ class IzinApiController extends Controller
         ]);
     }
 
+    /** POST /izin/sementara/{id}/batal — batalkan izin sementara + rollback pengganti belum absen. */
+    public function sementaraBatal(Request $request, int $id): JsonResponse
+    {
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return $this->notFound();
+
+        $izin = PengajuanIzin::where('tenaga_pendidik_id', $tp->id)->where('is_sementara', true)->find($id);
+        if (!$izin) return response()->json(['success' => false, 'message' => 'Izin sementara tidak ditemukan.'], 404);
+
+        try {
+            $r = $this->izinSementara->batalkan($izin);
+        } catch (\DomainException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Izin sementara dibatalkan.'
+                . ($r['pengganti_terlanjur'] ? ' Catatan: ' . $r['pengganti_terlanjur'] . ' sesi tetap (pengganti sudah mengajar).' : ''),
+            'data'    => $r,
+        ]);
+    }
+
     private function formatSesi(JadwalMengajar $j): array
     {
         return [

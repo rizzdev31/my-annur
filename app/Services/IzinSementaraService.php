@@ -86,6 +86,55 @@ class IzinSementaraService
             ->get();
     }
 
+    /**
+     * Batalkan izin sementara + rollback penunjukan pengganti yang BELUM diajar.
+     * Sesi yang penggantinya sudah terlanjur mengajar (jp>0/absen) DIPERTAHANKAN.
+     * Sesi yang dibatalkan → record AbsensiMengajar dihapus (revert bersih ke normal).
+     *
+     * @return array{pengganti_dibatalkan:int, pengganti_terlanjur:int}
+     */
+    public function batalkan(PengajuanIzin $izin): array
+    {
+        if (!$izin->is_sementara) {
+            throw new \DomainException('Bukan izin sementara.');
+        }
+        if ($izin->status === 'dibatalkan') {
+            throw new \DomainException('Izin sudah dibatalkan.');
+        }
+
+        $guru = $izin->tenagaPendidik;
+        $tgl  = $izin->tanggal_mulai;
+
+        // Batasi hanya sesi yang beririsan window izin ini (hindari menyentuh
+        // pengganti dari izin lain di hari sama).
+        $jadwalIds = $this->sesiTerdampak(
+            $guru, $tgl, (string) $izin->jam_mulai, (string) $izin->jam_selesai
+        )->pluck('id')->all();
+
+        $dibatalkan = 0; $terlanjur = 0;
+
+        if ($jadwalIds) {
+            $sesi = \App\Models\AbsensiMengajar::where('tenaga_pendidik_id', $guru->id)
+                ->whereDate('tanggal', $tgl->toDateString())
+                ->whereIn('jadwal_mengajar_id', $jadwalIds)
+                ->where('status', 'pengganti')
+                ->whereNotNull('digantikan_oleh')
+                ->get();
+
+            foreach ($sesi as $s) {
+                if (!is_null($s->jam_selesai_aktual) || (int) $s->jp_terlaksana > 0) {
+                    $terlanjur++; continue;   // pengganti sudah mengajar → pertahankan
+                }
+                $s->delete();                 // revert bersih
+                $dibatalkan++;
+            }
+        }
+
+        $izin->update(['status' => 'dibatalkan', 'tanggal_keputusan' => TimezoneHelper::now()]);
+
+        return ['pengganti_dibatalkan' => $dibatalkan, 'pengganti_terlanjur' => $terlanjur];
+    }
+
     /** Validasi dasar window (dipakai endpoint Tahap 2). */
     public function windowValid(string $jamMulai, string $jamSelesai): bool
     {

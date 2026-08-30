@@ -65,6 +65,8 @@ const showSem = ref(false)
 const semForm = ref({ jam_mulai: '', jam_selesai: '', alasan: '' })
 const semSaving = ref(false)
 const izinSemDone = ref(false)
+const izinSemId = ref(null)
+const semBatal = ref(false)
 const sesiTerdampak = ref([])      // {jadwal_mengajar_id, mapel, kelas, jam_*, pengganti_id, pengganti_nama, assigning}
 const penggantiOpsi = ref([])
 
@@ -85,6 +87,7 @@ async function ajukanSementara() {
             jam_mulai: f.jam_mulai, jam_selesai: f.jam_selesai, alasan: f.alasan.trim(),
         })
         const d = res.data.data ?? {}
+        izinSemId.value = d.izin_id ?? null
         sesiTerdampak.value = (d.sesi_terdampak ?? []).map(s => ({ ...s, pengganti_id: '', pengganti_nama: null, assigning: false }))
         izinSemDone.value = true
         msg.value = { ok: true, text: res.data.message }
@@ -96,6 +99,19 @@ async function ajukanSementara() {
         const errs = e.response?.data?.errors
         msg.value = { ok: false, text: errs ? Object.values(errs)[0][0] : (e.response?.data?.message || 'Gagal mengajukan izin sementara.') }
     } finally { semSaving.value = false }
+}
+
+async function batalSementara() {
+    if (!izinSemId.value) return
+    if (!confirm('Batalkan izin sementara ini? Penunjukan pengganti yang belum mengajar akan dibatalkan.')) return
+    semBatal.value = true
+    try {
+        const res = await api.post(`/izin/sementara/${izinSemId.value}/batal`)
+        msg.value = { ok: true, text: res.data.message || 'Izin sementara dibatalkan.' }
+        resetSem(); await load()
+    } catch (e) {
+        msg.value = { ok: false, text: e.response?.data?.message || 'Gagal membatalkan.' }
+    } finally { semBatal.value = false }
 }
 
 async function tunjukPengganti(sesi) {
@@ -219,7 +235,10 @@ async function tunjukPengganti(sesi) {
                 <template v-else>
                     <div class="flex items-center justify-between">
                         <p class="text-sm font-bold text-gray-800">Izin sementara tercatat ✓</p>
-                        <button @click="resetSem" class="text-xs font-semibold text-gray-400">Selesai</button>
+                        <div class="flex items-center gap-3">
+                            <button @click="batalSementara" :disabled="semBatal" class="text-xs font-semibold text-red-500 disabled:opacity-50">{{ semBatal ? '…' : 'Batalkan izin' }}</button>
+                            <button @click="resetSem" class="text-xs font-semibold text-gray-400">Selesai</button>
+                        </div>
                     </div>
                     <p v-if="!sesiTerdampak.length" class="text-sm text-gray-500 bg-gray-50 rounded-xl px-3 py-2">Tidak ada sesi mengajar yang terdampak. Aman.</p>
                     <div v-else class="space-y-2.5">

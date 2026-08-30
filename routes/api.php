@@ -269,6 +269,7 @@ Route::prefix('v1')->group(function () {
                 // Izin Sementara (partial-day) — preview sesi terdampak & buat (auto-approve)
                 Route::get('/sementara/preview', [IzinApiController::class, 'sementaraPreview']);
                 Route::post('/sementara',        [IzinApiController::class, 'sementaraBuat']);
+                Route::post('/sementara/{id}/batal', [IzinApiController::class, 'sementaraBatal']);
                 Route::delete('/{id}', [IzinApiController::class, 'batalkan']);   // batalkan pengajuan
             });
 
