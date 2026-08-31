@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { tanggalLokal } from '../tanggal'
 import api from '../api'
 import { kompresFoto } from '../foto'
 import PageHeader from '../components/PageHeader.vue'
@@ -15,11 +16,47 @@ const msg = ref(null)
 
 // State form absen (modal)
 const aktif = ref(null)          // jadwal yang sedang diabsen
+const overrideAktif = ref(false) // true = "ajar sendiri" saat izin (override)
 const materi = ref('')
 const keterangan = ref('')
 const foto = ref(null)
 const fotoPreview = ref(null)
 const saving = ref(false)
+
+// Guru pengganti (saat izin)
+const penggantiOpsi = ref([])
+async function loadPengganti() {
+    if (penggantiOpsi.value.length) return
+    try { const o = await api.get('/absensi/mengajar/pengganti-opsi'); penggantiOpsi.value = o.data.data ?? [] } catch (_) {}
+}
+async function tunjukPengganti(j) {
+    if (!j.pengganti_id) { msg.value = { ok: false, text: 'Pilih guru pengganti dulu.' }; return }
+    j.assigning = true; msg.value = null
+    try {
+        await api.post('/absensi/mengajar/tunjuk-pengganti', {
+            jadwal_mengajar_id: j.jadwal_id,
+            pengganti_id: j.pengganti_id,
+            tanggal: tanggalLokal(),
+            keterangan: `Izin ${j.info_izin || ''}`.trim(),
+        })
+        msg.value = { ok: true, text: 'Pengganti ditunjuk. Kelas tidak akan kosong.' }
+        await load()
+    } catch (e) {
+        msg.value = { ok: false, text: e.response?.data?.message || 'Gagal menunjuk pengganti.' }
+    } finally { j.assigning = false }
+}
+async function batalPengganti(j) {
+    if (!j.absensi_id) return
+    if (!confirm('Batalkan penunjukan guru pengganti?')) return
+    j.assigning = true; msg.value = null
+    try {
+        await api.post('/absensi/mengajar/batal-pengganti', { absensi_mengajar_id: j.absensi_id })
+        msg.value = { ok: true, text: 'Penunjukan pengganti dibatalkan.' }
+        await load()
+    } catch (e) {
+        msg.value = { ok: false, text: e.response?.data?.message || 'Gagal membatalkan pengganti.' }
+    } finally { j.assigning = false }
+}
 
 const tipeBadge = (t) => ({
     tahfidz: 'bg-emerald-50 text-emerald-600',
@@ -31,15 +68,18 @@ async function load() {
     try {
         const res = await api.get('/absensi/mengajar/hari-ini')
         info.value = res.data.data ?? res.data
-        jadwal.value = info.value.jadwal ?? []
+        jadwal.value = (info.value.jadwal ?? []).map(j => ({ ...j, pengganti_id: '', assigning: false }))
+        // Muat opsi pengganti bila ada sesi saat izin yang bisa ditunjuk pengganti.
+        if (jadwal.value.some(j => j.boleh_tunjuk_pengganti)) loadPengganti()
     } catch (e) {
         error.value = e.response?.data?.message || 'Gagal memuat jadwal mengajar.'
     } finally { loading.value = false }
 }
 onMounted(load)
 
-function bukaAbsen(j) {
+function bukaAbsen(j, override = false) {
     aktif.value = j
+    overrideAktif.value = override
     materi.value = ''
     keterangan.value = ''
     foto.value = null
@@ -63,6 +103,7 @@ async function kirim() {
         fd.append('foto', foto.value)
         if (materi.value.trim()) fd.append('materi', materi.value.trim())
         if (keterangan.value.trim()) fd.append('keterangan', keterangan.value.trim())
+        if (overrideAktif.value) fd.append('override_izin', '1')
         const res = await api.post('/absensi/mengajar/absen', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
         aktif.value = null
         msg.value = { ok: true, text: res.data.message || 'Absen mengajar tersimpan.' }
@@ -110,8 +151,20 @@ async function kirim() {
                             </div>
                             <p class="text-[11px] text-gray-400">{{ j.kelas }} · {{ j.jumlah_jp }} JP<span v-if="j.ruangan && j.ruangan !== '—'"> · {{ j.ruangan }}</span></p>
 
-                            <!-- Sudah absen -->
-                            <div v-if="j.sudah_absen" class="mt-2">
+                            <!-- Pengganti sudah ditunjuk (belum mengajar) -->
+                            <div v-if="j.digantikan_oleh && (j.jp_terlaksana ?? 0) === 0"
+                                class="mt-2 rounded-xl bg-sky-50 border border-sky-100 p-2.5">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-[11px] text-sky-700">👤 Pengganti: <b>{{ j.pengganti_nama || 'Ditunjuk' }}</b></p>
+                                    <button @click="batalPengganti(j)" :disabled="j.assigning"
+                                        class="text-[11px] font-bold text-red-500 disabled:opacity-50">Batalkan</button>
+                                </div>
+                                <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
+                                    class="mt-2 w-full py-1.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold">Batalkan & ajar sendiri</button>
+                            </div>
+
+                            <!-- Sudah benar-benar diabsen/diajar -->
+                            <div v-else-if="j.sudah_absen && j.status !== 'izin'" class="mt-2">
                                 <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                                     ✓ Diabsen · {{ j.jp_terlaksana ?? 0 }} JP
                                 </span>
@@ -123,10 +176,35 @@ async function kirim() {
                                     Absen Santri
                                 </button>
                             </div>
-                            <!-- Boleh absen -->
+
+                            <!-- Boleh absen normal -->
                             <button v-else-if="j.boleh_absen" @click="bukaAbsen(j)"
                                 class="mt-2 px-4 py-1.5 rounded-lg bg-[#0C78FF] text-white text-xs font-bold">Absen Sekarang</button>
-                            <!-- Terblokir -->
+
+                            <!-- Saat izin: pilih guru pengganti / ajar sendiri (override) -->
+                            <div v-else-if="j.is_izin_guru && j.boleh_tunjuk_pengganti"
+                                class="mt-2 rounded-xl bg-amber-50 border border-amber-100 p-2.5">
+                                <p class="text-[11px] font-bold text-amber-700 mb-1.5">
+                                    Anda izin ({{ j.info_izin }}){{ j.is_dinas_luar ? ' — dinas luar' : '' }} · kelas ini kosong
+                                </p>
+                                <div class="flex gap-1.5">
+                                    <select v-model="j.pengganti_id"
+                                        class="flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-[12px] outline-none bg-white">
+                                        <option value="">Pilih guru pengganti…</option>
+                                        <option v-for="o in penggantiOpsi" :key="o.id" :value="o.id">{{ o.nama }}</option>
+                                    </select>
+                                    <button @click="tunjukPengganti(j)" :disabled="!j.pengganti_id || j.assigning"
+                                        class="px-3 py-1.5 rounded-lg bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-50">
+                                        {{ j.assigning ? '…' : 'Tunjuk' }}
+                                    </button>
+                                </div>
+                                <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
+                                    class="mt-1.5 w-full py-1.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold">
+                                    Saya ajar sendiri (izin selesai)
+                                </button>
+                            </div>
+
+                            <!-- Terblokir lain -->
                             <p v-else class="mt-2 text-[11px] text-gray-400">{{ j.pesan_blokir || j.info_izin || 'Belum bisa diabsen.' }}</p>
                         </div>
                     </div>
@@ -140,7 +218,10 @@ async function kirim() {
                 <div class="w-full max-w-md bg-white rounded-t-3xl p-5 pb-8 safe-b">
                     <div class="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4"></div>
                     <h3 class="text-base font-extrabold text-gray-900">{{ aktif.mata_pelajaran }}</h3>
-                    <p class="text-xs text-gray-400 mb-4">{{ aktif.kelas }} · {{ aktif.jumlah_jp }} JP</p>
+                    <p class="text-xs text-gray-400 mb-2">{{ aktif.kelas }} · {{ aktif.jumlah_jp }} JP</p>
+                    <div v-if="overrideAktif" class="mb-3 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[11px] text-emerald-700 leading-snug">
+                        Anda mengajar sendiri meski sedang izin. Status harian tetap izin; kelas ini tercatat terlaksana.
+                    </div>
 
                     <label class="block text-xs font-medium text-gray-600 mb-1">Materi (opsional)</label>
                     <textarea v-model="materi" rows="2" placeholder="Materi yang diajarkan…"

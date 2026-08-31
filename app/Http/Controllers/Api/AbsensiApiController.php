@@ -838,6 +838,9 @@ class AbsensiApiController extends Controller
             ->with('jenisPengajuan')
             ->first();
         $isIzinGuru = $izinAktif !== null;
+        // Dinas luar = guru sedang di luar/bertugas → hanya boleh tunjuk pengganti,
+        // TIDAK boleh override ajar sendiri (beda dgn izin/sakit/cuti yg bisa balik).
+        $isDinasLuar = $isIzinGuru && $izinAktif->getStatusAbsensi() === 'dinas_luar';
 
         // ── 2. Ambil jadwal hari ini ─────────────────────────────────────────
         $jadwalList = \App\Models\JadwalMengajar::with(['mataPelajaran', 'tahunAjaran'])
@@ -929,7 +932,7 @@ class AbsensiApiController extends Controller
         // ── 5. Map jadwal → response ──────────────────────────────────────────
         $data = $jadwalList->map(function ($jadwal)
             use ($absensiAda, $today, $sekarang, $jadwalList, $sudahAbsenIds,
-                 $isHariLibur, $isIzinGuru, $hariLibur, $izinAktif)
+                 $isHariLibur, $isIzinGuru, $isDinasLuar, $hariLibur, $izinAktif)
         {
             $absensi  = $absensiAda->get($jadwal->id);
             $durMenit = $jadwal->jumlah_jp * 45;
@@ -952,6 +955,23 @@ class AbsensiApiController extends Controller
             // (berlaku selama jam mengajar belum selesai, atau sudah selesai tapi record masih izin-auto)
             $bolehKonfirmasiIzin = $isIzinGuru && $absensi === null
                 && $semuaLebihAwalSudahAbsen && !$isHariLibur;
+
+            // Sesi BELUM benar-benar diajar (belum ada absen, atau baru tanda izin,
+            // atau pengganti ditunjuk tapi belum mengajar) → masih boleh diatur.
+            $sesiBelumDiajar = $absensi === null
+                || $absensi->status === 'izin'
+                || ($absensi->status === 'pengganti'
+                    && (int) $absensi->jp_terlaksana === 0
+                    && is_null($absensi->jam_selesai_aktual));
+
+            // Saat izin (jenis apa pun, TERMASUK dinas luar): boleh tunjuk/ganti pengganti
+            // agar kelas tak kosong — selama sesi belum benar-benar diajar.
+            $bolehTunjukPengganti = $isIzinGuru && !$isHariLibur && $sesiBelumDiajar;
+
+            // Override "ajar sendiri" meski izin (mis. izin selesai lebih cepat):
+            // hanya NON-dinas-luar, dalam jam pelajaran, sesi belum diajar.
+            $bolehOverrideIzin = $isIzinGuru && !$isDinasLuar && !$isHariLibur
+                && $dalamWindow && $sesiBelumDiajar;
 
             // Pesan blokir untuk kondisi normal
             $pesanBlokir = null;
@@ -987,6 +1007,9 @@ class AbsensiApiController extends Controller
                 // ── Aksi yang diizinkan ──────────────────────────────────────
                 'boleh_absen'          => $bolehAbsen,
                 'boleh_konfirmasi_izin'=> $bolehKonfirmasiIzin,
+                'boleh_tunjuk_pengganti'=> $bolehTunjukPengganti,
+                'boleh_override_izin'  => $bolehOverrideIzin,
+                'is_dinas_luar'        => $isDinasLuar,
                 'pesan_blokir'         => $pesanBlokir,
 
                 // ── Status absensi ────────────────────────────────────────────
@@ -1283,6 +1306,7 @@ class AbsensiApiController extends Controller
             'foto'               => 'required|image|mimes:jpeg,jpg,png|max:3072',
             'materi'             => 'nullable|string|max:500',
             'keterangan'         => 'nullable|string|max:300',
+            'override_izin'      => 'nullable|boolean',
         ]);
 
         $user = $request->user();
@@ -1314,18 +1338,33 @@ class AbsensiApiController extends Controller
             ], 422);
         }
 
+        // Override izin: guru sedang izin (non-dinas) tapi memilih mengajar sendiri
+        // (mis. izin selesai lebih cepat). Sesi dicatat 'terlaksana' oleh guru;
+        // STATUS HARIAN tetap izin. Vakasi tetap 0 (mengajar sendiri = gaji pokok).
+        $override = $request->boolean('override_izin');
+
         // Cek sudah absen
         $existing = \App\Models\AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)
             ->whereDate('tanggal', $today)
             ->first();
 
         if ($existing) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda sudah melakukan absen mengajar untuk jadwal ini hari ini.',
-                'code'    => 'ALREADY_ABSEN',
-                'data'    => $this->formatAbsensiMengajar($existing, $jadwal),
-            ], 422);
+            // Saat override: record 'izin' (auto) atau 'pengganti' yang BELUM diajar
+            // boleh ditimpa — pengganti yang menggantung otomatis dibatalkan.
+            $penggantiMenggantung = $existing->status === 'pengganti'
+                && (int) $existing->jp_terlaksana === 0
+                && is_null($existing->jam_selesai_aktual);
+            if ($override && ($existing->status === 'izin' || $penggantiMenggantung)) {
+                $existing->delete();
+                $existing = null;
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda sudah melakukan absen mengajar untuk jadwal ini hari ini.',
+                    'code'    => 'ALREADY_ABSEN',
+                    'data'    => $this->formatAbsensiMengajar($existing, $jadwal),
+                ], 422);
+            }
         }
 
         // ── Validasi urutan JP — jadwal lebih awal wajib diabsen dulu ──────────
@@ -1343,25 +1382,29 @@ class AbsensiApiController extends Controller
             ->orderBy('jam_mulai')
             ->get();
 
-        foreach ($jadwalLebihAwal as $jadwalSebelum) {
-            $sudahAbsenSebelum = \App\Models\AbsensiMengajar::where('jadwal_mengajar_id', $jadwalSebelum->id)
-                ->whereDate('tanggal', $today)
-                ->exists();
+        // Saat override izin, LEWATI syarat urutan JP — sesi lain kemungkinan masih
+        // berstatus izin (belum "diabsen") sehingga akan men-deadlock override.
+        if (!$override) {
+            foreach ($jadwalLebihAwal as $jadwalSebelum) {
+                $sudahAbsenSebelum = \App\Models\AbsensiMengajar::where('jadwal_mengajar_id', $jadwalSebelum->id)
+                    ->whereDate('tanggal', $today)
+                    ->exists();
 
-            if (!$sudahAbsenSebelum) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Selesaikan absensi "'
-                        .($jadwalSebelum->mataPelajaran?->nama ?? 'Jadwal')
-                        .'" (pukul '.$jadwalSebelum->jam_mulai
-                        .') terlebih dahulu sebelum absen jadwal ini.',
-                    'code'    => 'JP_ORDER_REQUIRED',
-                    'jadwal_sebelum' => [
-                        'id'            => $jadwalSebelum->id,
-                        'mata_pelajaran'=> $jadwalSebelum->mataPelajaran?->nama ?? '—',
-                        'jam_mulai'     => $jadwalSebelum->jam_mulai,
-                    ],
-                ], 422);
+                if (!$sudahAbsenSebelum) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Selesaikan absensi "'
+                            .($jadwalSebelum->mataPelajaran?->nama ?? 'Jadwal')
+                            .'" (pukul '.$jadwalSebelum->jam_mulai
+                            .') terlebih dahulu sebelum absen jadwal ini.',
+                        'code'    => 'JP_ORDER_REQUIRED',
+                        'jadwal_sebelum' => [
+                            'id'            => $jadwalSebelum->id,
+                            'mata_pelajaran'=> $jadwalSebelum->mataPelajaran?->nama ?? '—',
+                            'jam_mulai'     => $jadwalSebelum->jam_mulai,
+                        ],
+                    ], 422);
+                }
             }
         }
 
