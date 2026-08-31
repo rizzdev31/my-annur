@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../api'
+import { kompresFoto } from '../foto'
 import { tanggalLokal } from '../tanggal'
 import PageHeader from '../components/PageHeader.vue'
 
@@ -32,7 +33,7 @@ async function load() {
 }
 onMounted(load)
 
-function pilihDokumen(e) { form.value.dokumen = e.target.files?.[0] || null }
+async function pilihDokumen(e) { let f = e.target.files?.[0]; if (f) f = await kompresFoto(f); form.value.dokumen = f || null }
 
 async function ajukan() {
     msg.value = null

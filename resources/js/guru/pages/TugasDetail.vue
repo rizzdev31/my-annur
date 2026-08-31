@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { tanggalLokal } from '../tanggal'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
+import { kompresFoto } from '../foto'
 import { toast } from '../store/toast'
 import PageHeader from '../components/PageHeader.vue'
 import BottomSheet from '../components/BottomSheet.vue'
@@ -47,7 +48,7 @@ async function mulai() {
 const lapSheet = ref(false)
 const lf = reactive({ tipe: 'teks', teks: '', link: '', foto: null, preview: null, laporan: '' })
 function openLaporan() { Object.assign(lf, { tipe: 'teks', teks: '', link: '', foto: null, preview: null, laporan: '' }); lapSheet.value = true }
-function lFoto(e) { const f = e.target.files?.[0]; lf.foto = f || null; lf.preview = f ? URL.createObjectURL(f) : null }
+async function lFoto(e) { let f = e.target.files?.[0]; if (f) f = await kompresFoto(f); lf.foto = f || null; lf.preview = f ? URL.createObjectURL(f) : null }
 async function kirimLaporan() {
     if (lf.tipe === 'teks' && !lf.teks.trim()) return toast.warning('Isi teks bukti.')
     if (lf.tipe === 'link' && !lf.link.trim()) return toast.warning('Isi link bukti.')

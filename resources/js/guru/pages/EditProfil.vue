@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
+import { kompresFoto } from '../foto'
 import { auth } from '../store/auth'
 import { toast } from '../store/toast'
 import PageHeader from '../components/PageHeader.vue'
@@ -35,9 +36,10 @@ async function load() {
 onMounted(load)
 
 async function pilihFoto(e) {
-    const file = e.target.files?.[0]
+    let file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) return toast.warning('Ukuran foto maksimal 2MB.')
+    file = await kompresFoto(file) // kamera 4–8MB → JPEG kecil, tetap di bawah batas 2MB
+    if (file.size > 2 * 1024 * 1024) { e.target.value = ''; return toast.warning('Ukuran foto masih terlalu besar. Coba foto lain.') }
     fotoBusy.value = true
     try {
         const fd = new FormData(); fd.append('foto', file)

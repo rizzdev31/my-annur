@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../api'
+import { kompresFoto } from '../foto'
 import PageHeader from '../components/PageHeader.vue'
 
 const list = ref([])
@@ -30,8 +31,8 @@ onMounted(load)
 function bukaAbsen(k) {
     aktif.value = k; materi.value = ''; keterangan.value = ''; foto.value = null; fotoPreview.value = null; msg.value = null
 }
-function pilihFoto(e) {
-    const f = e.target.files?.[0]; foto.value = f || null; fotoPreview.value = f ? URL.createObjectURL(f) : null
+async function pilihFoto(e) {
+    let f = e.target.files?.[0]; if (f) f = await kompresFoto(f); foto.value = f || null; fotoPreview.value = f ? URL.createObjectURL(f) : null
 }
 
 async function kirim() {

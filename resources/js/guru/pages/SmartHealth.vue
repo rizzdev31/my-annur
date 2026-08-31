@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../api'
+import { kompresFoto } from '../foto'
 import PageHeader from '../components/PageHeader.vue'
 
 const list = ref([])
@@ -55,7 +56,7 @@ function cariSantri() {
     }, 300)
 }
 function pilihSantri(s) { santriSel.value = s; santriResults.value = []; santriQ.value = s.nama }
-function pilihFoto(e) { const f = e.target.files?.[0]; foto.value = f || null; fotoPreview.value = f ? URL.createObjectURL(f) : null }
+async function pilihFoto(e) { let f = e.target.files?.[0]; if (f) f = await kompresFoto(f); foto.value = f || null; fotoPreview.value = f ? URL.createObjectURL(f) : null }
 
 async function kirimLapor() {
     msg.value = null

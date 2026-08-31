@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '../api'
+import { kompresFoto } from '../foto'
 
 const d = ref(null)
 const loading = ref(true)
@@ -70,7 +71,7 @@ function mintaLokasi() {
         { enableHighAccuracy: true, timeout: 8000 },
     )
 }
-function pilihFoto(e) { const f = e.target.files?.[0]; foto.value = f || null; fotoPreview.value = f ? URL.createObjectURL(f) : null }
+async function pilihFoto(e) { let f = e.target.files?.[0]; if (f) f = await kompresFoto(f); foto.value = f || null; fotoPreview.value = f ? URL.createObjectURL(f) : null }
 
 async function konfirmasi() {
     const tipe = sheet.value

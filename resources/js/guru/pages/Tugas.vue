@@ -3,6 +3,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { tanggalLokal } from '../tanggal'
 import { RouterLink, useRouter } from 'vue-router'
 import api from '../api'
+import { kompresFoto } from '../foto'
 import { toast } from '../store/toast'
 import BottomSheet from '../components/BottomSheet.vue'
 
@@ -34,7 +35,7 @@ function bukaJabatan(t) {
     jab.value = t
     Object.assign(jbukti, { tipe: 'teks', teks: '', link: '', foto: null, preview: null, keterangan: '' })
 }
-function jFoto(e) { const f = e.target.files?.[0]; jbukti.foto = f || null; jbukti.preview = f ? URL.createObjectURL(f) : null }
+async function jFoto(e) { let f = e.target.files?.[0]; if (f) f = await kompresFoto(f); jbukti.foto = f || null; jbukti.preview = f ? URL.createObjectURL(f) : null }
 
 async function kirimRealisasi() {
     if (jbukti.tipe === 'teks' && !jbukti.teks.trim()) return toast.warning('Isi keterangan bukti.')
