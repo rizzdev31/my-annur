@@ -30,6 +30,8 @@ const rekap = computed(() => {
     return r
 })
 const adaIzinAuto = computed(() => santri.value.some(s => s.izin_disetujui))
+const adaSakitAuto = computed(() => santri.value.some(s => s.sakit_health))
+const adaAuto = computed(() => adaIzinAuto.value || adaSakitAuto.value)
 
 async function load() {
     loading.value = true
@@ -46,10 +48,10 @@ async function load() {
 onMounted(load)
 
 function setStatus(s, v) { if (!terkunci.value) s.status = v }
-// "Semua Hadir" tak menimpa santri yang izinnya sudah disetujui (biarkan tetap Izin).
+// "Semua Hadir" tak menimpa santri yang izin disetujui / sakit (Smart Health) — biarkan apa adanya.
 function tandaiSemua(v) {
     if (terkunci.value) return
-    santri.value.forEach(s => { if (!(v === 'hadir' && s.izin_disetujui)) s.status = v })
+    santri.value.forEach(s => { if (!(v === 'hadir' && (s.izin_disetujui || s.sakit_health))) s.status = v })
 }
 
 const konfirm = ref(false)
@@ -104,9 +106,11 @@ async function simpan() {
                 <button v-if="!terkunci && !belumAbsenMengajar" @click="tandaiSemua('hadir')" class="text-xs font-bold text-[#0C78FF] shrink-0">Semua Hadir</button>
             </div>
 
-            <!-- Info auto-izin dari perizinan -->
-            <div v-if="adaIzinAuto && !belumAbsenMengajar" class="rounded-xl bg-sky-50 border border-sky-100 px-3 py-2 mb-2 text-[11px] text-sky-700 leading-snug">
-                📝 Santri dengan izin <b>disetujui</b> otomatis ditandai <b>Izin</b>. Anda tetap bisa mengubahnya bila perlu.
+            <!-- Info auto-terisi dari Perizinan / Smart Health -->
+            <div v-if="adaAuto && !belumAbsenMengajar" class="rounded-xl bg-sky-50 border border-sky-100 px-3 py-2 mb-2 text-[11px] text-sky-700 leading-snug">
+                <template v-if="adaIzinAuto">📝 Santri dengan izin <b>disetujui</b> otomatis ditandai <b>Izin</b>. </template>
+                <template v-if="adaSakitAuto">🤒 Santri yang sedang sakit (<b>Smart Health</b>) otomatis ditandai <b>Sakit</b>. </template>
+                Anda tetap bisa mengubahnya bila perlu.
             </div>
 
             <!-- Daftar santri -->
@@ -116,7 +120,8 @@ async function simpan() {
                     <div class="flex items-center justify-between gap-2">
                         <div class="min-w-0">
                             <p class="text-sm font-bold text-gray-800 truncate">{{ s.nama }}</p>
-                            <p v-if="s.izin_disetujui" class="text-[10px] font-bold text-sky-600 truncate">📝 Izin {{ s.izin_jenis }} · disetujui</p>
+                            <p v-if="s.sakit_health" class="text-[10px] font-bold text-violet-600 truncate">🤒 Sakit · Smart Health</p>
+                            <p v-else-if="s.izin_disetujui" class="text-[10px] font-bold text-sky-600 truncate">📝 Izin {{ s.izin_jenis }} · disetujui</p>
                             <p v-else-if="s.nip" class="text-[10px] text-gray-400">NIS {{ s.nip }}</p>
                         </div>
                         <div class="flex gap-1 shrink-0">
