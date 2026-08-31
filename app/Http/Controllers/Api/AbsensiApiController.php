@@ -343,6 +343,14 @@ class AbsensiApiController extends Controller
                         $today->toDateString() . ' ' . $jadwal['jam_pulang']
                     )->setTimezone(TimezoneHelper::TZ);
 
+                    // Shift LINTAS-HARI (mis. asrama 15:15 → 07:00): jam pulang jatuh
+                    // di hari berikutnya. Tanpa +1 hari, check-in sore (15:15) dianggap
+                    // "sudah lewat jam pulang 07:00" → ditolak keliru. Selaras dgn
+                    // AbsensiWindowService::statusAbsen yang juga addDay() saat lintas-hari.
+                    if ($jadwal['lintas_hari'] ?? false) {
+                        $jamPulangJadwal->addDay();
+                    }
+
                     if ($jamSekarang->gt($jamPulangJadwal)) {
                         return response()->json([
                             'success'           => false,
