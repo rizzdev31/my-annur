@@ -117,7 +117,10 @@ class WaTemplate
 
     private static function labelStatus(string $s): string
     {
-        return ['hadir' => 'HADIR ✅', 'telat' => 'TERLAMBAT ⏰', 'alpha' => 'TIDAK HADIR ❌'][$s]
-            ?? strtoupper($s);
+        return [
+            'hadir' => 'HADIR ✅', 'telat' => 'TERLAMBAT ⏰',
+            'izin'  => 'IZIN 📝',  'sakit' => 'SAKIT 🤒',
+            'alpha' => 'TIDAK HADIR ❌',
+        ][$s] ?? strtoupper($s);
     }
 }

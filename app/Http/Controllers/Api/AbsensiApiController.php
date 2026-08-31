@@ -1506,13 +1506,30 @@ class AbsensiApiController extends Controller
 
         $santri = \App\Models\Santri::aktif()
             ->whereHas('kelas', fn($q) => $q->where('kelas.id', $jadwal->kelas_id))
-            ->orderBy('nama_lengkap')->get()
-            ->map(fn($s) => [
-                'santri_id' => $s->id,
-                'nip'       => $s->nip,
-                'nama'      => $s->nama_lengkap,
-                'status'    => $terisi[$s->id] ?? 'hadir',
-            ])->values();
+            ->orderBy('nama_lengkap')->get();
+
+        // Perizinan santri yang SUDAH DISETUJUI mencakup tanggal sesi → auto-isi 'izin'.
+        // Guru tetap bisa mengubah manual (kecuali absensi sudah dikunci).
+        $izinDisetujui = \App\Models\IzinSantri::where('status', 'disetujui')
+            ->whereIn('santri_id', $santri->pluck('id'))
+            ->whereDate('tanggal_mulai', '<=', $today)
+            ->whereDate('tanggal_selesai', '>=', $today)
+            ->get()
+            ->keyBy('santri_id');
+
+        $santri = $santri->map(function ($s) use ($terisi, $izinDisetujui) {
+            $izin = $izinDisetujui->get($s->id);
+            // Prioritas: status tersimpan > auto-izin dari perizinan > default hadir.
+            $status = $terisi[$s->id] ?? ($izin ? 'izin' : 'hadir');
+            return [
+                'santri_id'     => $s->id,
+                'nip'           => $s->nip,
+                'nama'          => $s->nama_lengkap,
+                'status'        => $status,
+                'izin_disetujui' => (bool) $izin,             // penanda badge di UI
+                'izin_jenis'    => $izin?->jenis_label,        // "Syar'i" / "Non-Syar'i"
+            ];
+        })->values();
 
         return response()->json([
             'success' => true,
@@ -1539,7 +1556,7 @@ class AbsensiApiController extends Controller
             'absensi_mengajar_id'  => 'required|exists:absensi_mengajar,id',
             'absensi'              => 'required|array|min:1',
             'absensi.*.santri_id'  => 'required|integer|exists:santri,id',
-            'absensi.*.status'     => 'required|in:hadir,telat,alpha',
+            'absensi.*.status'     => 'required|in:hadir,telat,izin,sakit,alpha',
             'materi'               => 'nullable|string|max:500',
         ]);
 
@@ -1588,6 +1605,9 @@ class AbsensiApiController extends Controller
         $tglAjr = $absensi->tanggal instanceof \Carbon\Carbon
             ? $absensi->tanggal->toDateString() : (string) $absensi->tanggal;
         foreach (\App\Models\AbsensiSantri::where('absensi_mengajar_id', $absensi->id)->get() as $as) {
+            // 'izin' tak di-WA lagi di sini — wali sudah dikabari saat izin disetujui
+            // di modul Perizinan Santri, agar tidak ada notifikasi ganda.
+            if ($as->status === 'izin') continue;
             app(\App\Services\WaService::class)->absenMengajar(
                 $as->santri_id, $as->status, $pembelajaran, $tglAjr, $as->id);
         }
@@ -1602,6 +1622,8 @@ class AbsensiApiController extends Controller
                 'absensi_mengajar_id' => $absensi->id,
                 'hadir' => (int) ($rekap['hadir'] ?? 0),
                 'telat' => (int) ($rekap['telat'] ?? 0),
+                'izin'  => (int) ($rekap['izin'] ?? 0),
+                'sakit' => (int) ($rekap['sakit'] ?? 0),
                 'alpha' => (int) ($rekap['alpha'] ?? 0),
                 'total' => (int) $rekap->sum(),
             ],

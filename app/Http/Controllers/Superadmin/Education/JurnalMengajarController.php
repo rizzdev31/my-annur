@@ -50,6 +50,8 @@ class JurnalMengajarController extends Controller
                     'foto_url'           => $a->foto_mengajar ? asset('storage/'.$a->foto_mengajar) : null,
                     'hadir'              => $byStatus->get('hadir')?->count() ?? 0,
                     'telat'              => $byStatus->get('telat')?->count() ?? 0,
+                    'izin'               => $byStatus->get('izin')?->count() ?? 0,
+                    'sakit'              => $byStatus->get('sakit')?->count() ?? 0,
                     'alpha'              => $byStatus->get('alpha')?->count() ?? 0,
                     'total_santri'       => $a->absensiSantri->count(),
                     'sudah_absen_santri' => $a->absensiSantri->isNotEmpty(),
@@ -77,6 +79,8 @@ class JurnalMengajarController extends Controller
                 'sudah_isi'   => $sesi->where('sudah_absen_santri', true)->count(),
                 'total_hadir' => $sesi->sum('hadir'),
                 'total_telat' => $sesi->sum('telat'),
+                'total_izin'  => $sesi->sum('izin'),
+                'total_sakit' => $sesi->sum('sakit'),
                 'total_alpha' => $sesi->sum('alpha'),
             ],
         ]);

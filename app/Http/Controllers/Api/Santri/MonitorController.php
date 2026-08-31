@@ -91,7 +91,9 @@ class MonitorController extends Controller
             ],
             'bulan' => $label,
             'kbm' => [
-                'hadir' => $kbmHadir, 'telat' => (int) ($kbm['telat'] ?? 0), 'alpha' => (int) ($kbm['alpha'] ?? 0),
+                'hadir' => $kbmHadir, 'telat' => (int) ($kbm['telat'] ?? 0),
+                'izin' => (int) ($kbm['izin'] ?? 0), 'sakit' => (int) ($kbm['sakit'] ?? 0),
+                'alpha' => (int) ($kbm['alpha'] ?? 0),
                 'total' => $kbmTotal, 'persen_hadir' => $kbmTotal ? round($kbmHadir / $kbmTotal * 100) : 0,
             ],
             'controlling' => [
@@ -133,7 +135,7 @@ class MonitorController extends Controller
         $rekap = $rows->groupBy('status')->map->count();
         return response()->json(['success' => true, 'data' => [
             'periode' => $label,
-            'rekap'   => ['hadir' => (int) ($rekap['hadir'] ?? 0), 'telat' => (int) ($rekap['telat'] ?? 0), 'alpha' => (int) ($rekap['alpha'] ?? 0), 'total' => $rows->count()],
+            'rekap'   => ['hadir' => (int) ($rekap['hadir'] ?? 0), 'telat' => (int) ($rekap['telat'] ?? 0), 'izin' => (int) ($rekap['izin'] ?? 0), 'sakit' => (int) ($rekap['sakit'] ?? 0), 'alpha' => (int) ($rekap['alpha'] ?? 0), 'total' => $rows->count()],
             'rows'    => $rows,
         ]]);
     }

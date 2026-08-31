@@ -11,7 +11,7 @@ class AbsensiSantri extends Model
     protected $fillable = [
         'absensi_mengajar_id',
         'santri_id',
-        'status',     // hadir | telat | alpha
+        'status',     // hadir | telat | izin | sakit | alpha
         'catatan',
     ];
 

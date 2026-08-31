@@ -27,6 +27,14 @@
                 <p class="text-2xl font-bold text-amber-600 mt-1">{{ summary.total_telat }}</p>
             </div>
             <div class="bg-white rounded-2xl border border-gray-200 p-4">
+                <p class="text-xs text-gray-400">Izin</p>
+                <p class="text-2xl font-bold text-sky-600 mt-1">{{ summary.total_izin }}</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-gray-200 p-4">
+                <p class="text-xs text-gray-400">Sakit</p>
+                <p class="text-2xl font-bold text-violet-600 mt-1">{{ summary.total_sakit }}</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-gray-200 p-4">
                 <p class="text-xs text-gray-400">Alpha</p>
                 <p class="text-2xl font-bold text-red-600 mt-1">{{ summary.total_alpha }}</p>
             </div>
@@ -91,6 +99,8 @@
                             <div v-if="s.sudah_absen_santri" class="flex flex-wrap gap-1.5">
                                 <span class="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium">H {{ s.hadir }}</span>
                                 <span class="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 text-xs font-medium">T {{ s.telat }}</span>
+                                <span v-if="s.izin" class="px-2 py-0.5 rounded-lg bg-sky-50 text-sky-700 text-xs font-medium">I {{ s.izin }}</span>
+                                <span v-if="s.sakit" class="px-2 py-0.5 rounded-lg bg-violet-50 text-violet-700 text-xs font-medium">S {{ s.sakit }}</span>
                                 <span class="px-2 py-0.5 rounded-lg bg-red-50 text-red-700 text-xs font-medium">A {{ s.alpha }}</span>
                                 <span class="text-xs text-gray-400 self-center">/ {{ s.total_santri }}</span>
                             </div>
@@ -191,12 +201,14 @@ function statusLabel(s) {
     return { terlaksana: 'Terlaksana', hadir: 'Hadir', libur: 'Libur', izin: 'Izin', tidak_terlaksana: 'Tidak terlaksana' }[s] ?? s
 }
 function statusSantriLabel(s) {
-    return { hadir: 'Hadir', telat: 'Telat', alpha: 'Alpha' }[s] ?? s
+    return { hadir: 'Hadir', telat: 'Telat', izin: 'Izin', sakit: 'Sakit', alpha: 'Alpha' }[s] ?? s
 }
 function badgeStatus(s) {
     return {
         hadir: 'bg-emerald-50 text-emerald-700',
         telat: 'bg-amber-50 text-amber-700',
+        izin: 'bg-sky-50 text-sky-700',
+        sakit: 'bg-violet-50 text-violet-700',
         alpha: 'bg-red-50 text-red-700',
     }[s] ?? 'bg-gray-100 text-gray-600'
 }

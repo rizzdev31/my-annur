@@ -74,6 +74,8 @@ class LaporanApiController extends Controller
                             'total'      => $a->absensiSantri->count(),
                             'hadir'      => $byStatus->get('hadir')?->count() ?? 0,
                             'telat'      => $byStatus->get('telat')?->count() ?? 0,
+                            'izin'       => $byStatus->get('izin')?->count() ?? 0,
+                            'sakit'      => $byStatus->get('sakit')?->count() ?? 0,
                             'alpha'      => $byStatus->get('alpha')?->count() ?? 0,
                             'telat_nama' => $namaBy('telat'),
                             'alpha_nama' => $namaBy('alpha'),
