@@ -32,16 +32,16 @@
             <div v-else>
                 <button @click="sel = null" class="text-sm text-[#0C78FF] font-semibold mb-3">← Kembali</button>
                 <h2 class="text-base font-extrabold text-gray-900">{{ sel.nama }} <span class="text-sm font-medium text-gray-400">· {{ sel.jam }}</span></h2>
-                <p class="text-xs text-gray-400 mb-3">Tandai kehadiran. Guru yang belum absen harian otomatis "tidak hadir".</p>
+                <p class="text-xs text-gray-400 mb-3">Tandai kehadiran. Guru boleh ditandai <b>hadir</b> walau belum absen harian (mis. kegiatan sebelum jam kerjanya, seperti Dzuhur untuk guru shift sore).</p>
 
                 <div class="divide-y divide-gray-50 bg-white rounded-2xl border border-gray-100 overflow-hidden">
                     <div v-for="p in peserta" :key="p.tenaga_pendidik_id" class="px-4 py-3 flex items-center gap-3">
                         <div class="flex-1 min-w-0">
                             <p class="text-sm font-medium text-gray-800 truncate">{{ p.nama }}</p>
-                            <p class="text-[11px] text-gray-400">{{ p.jenis_guru }}<span v-if="!p.hadir_kerja"> · belum absen harian</span></p>
+                            <p class="text-[11px] text-gray-400">{{ p.jenis_guru }}<span v-if="!p.hadir_kerja" class="text-amber-500"> · belum absen harian</span></p>
                         </div>
                         <div class="flex gap-1 shrink-0">
-                            <button @click="p.hadir_kerja && (p.status = 'hadir')" :disabled="!p.hadir_kerja || !isPiket"
+                            <button @click="isPiket && (p.status = 'hadir')" :disabled="!isPiket"
                                 :class="p.status === 'hadir' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-500'"
                                 class="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40">Hadir</button>
                             <button @click="isPiket && (p.status = 'tidak_hadir')" :disabled="!isPiket"
