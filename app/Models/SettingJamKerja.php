@@ -22,6 +22,7 @@ class SettingJamKerja extends Model
         'is_default',
         'is_aktif',
         'is_template',
+        'is_shift_khusus',
         'induk_template_id',
         'tenaga_pendidik_id',
     ];
@@ -35,7 +36,14 @@ class SettingJamKerja extends Model
             'is_default'              => 'boolean',
             'is_aktif'                => 'boolean',
             'is_template'             => 'boolean',
+            'is_shift_khusus'         => 'boolean',
         ];
+    }
+
+    /** Template asal (untuk setting hasil generate). */
+    public function indukTemplate()
+    {
+        return $this->belongsTo(self::class, 'induk_template_id');
     }
 
     /** Hanya template (jam kerja bersama) — sembunyikan hasil generate per-guru. */

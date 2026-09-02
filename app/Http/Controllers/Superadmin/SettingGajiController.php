@@ -303,18 +303,21 @@ class SettingGajiController extends Controller
             'guru_ids'   => 'required|array|min:1',
             'guru_ids.*' => 'integer|exists:tenaga_pendidik,id',
             'mode'       => 'nullable|in:mengajar,libur',
+            'paksa'      => 'nullable|boolean',
         ]);
         if (!$jamKerja->gunakan_jadwal_per_hari || empty($jamKerja->jadwal_per_hari)) {
             return response()->json(['success' => false, 'message' => 'Template harus memakai jadwal per-hari (isi jam Sen–Sab dulu).'], 422);
         }
 
         $hasil = (new \App\Services\GenerateJamKerjaService())
-            ->generate($jamKerja, $data['guru_ids'], $data['mode'] ?? 'mengajar');
+            ->generate($jamKerja, $data['guru_ids'], $data['mode'] ?? 'mengajar', (bool) ($data['paksa'] ?? false));
 
+        $khusus = count($hasil['dilewati_khusus'] ?? []);
         return response()->json([
             'success' => true,
             'message' => count($hasil['generated']) . ' guru di-generate.'
-                . (count($hasil['dilewati']) ? ' ' . count($hasil['dilewati']) . ' dilewati (tanpa jadwal mengajar).' : ''),
+                . (count($hasil['dilewati']) ? ' ' . count($hasil['dilewati']) . ' dilewati (tanpa jadwal mengajar).' : '')
+                . ($khusus ? ' ' . $khusus . ' dilewati (shift khusus — pakai template asrama/satpam atau centang paksa).' : ''),
             'data'    => $hasil,
         ]);
     }

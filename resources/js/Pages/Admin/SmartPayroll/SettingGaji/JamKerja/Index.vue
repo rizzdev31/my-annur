@@ -170,12 +170,21 @@
                         </label>
                         <p v-if="!guruTersaring.length" class="text-sm text-gray-400 text-center py-6">Tidak ada guru.</p>
                     </div>
-                    <div class="px-5 py-4 border-t border-gray-100 flex items-center gap-3">
-                        <span class="text-xs text-gray-500">{{ genSel.length }} guru dipilih</span>
-                        <button @click="jalankanGenerate" :disabled="!genSel.length || genSaving"
-                            class="ml-auto px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">
-                            {{ genSaving ? 'Memproses…' : 'Generate' }}
-                        </button>
+                    <div class="px-5 py-4 border-t border-gray-100">
+                        <label class="flex items-start gap-2 mb-3 cursor-pointer">
+                            <input type="checkbox" v-model="genPaksa" class="mt-0.5 w-4 h-4 rounded text-rose-600" />
+                            <span class="text-xs text-gray-600 leading-snug">
+                                <b class="text-rose-600">Paksa timpa shift khusus</b> — centang HANYA jika sengaja mengubah jam guru asrama/satpam.
+                                Tanpa ini, guru shift khusus otomatis dilewati agar jamnya tak tertimpa.
+                            </span>
+                        </label>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-gray-500">{{ genSel.length }} guru dipilih</span>
+                            <button @click="jalankanGenerate" :disabled="!genSel.length || genSaving"
+                                class="ml-auto px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">
+                                {{ genSaving ? 'Memproses…' : 'Generate' }}
+                            </button>
+                        </div>
                     </div>
                 </template>
 
@@ -188,6 +197,11 @@
                         <div v-if="genResult.dilewati.length" class="rounded-xl bg-amber-50 text-amber-700 text-sm px-3 py-2">
                             <p class="font-semibold mb-1">Dilewati (tanpa jadwal mengajar):</p>
                             <p class="text-xs">{{ genResult.dilewati.join(', ') }}</p>
+                        </div>
+                        <div v-if="genResult.dilewati_khusus?.length" class="rounded-xl bg-rose-50 text-rose-700 text-sm px-3 py-2">
+                            <p class="font-semibold mb-1">🛡️ Dilewati (shift khusus — jam dilindungi):</p>
+                            <p class="text-xs">{{ genResult.dilewati_khusus.join(', ') }}</p>
+                            <p class="text-[11px] mt-1 text-rose-600">Guru asrama/satpam. Generate mereka pakai template shift-nya, atau centang "Paksa" bila memang ingin menimpa.</p>
                         </div>
                         <div v-if="genResult.peringatan.length" class="rounded-xl bg-orange-50 text-orange-700 text-sm px-3 py-2">
                             <p class="font-semibold mb-1">Peringatan:</p>
@@ -226,6 +240,7 @@ const genSearch = ref('')
 const genSaving = ref(false)
 const genResult = ref(null)
 const genMode = ref('mengajar')   // 'mengajar' | 'libur'
+const genPaksa = ref(false)       // paksa timpa shift khusus
 
 const guruTersaring = computed(() => {
     const q = genSearch.value.trim().toLowerCase()
@@ -234,7 +249,7 @@ const guruTersaring = computed(() => {
 const semuaTerpilih = computed(() => guruTersaring.value.length > 0 && guruTersaring.value.every(g => genSel.value.includes(g.id)))
 
 function bukaGenerate(s) {
-    genTemplate.value = s; genSel.value = []; genSearch.value = ''; genResult.value = null; genMode.value = 'mengajar'; showGen.value = true
+    genTemplate.value = s; genSel.value = []; genSearch.value = ''; genResult.value = null; genMode.value = 'mengajar'; genPaksa.value = false; showGen.value = true
 }
 function toggleGuru(id) {
     const i = genSel.value.indexOf(id)
@@ -256,7 +271,7 @@ async function jalankanGenerate() {
     try {
         const res = await window.axios.post(
             `/admin/smart-payroll/setting-gaji/jam-kerja/${genTemplate.value.id}/generate`,
-            { guru_ids: genSel.value, mode: genMode.value },
+            { guru_ids: genSel.value, mode: genMode.value, paksa: genPaksa.value },
         )
         genResult.value = res.data.data
     } catch (e) {

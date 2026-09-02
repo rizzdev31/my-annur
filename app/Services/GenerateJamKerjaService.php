@@ -37,15 +37,18 @@ class GenerateJamKerjaService
      * @return array{generated:string[], dilewati:string[], peringatan:string[]}
      */
     /**
-     * @param  string  $mode  'mengajar' (libur=hari tanpa jadwal) | 'libur' (libur=hari_libur guru)
+     * @param  string  $mode   'mengajar' (libur=hari tanpa jadwal) | 'libur' (libur=hari_libur guru)
+     * @param  bool    $paksa  true = timpa walau guru sedang shift khusus (asrama/satpam)
      */
-    public function generate(SettingJamKerja $template, array $guruIds, string $mode = 'mengajar'): array
+    public function generate(SettingJamKerja $template, array $guruIds, string $mode = 'mengajar', bool $paksa = false): array
     {
-        $tpl          = $template->jadwal_per_hari ?? [];
-        $hariTemplate = $this->hariTemplate($tpl);   // hari yg aktif & punya jam di template
-        $generated    = [];
-        $dilewati     = [];
-        $peringatan   = [];
+        $tpl            = $template->jadwal_per_hari ?? [];
+        $hariTemplate   = $this->hariTemplate($tpl);   // hari yg aktif & punya jam di template
+        $templateKhusus = (bool) $template->is_shift_khusus;
+        $generated      = [];
+        $dilewati       = [];
+        $dilewatiKhusus = [];
+        $peringatan     = [];
 
         [$repMasuk, $repPulang] = $this->jamRepresentatif($template, $tpl);
 
@@ -53,6 +56,13 @@ class GenerateJamKerjaService
 
         foreach ($gurus as $guru) {
             $nama = $guru->user?->name ?? ('Guru #' . $guru->id);
+
+            // PENGAMAN: jangan menimpa guru yang sedang SHIFT KHUSUS (asrama/satpam)
+            // dengan template REGULER — kecuali dipaksa. Cegah jam khusus tertimpa.
+            if (!$paksa && !$templateKhusus && $this->guruShiftKhusus($guru)) {
+                $dilewatiKhusus[] = $nama;
+                continue;
+            }
 
             // Tentukan HARI MASUK menurut mode.
             if ($mode === 'libur') {
@@ -99,6 +109,7 @@ class GenerateJamKerjaService
                     'total_jam_kerja_sehari'  => $template->total_jam_kerja_sehari ?? 480,
                     'is_default'              => false,
                     'is_aktif'                => true,
+                    'is_shift_khusus'         => $templateKhusus, // wariskan flag dari template
                     'induk_template_id'       => $template->id,
                 ]
             );
@@ -107,7 +118,21 @@ class GenerateJamKerjaService
             $generated[] = $nama;
         }
 
-        return ['generated' => $generated, 'dilewati' => $dilewati, 'peringatan' => $peringatan];
+        return [
+            'generated'       => $generated,
+            'dilewati'        => $dilewati,
+            'dilewati_khusus' => $dilewatiKhusus,
+            'peringatan'      => $peringatan,
+        ];
+    }
+
+    /** Apakah guru sedang memakai jam kerja SHIFT KHUSUS (asrama/satpam)? */
+    private function guruShiftKhusus(TenagaPendidik $guru): bool
+    {
+        $s = $guru->jamKerjaAktif();
+        if (!$s) return false;
+        // Flag pada setting itu sendiri, atau diwarisi dari template induknya.
+        return $s->is_shift_khusus || (bool) ($s->indukTemplate?->is_shift_khusus);
     }
 
     /** Hari yang AKTIF & punya jam di template (kandidat hari kerja). */
