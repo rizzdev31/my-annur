@@ -74,6 +74,13 @@ class KelasController extends Controller
         return back()->with('success', "Kelas {$kelas->nama} dinonaktifkan.");
     }
 
+    /** Aktifkan kembali kelas yang dinonaktifkan. */
+    public function aktifkan(Kelas $kelas)
+    {
+        $kelas->update(['is_aktif' => true]);
+        return back()->with('success', "Kelas {$kelas->nama} diaktifkan.");
+    }
+
     /** GET kelas/{kelas}/santri — daftar santri AKTIF di kelas (untuk UI kenaikan kelas). */
     public function santriKelas(Kelas $kelas)
     {

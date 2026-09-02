@@ -557,6 +557,7 @@ Route::prefix('admin')
             Route::post('kelas',           [KelasController::class, 'store'])->name('kelas.store');
             Route::put('kelas/{kelas}',    [KelasController::class, 'update'])->name('kelas.update');
             Route::delete('kelas/{kelas}', [KelasController::class, 'destroy'])->name('kelas.destroy');
+            Route::patch('kelas/{kelas}/aktifkan', [KelasController::class, 'aktifkan'])->name('kelas.aktifkan');
             Route::get('kelas/{kelas}/santri', [KelasController::class, 'santriKelas'])->name('kelas.santri');
             Route::post('kelas/{kelas}/naik-kelas', [KelasController::class, 'naikKelas'])->name('kelas.naik-kelas');
 

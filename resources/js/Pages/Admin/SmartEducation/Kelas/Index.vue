@@ -85,11 +85,17 @@
                                             d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                     </svg>
                                 </button>
-                                <button @click="hapus(k)"
+                                <button v-if="k.is_aktif" @click="hapus(k)" title="Nonaktifkan kelas"
                                     class="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
                                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                    </svg>
+                                </button>
+                                <button v-else @click="aktifkan(k)" title="Aktifkan kelas"
+                                    class="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                 </button>
                             </div>
@@ -286,6 +292,9 @@ function submit() {
     }
     if (editTarget.value) router.put(route('admin.smart-education.kelas.update', editTarget.value.id), payload, opts)
     else router.post(route('admin.smart-education.kelas.store'), payload, opts)
+}
+async function aktifkan(k) {
+    router.patch(route('admin.smart-education.kelas.aktifkan', k.id), {}, { preserveScroll: true })
 }
 async function hapus(k) {
     if (!(await confirm({ title: `Nonaktifkan kelas "${k.nama}"?`, variant: 'danger', confirmLabel: 'Ya, Nonaktifkan' }))) return
