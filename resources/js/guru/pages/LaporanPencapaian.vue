@@ -240,6 +240,22 @@ const lvColor = (st) => ({ lewat: 'bg-emerald-500', berjalan: 'bg-[#0C78FF]', be
                             </div>
                         </div>
 
+                        <!-- Materi Tambahan (pelengkap jurnal — tak untuk naik level) -->
+                        <div v-if="detail.materi_tambahan?.length" class="rounded-2xl bg-white border border-gray-100 p-4">
+                            <p class="text-sm font-bold text-gray-800 mb-0.5 flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                Materi Tambahan ({{ detail.materi_tambahan.length }})
+                            </p>
+                            <p class="text-[10px] text-gray-400 mb-2">Pelengkap jurnal · tidak dihitung untuk naik level.</p>
+                            <div v-for="(t, i) in detail.materi_tambahan" :key="i" class="py-2 border-b border-gray-50 last:border-0">
+                                <div class="flex justify-between gap-2">
+                                    <span class="text-xs font-semibold text-gray-700 truncate">{{ t.nama }}</span>
+                                    <span v-if="t.nilai" class="text-[11px] text-teal-700 font-bold shrink-0">{{ t.nilai }}</span>
+                                </div>
+                                <p class="text-[11px] text-gray-400"><span v-if="t.tanggal_label">{{ t.tanggal_label }}</span><span v-if="t.catatan"> · {{ t.catatan }}</span></p>
+                            </div>
+                        </div>
+
                         <div class="rounded-2xl bg-white border border-gray-100 p-4">
                             <p class="text-sm font-bold text-gray-800 mb-2">Riwayat Penilaian</p>
                             <div v-if="!detail.riwayat?.length" class="text-xs text-gray-400 py-2">Belum ada riwayat.</div>

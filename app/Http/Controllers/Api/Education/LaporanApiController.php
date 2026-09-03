@@ -310,9 +310,14 @@ class LaporanApiController extends Controller
                     'penguji'  => $t->penguji?->user?->name ?? '—',
                     'tanggal'  => optional($t->updated_at)->locale('id')->isoFormat('D MMM YYYY'),
                 ])->values();
+            $svcTahsin = new TahsinService();
             $detail = [
                 'santri' => ['nama' => $santri->nama_lengkap, 'nip' => $santri->nip, 'level' => $level],
-                'materi' => collect((new TahsinService())->materiSantri($santri->id, $level))->values(),
+                'materi' => collect($svcTahsin->materiSantri($santri->id, $level))->values(),
+                'materi_tambahan' => collect($svcTahsin->materiTambahanSantri($santri->id, 40))->map(function ($t) {
+                    return $t + ['tanggal_label' => $t['tanggal']
+                        ? Carbon::parse($t['tanggal'])->locale('id')->isoFormat('dd, D MMM YYYY') : null];
+                })->values(),
                 'level_grid' => $levelGrid, 'riwayat' => $riwayat,
                 'rekap' => ['penilaian' => $riwayat->count(), 'lulus' => $riwayat->where('lulus', true)->count(),
                     'rata' => $nilaiAda->count() ? round($nilaiAda->avg('nilai'), 1) : null],
