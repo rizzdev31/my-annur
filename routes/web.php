@@ -643,6 +643,7 @@ Route::prefix('admin')
             // Tahap 3 — Penunjukan piket harian
             Route::get('jadwal',             [PiketJadwalController::class, 'index'])->name('jadwal.index');
             Route::post('jadwal',            [PiketJadwalController::class, 'store'])->name('jadwal.store');
+            Route::post('jadwal-rentang',    [PiketJadwalController::class, 'storeRentang'])->name('jadwal.rentang');
             Route::delete('jadwal/{jadwal}', [PiketJadwalController::class, 'destroy'])->name('jadwal.destroy');
             // Tahap 7 — peninjauan sanggah penilaian
             Route::get('sanggah',                  [PiketSanggahController::class, 'index'])->name('sanggah.index');

@@ -40,6 +40,45 @@
             </div>
         </div>
 
+        <!-- Form tunjuk RENTANG -->
+        <div class="bg-white rounded-2xl border border-gray-200 p-5 mb-5">
+            <p class="text-sm font-semibold text-gray-800 mb-1">Tunjuk Piket Rentang</p>
+            <p class="text-xs text-gray-400 mb-3">Tunjuk sekaligus untuk beberapa hari (mis. sebulan) tanpa input harian. Pilih hari kalau mau (kosong = semua hari dalam rentang).</p>
+            <div class="grid md:grid-cols-4 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Guru Piket</label>
+                    <select v-model.number="formR.tenaga_pendidik_id" :class="inp">
+                        <option :value="null">Pilih guru...</option>
+                        <option v-for="g in guruOpsi" :key="g.id" :value="g.id">{{ g.nama }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Dari Tanggal</label>
+                    <input v-model="formR.tanggal_mulai" type="date" :class="inp" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Sampai Tanggal</label>
+                    <input v-model="formR.tanggal_selesai" type="date" :min="formR.tanggal_mulai" :class="inp" />
+                </div>
+                <div class="flex items-end">
+                    <button @click="tunjukRentang" :disabled="!validR || savingR"
+                        class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50">
+                        {{ savingR ? 'Memproses…' : 'Tunjuk Rentang' }}
+                    </button>
+                </div>
+            </div>
+            <div class="mt-3">
+                <label class="block text-xs font-medium text-gray-500 mb-1.5">Hari (opsional)</label>
+                <div class="flex flex-wrap gap-2">
+                    <button v-for="h in hariOpsi" :key="h.v" type="button" @click="toggleHari(h.v)"
+                        :class="['px-3 py-1.5 rounded-lg text-xs font-semibold border transition',
+                            formR.hari.includes(h.v) ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-gray-200 text-gray-500']">
+                        {{ h.t }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Tabel -->
         <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <table class="w-full text-sm">
@@ -77,7 +116,7 @@
 </template>
 
 <script setup>
-import { reactive, computed } from 'vue'
+import { reactive, computed, ref } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { confirm } from '@/composables/useConfirm'
@@ -103,6 +142,25 @@ function tunjuk() {
     router.post(route('admin.piket.jadwal.store'), { ...form }, {
         preserveScroll: true,
         onSuccess: () => { form.tenaga_pendidik_id = null },
+    })
+}
+
+// ── Tunjuk rentang ──────────────────────────────────────────────────────────
+const hariOpsi = [
+    { v: 'senin', t: 'Senin' }, { v: 'selasa', t: 'Selasa' }, { v: 'rabu', t: 'Rabu' },
+    { v: 'kamis', t: 'Kamis' }, { v: 'jumat', t: "Jum'at" }, { v: 'sabtu', t: 'Sabtu' }, { v: 'ahad', t: 'Ahad' },
+]
+const formR = reactive({ tenaga_pendidik_id: null, tanggal_mulai: today, tanggal_selesai: today, hari: [] })
+const savingR = ref(false)
+const validR = computed(() => formR.tenaga_pendidik_id && formR.tanggal_mulai && formR.tanggal_selesai && formR.tanggal_selesai >= formR.tanggal_mulai)
+function toggleHari(v) { const i = formR.hari.indexOf(v); i >= 0 ? formR.hari.splice(i, 1) : formR.hari.push(v) }
+function tunjukRentang() {
+    if (!validR.value) return
+    savingR.value = true
+    router.post(route('admin.piket.jadwal.rentang'), { ...formR }, {
+        preserveScroll: true,
+        onSuccess: () => { formR.tenaga_pendidik_id = null; formR.hari = [] },
+        onFinish: () => { savingR.value = false },
     })
 }
 
