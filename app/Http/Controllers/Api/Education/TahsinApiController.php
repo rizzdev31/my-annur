@@ -278,11 +278,38 @@ class TahsinApiController extends Controller
         if (!$santri) return response()->json(['success' => false, 'message' => 'Santri tidak ditemukan.'], 404);
         $level = $santri->tahsin_level ?? 1;
 
+        $svc = new TahsinService();
         return response()->json(['success' => true, 'data' => [
             'santri' => ['id' => $santri->id, 'nama' => $santri->nama_lengkap, 'level' => $level],
-            'materi' => (new TahsinService())->materiSantri((int) $santriId, $level),
-            'level_selesai' => (new TahsinService())->levelSelesai((int) $santriId, $level),
+            'materi' => $svc->materiSantri((int) $santriId, $level),
+            'materi_tambahan' => $svc->materiTambahanSantri((int) $santriId),
+            'level_selesai' => $svc->levelSelesai((int) $santriId, $level),
         ]]);
+    }
+
+    /** POST /education/tahsin/materi-tambahan — catat materi pelengkap (tak untuk naik level). */
+    public function materiTambahan(Request $request): JsonResponse
+    {
+        $request->validate([
+            'absensi_mengajar_id' => 'nullable|exists:absensi_mengajar,id',
+            'santri_id'           => 'required|exists:santri,id',
+            'nama_materi'         => 'required|string|min:2|max:150',
+            'nilai'               => 'nullable|numeric|min:1|max:10',
+            'catatan'             => 'nullable|string|max:300',
+        ]);
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Tenaga pendidik tidak ditemukan.'], 404);
+
+        (new TahsinService())->catatMateriTambahan([
+            'absensi_mengajar_id' => $request->absensi_mengajar_id,
+            'santri_id'           => $request->santri_id,
+            'tenaga_pendidik_id'  => $tp->id,
+            'nama_materi'         => $request->nama_materi,
+            'nilai'               => $request->nilai,
+            'catatan'             => $request->catatan,
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Materi tambahan tersimpan.']);
     }
 
     /** POST /education/tahsin/nilai — nilai satu materi (wajib). */

@@ -189,6 +189,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/tahsin/jadwal/{jadwalId}/roster',    [TahsinApiController::class, 'rosterJadwal']); // penilaian luar jam
                 Route::get('/tahsin/santri/{santriId}/materi',    [TahsinApiController::class, 'materiSantri']);
                 Route::post('/tahsin/nilai',                      [TahsinApiController::class, 'nilai']);
+                Route::post('/tahsin/materi-tambahan',            [TahsinApiController::class, 'materiTambahan']);
                 Route::post('/tahsin/santri/{santriId}/naik-level', [TahsinApiController::class, 'naikLevel']);
                 // TASNIF — ujian kenaikan level (analog tasmi')
                 Route::get('/tahsin/penguji-opsi',                [TahsinApiController::class, 'pengujiOpsi']);

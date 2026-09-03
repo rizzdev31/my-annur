@@ -63,19 +63,48 @@ const loadingMateri = ref(false)
 const f = reactive({ materi_id: '', nilai: '', catatan: '' })
 const saving = ref(false)
 
+// Materi tambahan (pelengkap jurnal — tak untuk naik level)
+const materiTambahan = ref([])
+const ft = reactive({ nama_materi: '', nilai: '', catatan: '' })
+const savingT = ref(false)
+
 async function bukaNilai(s) {
-    aktif.value = s; msg.value = null; materiList.value = []; levelSelesai.value = false
+    aktif.value = s; msg.value = null; materiList.value = []; levelSelesai.value = false; materiTambahan.value = []
     Object.assign(f, { materi_id: '', nilai: '', catatan: '' })
+    Object.assign(ft, { nama_materi: '', nilai: '', catatan: '' })
     loadingMateri.value = true
     try {
         const res = await api.get(`/education/tahsin/santri/${s.santri_id}/materi`)
         const d = res.data.data ?? res.data
         materiList.value = d.materi ?? []
+        materiTambahan.value = d.materi_tambahan ?? []
         levelSelesai.value = !!d.level_selesai
         // default: materi pertama yang belum lulus
         const belum = materiList.value.find((m) => !m.lulus)
         f.materi_id = (belum || materiList.value[0])?.materi_id || ''
     } catch (_) {/* diamkan */} finally { loadingMateri.value = false }
+}
+
+async function kirimTambahan() {
+    msg.value = null
+    if (!ft.nama_materi.trim() || ft.nama_materi.trim().length < 2) { msg.value = { ok: false, text: 'Nama materi tambahan wajib diisi.' }; return }
+    if (ft.nilai && (ft.nilai < 1 || ft.nilai > 10)) { msg.value = { ok: false, text: 'Nilai 1–10.' }; return }
+    savingT.value = true
+    try {
+        await api.post('/education/tahsin/materi-tambahan', {
+            absensi_mengajar_id: info.value.absensi_mengajar_id || null,
+            santri_id: aktif.value.santri_id,
+            nama_materi: ft.nama_materi.trim(),
+            nilai: ft.nilai ? Number(ft.nilai) : null,
+            catatan: ft.catatan.trim() || null,
+        })
+        // Tampilkan langsung di daftar + reset form (modal tetap terbuka utk isi lagi)
+        materiTambahan.value.unshift({ nama: ft.nama_materi.trim(), nilai: ft.nilai ? Number(ft.nilai) : null, catatan: ft.catatan.trim() || null, tanggal: null })
+        Object.assign(ft, { nama_materi: '', nilai: '', catatan: '' })
+        msg.value = { ok: true, text: 'Materi tambahan tersimpan.' }
+    } catch (e) {
+        msg.value = { ok: false, text: e.response?.data?.message || 'Gagal menyimpan materi tambahan.' }
+    } finally { savingT.value = false }
 }
 
 async function kirimNilai() {
@@ -218,6 +247,38 @@ const absenColor = (s) => ({ hadir: 'bg-emerald-100 text-emerald-700', telat: 'b
                             <button @click="kirimNilai" :disabled="saving" class="flex-1 py-3 rounded-xl bg-violet-600 text-white font-bold text-sm disabled:opacity-60">
                                 {{ saving ? 'Menyimpan…' : 'Simpan Nilai' }}
                             </button>
+                        </div>
+
+                        <!-- Materi Tambahan (pelengkap jurnal — TIDAK untuk naik level) -->
+                        <div class="mt-5 pt-4 border-t border-gray-100">
+                            <p class="text-[13px] font-extrabold text-gray-800">Materi Tambahan
+                                <span class="text-[10px] font-medium text-teal-600">· pelengkap, tak untuk naik level</span>
+                            </p>
+                            <p class="text-[11px] text-gray-400 mb-2">Materi di luar materi wajib untuk mengisi jurnal harian.</p>
+
+                            <input v-model="ft.nama_materi" type="text" placeholder="Nama materi (mis. Hafalan doa harian)"
+                                class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-2" />
+                            <div class="flex gap-2 mb-2">
+                                <input v-model="ft.nilai" type="number" min="1" max="10" step="0.5" placeholder="Nilai (opsional)"
+                                    class="w-32 px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none" />
+                                <input v-model="ft.catatan" type="text" placeholder="Catatan (opsional)"
+                                    class="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none" />
+                            </div>
+                            <button @click="kirimTambahan" :disabled="savingT"
+                                class="w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm disabled:opacity-60">
+                                {{ savingT ? 'Menyimpan…' : '+ Tambah Materi Pelengkap' }}
+                            </button>
+
+                            <ul v-if="materiTambahan.length" class="mt-3 space-y-1.5">
+                                <li v-for="(t, i) in materiTambahan" :key="i" class="rounded-xl bg-gray-50 px-3 py-2 text-[12px]">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="font-semibold text-gray-800 truncate">{{ t.nama }}</span>
+                                        <span v-if="t.nilai" class="shrink-0 text-teal-700 font-bold">{{ t.nilai }}</span>
+                                    </div>
+                                    <p v-if="t.catatan" class="text-gray-400 text-[11px]">{{ t.catatan }}</p>
+                                    <p v-if="t.tanggal" class="text-gray-300 text-[10px]">{{ t.tanggal }}</p>
+                                </li>
+                            </ul>
                         </div>
                     </template>
                 </div>

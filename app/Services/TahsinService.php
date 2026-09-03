@@ -94,6 +94,37 @@ class TahsinService
         });
     }
 
+    /**
+     * Catat materi TAMBAHAN (pelengkap jurnal) — di luar materi wajib, tak
+     * memengaruhi naik level. Append: boleh banyak entri per santri per hari.
+     */
+    public function catatMateriTambahan(array $d): \App\Models\TahsinMateriTambahan
+    {
+        return \App\Models\TahsinMateriTambahan::create([
+            'santri_id'           => $d['santri_id'],
+            'tenaga_pendidik_id'  => $d['tenaga_pendidik_id'] ?? null,
+            'absensi_mengajar_id' => $d['absensi_mengajar_id'] ?? null,
+            'nama_materi'         => trim($d['nama_materi']),
+            'nilai'               => isset($d['nilai']) && $d['nilai'] !== '' ? (float) $d['nilai'] : null,
+            'catatan'             => $d['catatan'] ?? null,
+            'tanggal'             => $d['tanggal'] ?? Carbon::today()->toDateString(),
+        ]);
+    }
+
+    /** Daftar materi tambahan terbaru seorang santri (utk tampilan jurnal). */
+    public function materiTambahanSantri(int $santriId, int $limit = 15): array
+    {
+        return \App\Models\TahsinMateriTambahan::where('santri_id', $santriId)
+            ->orderByDesc('tanggal')->orderByDesc('id')->limit($limit)->get()
+            ->map(fn($t) => [
+                'id'       => $t->id,
+                'nama'     => $t->nama_materi,
+                'nilai'    => $t->nilai,
+                'catatan'  => $t->catatan,
+                'tanggal'  => $t->tanggal?->toDateString(),
+            ])->all();
+    }
+
     /** Apakah semua materi (aktif) level tertentu sudah lulus. */
     public function levelSelesai(int $santriId, int $level): bool
     {
