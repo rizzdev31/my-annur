@@ -171,6 +171,28 @@
                     </table>
                 </div>
 
+                <template v-if="detail.materi_tambahan?.length">
+                    <p class="text-sm font-semibold text-gray-700 mb-1">Materi Tambahan <span class="text-xs font-normal text-gray-400">(pelengkap · tidak dihitung untuk naik level)</span></p>
+                    <div class="overflow-x-auto mb-5">
+                        <table class="w-full text-sm border-collapse">
+                            <thead><tr class="bg-[#2E3160] text-white">
+                                <th class="border border-gray-200 px-2 py-1.5 text-left">Materi Tambahan</th>
+                                <th class="border border-gray-200 px-2 py-1.5 text-center">Nilai</th>
+                                <th class="border border-gray-200 px-2 py-1.5 text-left">Catatan</th>
+                                <th class="border border-gray-200 px-2 py-1.5 text-left">Tanggal</th>
+                            </tr></thead>
+                            <tbody>
+                                <tr v-for="(t, i) in detail.materi_tambahan" :key="i">
+                                    <td class="border border-gray-200 px-2 py-1.5">{{ t.nama }}</td>
+                                    <td class="border border-gray-200 px-2 py-1.5 text-center font-semibold">{{ t.nilai ?? '—' }}</td>
+                                    <td class="border border-gray-200 px-2 py-1.5">{{ t.catatan || '—' }}</td>
+                                    <td class="border border-gray-200 px-2 py-1.5">{{ t.tanggal_label || '—' }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
+
                 <p class="text-sm font-semibold text-gray-700 mb-2">Riwayat Penilaian (setiap pembelajaran)</p>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm border-collapse">

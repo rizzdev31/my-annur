@@ -393,8 +393,12 @@ class LaporanController extends Controller
                     'guru'  => $p->tenagaPendidik?->user?->name ?? '—',
                 ])->values();
             $nilaiAda = $riwayat->whereNotNull('nilai');
+            $svcTahsin = new TahsinService();
             $detail = ['santri' => ['nama' => $santri->nama_lengkap, 'nip' => $santri->nip, 'level' => $level],
-                'materi' => (new TahsinService())->materiSantri($santri->id, $level),
+                'materi' => $svcTahsin->materiSantri($santri->id, $level),
+                'materi_tambahan' => collect($svcTahsin->materiTambahanSantri($santri->id, 60))->map(fn($t) => $t + [
+                    'tanggal_label' => $t['tanggal'] ? Carbon::parse($t['tanggal'])->locale('id')->isoFormat('dd, D MMM YYYY') : null,
+                ])->values(),
                 'level_grid' => $levelGrid, 'riwayat' => $riwayat,
                 'rekap' => [
                     'penilaian' => $riwayat->count(),
