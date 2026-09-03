@@ -69,8 +69,19 @@ class TahfidzService
             $aMulai   = (int) ($d['ayat_mulai'] ?? 0);
             $sSelesai = (int) ($d['surah_selesai'] ?? 0);
             $aSelesai = (int) ($d['ayat_selesai'] ?? 0);
+
+            // Default cerdas (mendukung lintas-surah & "surah penuh"):
+            //  - surah selesai kosong  → sama dgn surah mulai (1 surah)
+            //  - ayat mulai kosong     → 1 (awal surah)
+            //  - ayat selesai kosong   → akhir surah selesai (surah penuh)
+            // Contoh: "Abasa 1 → At-Takwir (kosong)" = Abasa 1 s/d akhir At-Takwir;
+            //         "Abasa (kosong) → At-Takwir 8"  = Abasa 1 s/d At-Takwir 8.
+            if ($sSelesai < 1) $sSelesai = $sMulai;
+            if ($aMulai   < 1) $aMulai   = 1;
+            if ($aSelesai < 1) $aSelesai = $this->quran->jumlahAyatSurah($sSelesai);
+
             if (!$this->quran->ayatValid($sMulai, $aMulai) || !$this->quran->ayatValid($sSelesai, $aSelesai)) {
-                throw new \InvalidArgumentException('Rentang surah/ayat tidak valid.');
+                throw new \InvalidArgumentException('Rentang surah/ayat tidak valid. Pastikan surah dipilih dan nomor ayat sesuai.');
             }
         }
 

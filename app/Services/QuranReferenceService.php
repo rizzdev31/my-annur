@@ -136,6 +136,12 @@ class QuranReferenceService
         return isset($this->surahAyat[$surah]) && $ayat >= 1 && $ayat <= $this->surahAyat[$surah];
     }
 
+    /** Jumlah ayat sebuah surah (0 bila surah tak dikenal). */
+    public function jumlahAyatSurah(int $surah): int
+    {
+        return (int) ($this->surahAyat[$surah] ?? 0);
+    }
+
     /** Daftar surah (untuk dropdown). */
     public function daftarSurah(): array
     {

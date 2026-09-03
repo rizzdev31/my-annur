@@ -239,7 +239,7 @@ const bannerClass = { amber: 'bg-amber-50 border-amber-200 text-amber-700', emer
                         <div><label class="block text-[11px] font-medium text-gray-600 mb-1">Ayat Selesai</label>
                             <input v-model="f.ayat_selesai" type="number" min="1" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#0C78FF]" /></div>
                     </div>
-                    <p class="text-[10px] text-gray-400 mb-3">Pilih rentang hafalan {{ jenis === 'ziyadah' ? 'BARU (boleh juz mana saja)' : 'yang dimurojaah' }}. Kosongkan "Selesai" bila 1 surah.</p>
+                    <p class="text-[10px] text-gray-400 mb-3">Rentang hafalan {{ jenis === 'ziyadah' ? 'BARU (boleh juz mana saja)' : 'yang dimurojaah' }} — boleh lintas surah. Kosongkan <b>Surah Selesai</b> bila 1 surah. <b>Ayat kosong</b> = otomatis: mulai→ayat 1, selesai→akhir surah (surah penuh). Contoh: Abasa 1 → At-Takwir 8.</p>
                 </template>
                 <p v-else class="text-[11px] text-gray-400 bg-gray-50 rounded-xl px-3 py-2 mb-3">Murojaah wajib: rentang ditentukan otomatis oleh sistem.</p>
 
