@@ -55,6 +55,7 @@ class SantriController extends Controller
 
         $santri = Santri::create(array_merge($data, ['is_aktif' => true]));
         $santri->kelas()->sync($kelasIds);
+        $santri->selaraskanLevelTahsin();   // materi tahsin mengikuti kelas
         $this->sync->sync($santri);
 
         return back()->with('success', "Santri {$data['nama_lengkap']} berhasil ditambahkan.");
@@ -68,6 +69,7 @@ class SantriController extends Controller
 
         $santri->update($data);
         $santri->kelas()->sync($kelasIds);
+        $santri->selaraskanLevelTahsin();   // materi tahsin mengikuti kelas
         $this->sync->sync($santri->fresh());
 
         return back()->with('success', "Santri {$santri->nama_lengkap} berhasil diperbarui.");

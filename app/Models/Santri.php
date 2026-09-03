@@ -48,6 +48,27 @@ class Santri extends Model
             ->withTimestamps();
     }
 
+    /**
+     * Selaraskan tahsin_level dengan kelas TAHSIN aktif santri (materi mengikuti kelas):
+     * kelas Persiapan Tahfidz (level 6) → tahsin_level 6, dst. Tak berbuat apa-apa
+     * bila santri tak berada di kelas tahsin. Kembalikan true bila ada perubahan.
+     */
+    public function selaraskanLevelTahsin(): bool
+    {
+        $kelasTahsin = $this->kelas()
+            ->wherePivot('is_aktif', true)
+            ->where('kelas.jenis', 'tahsin')
+            ->whereNotNull('level_tahsin')
+            ->orderByDesc('level_tahsin')
+            ->first();
+
+        if ($kelasTahsin && (int) $this->tahsin_level !== (int) $kelasTahsin->level_tahsin) {
+            $this->update(['tahsin_level' => $kelasTahsin->level_tahsin]);
+            return true;
+        }
+        return false;
+    }
+
     // ─── Accessor ─────────────────────────────────────────────────────────────
 
     public function getFotoUrlAttribute(): ?string

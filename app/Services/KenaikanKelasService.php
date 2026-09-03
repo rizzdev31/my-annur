@@ -63,6 +63,8 @@ class KenaikanKelasService
 
         // Sinkron ke RamahAnak SETELAH commit (kelas terbaru sudah tersimpan).
         if ($berubah) {
+            // Materi tahsin mengikuti kelas: kelas tahsin → set tahsin_level = level kelas.
+            \App\Models\Santri::find($santriId)?->selaraskanLevelTahsin();
             $this->sync->sync($santriId);
         }
         return $berubah;
