@@ -162,25 +162,25 @@ return [
             'nama'     => 'Perizinan Santri',
             'kategori' => 'Kesiswaan',
             'beranda'  => 'admin.perizinan.index',
-            'prefix'   => ['admin.perizinan.'],
+            'prefix'   => ['admin.perizinan'],
         ],
         'smart_health' => [
             'nama'     => 'Smart Health',
             'kategori' => 'Kesiswaan',
             'beranda'  => 'admin.smart-health.index',
-            'prefix'   => ['admin.smart-health.'],
+            'prefix'   => ['admin.smart-health'],
         ],
         'smart_habbit' => [
             'nama'     => 'Smart Controlling & Eksekusi',
             'kategori' => 'Kesiswaan',
             'beranda'  => 'admin.smart-habbit.controlling.index',
-            'prefix'   => ['admin.smart-habbit.'],
+            'prefix'   => ['admin.smart-habbit'],
         ],
         'piket' => [
             'nama'     => 'Guru Piket',
             'kategori' => 'Kesiswaan',
             'beranda'  => 'admin.piket.jadwal.index',
-            'prefix'   => ['admin.piket.'],
+            'prefix'   => ['admin.piket'],
         ],
 
         // ── Sarana ───────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ return [
             'nama'     => 'Inventaris',
             'kategori' => 'Sarana',
             'beranda'  => 'admin.inventaris.index',
-            'prefix'   => ['admin.inventaris.'],
+            'prefix'   => ['admin.inventaris'],
         ],
 
         // ── Komunikasi ───────────────────────────────────────────────────────

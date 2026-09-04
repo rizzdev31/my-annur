@@ -208,8 +208,207 @@ class MonitoringApiController extends Controller
 
         return response()->json(['success' => true, 'data' => [
             'ringkasan'          => $ringkas,
-            'boleh_setujui_izin' => $this->pengawas->bolehSetujuiIzin($tp->id), // Fase 3
+            'boleh_setujui_izin' => $this->pengawas->bolehSetujuiIzin($tp->id),
             'izin'               => $izin,
+        ]]);
+    }
+
+    /**
+     * Penjagaan bersama untuk aksi persetujuan izin oleh pimpinan.
+     * Mengembalikan pesan error (string) bila TIDAK boleh, atau null bila boleh.
+     */
+    private function tolakAksiIzin($tp, \App\Models\PengajuanIzin $izin): ?string
+    {
+        if (!$this->pengawas->bolehSetujuiIzin($tp->id)) {
+            return 'Anda tidak diberi wewenang menyetujui izin.';
+        }
+        // bolehLihatGuru() sudah otomatis mengecualikan DIRI SENDIRI → cegah
+        // konflik kepentingan (menyetujui izin sendiri) sekaligus lintas cakupan.
+        if (!$this->pengawas->bolehLihatGuru($tp->id, (int) $izin->tenaga_pendidik_id)) {
+            return 'Guru ini di luar cakupan pengawasan Anda.';
+        }
+        if ($izin->status !== 'pending') {
+            return "Pengajuan ini sudah {$izin->status}.";
+        }
+        return null;
+    }
+
+    /** POST /monitoring/perizinan/{izin}/setujui — keputusan FINAL (tercatat). */
+    public function setujuiIzin(Request $request, \App\Models\PengajuanIzin $izin): JsonResponse
+    {
+        $tp = $request->user()?->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Bukan tenaga pendidik.'], 403);
+
+        $request->validate([
+            'catatan'   => 'nullable|string|max:500',
+            'jam_mulai' => 'nullable|date_format:H:i,H:i:s', // khusus izin datang terlambat
+        ]);
+
+        if ($pesan = $this->tolakAksiIzin($tp, $izin)) {
+            return response()->json(['success' => false, 'message' => $pesan], 403);
+        }
+
+        // Izin DATANG TERLAMBAT tak lewat alur absensi harian (sama seperti admin).
+        if ($izin->is_datang_terlambat) {
+            $upd = [
+                'status'            => 'disetujui',
+                'catatan_admin'     => $request->catatan,
+                'diproses_oleh'     => $request->user()->id,
+                'tanggal_keputusan' => now(),
+            ];
+            if ($request->filled('jam_mulai')) {
+                $upd['jam_mulai'] = strlen($request->jam_mulai) === 5 ? $request->jam_mulai . ':00' : $request->jam_mulai;
+            }
+            $izin->update($upd);
+
+            if ($izin->tenagaPendidik?->user) {
+                \App\Services\NotifikasiService::kirim(
+                    $izin->tenagaPendidik->user->id, 'Izin Datang Terlambat Disetujui',
+                    'Kamu boleh datang s/d ' . substr((string) $izin->jam_mulai, 0, 5)
+                        . ' pada ' . $izin->tanggal_mulai?->format('d/m/Y') . '. Dalam batas itu tetap dihitung hadir.',
+                    'izin', ['type' => 'izin', 'route' => '/izin']
+                );
+            }
+            return response()->json(['success' => true, 'message' => 'Izin datang terlambat disetujui.']);
+        }
+
+        try {
+            // Reuse service admin → absensi & status kepegawaian ikut diproses,
+            // audit (diproses_oleh + tanggal_keputusan) tercatat otomatis.
+            app(\App\Services\PengajuanIzinService::class)->setujui($izin, $request->catatan);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Izin disetujui. Absensi guru diperbarui otomatis.']);
+    }
+
+    /** POST /monitoring/perizinan/{izin}/tolak — alasan WAJIB (tercatat). */
+    public function tolakIzin(Request $request, \App\Models\PengajuanIzin $izin): JsonResponse
+    {
+        $tp = $request->user()?->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Bukan tenaga pendidik.'], 403);
+
+        $request->validate(['catatan' => 'required|string|min:3|max:500'],
+            ['catatan.required' => 'Alasan penolakan wajib diisi.']);
+
+        if ($pesan = $this->tolakAksiIzin($tp, $izin)) {
+            return response()->json(['success' => false, 'message' => $pesan], 403);
+        }
+
+        try {
+            app(\App\Services\PengajuanIzinService::class)->tolak($izin, $request->catatan);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Izin ditolak.']);
+    }
+
+    /** GET /monitoring/tugas-tambahan?status= — penugasan guru yang diawasi. */
+    public function tugasTambahan(Request $request): JsonResponse
+    {
+        $tp = $request->user()?->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Bukan tenaga pendidik.'], 403);
+
+        if (!$this->pengawas->boleh($tp->id, 'tugas_tambahan')) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak diberi akses monitoring tugas tambahan.'], 403);
+        }
+
+        $ids = $this->pengawas->idGuruDiawasi($tp->id);
+        if (empty($ids)) return response()->json(['success' => true, 'data' => ['ringkasan' => [], 'tugas' => []]]);
+
+        $status = $request->get('status'); // belum|sedang|selesai|null
+        $q = \App\Models\PenugasanTambahan::with(['tenagaPendidik.user:id,name', 'tugasTambahan:id,judul,tanggal_mulai,tanggal_selesai,tipe'])
+            ->whereIn('tenaga_pendidik_id', $ids);
+        if (in_array($status, ['belum', 'sedang', 'selesai'], true)) {
+            $q->where('status_pengerjaan', $status);
+        }
+
+        $rows = $q->latest('id')->limit(120)->get()->map(fn($p) => [
+            'id'          => $p->id,
+            'guru'        => $p->tenagaPendidik?->user?->name ?? '—',
+            'judul'       => $p->tugasTambahan?->judul ?? '—',
+            'tipe'        => $p->tugasTambahan?->tipe,
+            'mulai'       => optional($p->tugasTambahan?->tanggal_mulai)->toDateString(),
+            'selesai'     => optional($p->tugasTambahan?->tanggal_selesai)->toDateString(),
+            'status'      => $p->status_pengerjaan,
+            'disetujui'   => (bool) $p->disetujui,
+            'dilaporkan'  => $p->dilaporkan_pada ? \Carbon\Carbon::parse($p->dilaporkan_pada)->toDateString() : null,
+            'laporan'     => $p->laporan ?: $p->teks_bukti,
+        ])->values();
+
+        $ringkas = [];
+        foreach (\App\Models\PenugasanTambahan::whereIn('tenaga_pendidik_id', $ids)
+            ->selectRaw('status_pengerjaan s, COUNT(*) c')->groupBy('status_pengerjaan')->get() as $r) {
+            $ringkas[$r->s] = (int) $r->c;
+        }
+
+        return response()->json(['success' => true, 'data' => ['ringkasan' => $ringkas, 'tugas' => $rows]]);
+    }
+
+    /**
+     * GET /monitoring/kinerja?bulan=&tahun= — skor kinerja guru yang diawasi.
+     * Kebijakan: RINGKAS + komponen pembentuk skor, TANPA angka rupiah/potongan.
+     */
+    public function kinerja(Request $request): JsonResponse
+    {
+        $tp = $request->user()?->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Bukan tenaga pendidik.'], 403);
+
+        if (!$this->pengawas->boleh($tp->id, 'kinerja')) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak diberi akses monitoring kinerja.'], 403);
+        }
+
+        $bulan = (int) ($request->bulan ?: TimezoneHelper::now()->month);
+        $tahun = (int) ($request->tahun ?: TimezoneHelper::now()->year);
+
+        $guru = $this->pengawas->guruDiawasi($tp->id);
+        if ($guru->isEmpty()) {
+            return response()->json(['success' => true, 'data' => ['bulan' => $bulan, 'tahun' => $tahun, 'guru' => []]]);
+        }
+
+        $rekap = \App\Models\RekapKinerjaBulanan::whereIn('tenaga_pendidik_id', $guru->pluck('id'))
+            ->where('bulan', $bulan)->where('tahun', $tahun)->get()->keyBy('tenaga_pendidik_id');
+
+        $grade = function ($skor) {
+            if ($skor === null) return null;
+            if ($skor >= 90) return 'A';
+            if ($skor >= 80) return 'B';
+            if ($skor >= 70) return 'C';
+            return 'D';
+        };
+
+        $rows = $guru->map(function ($g) use ($rekap, $grade) {
+            $r = $rekap->get($g->id);
+            $skor = $r?->skor_total !== null ? round((float) $r->skor_total, 1) : null;
+            return [
+                'tenaga_pendidik_id' => $g->id,
+                'nama'    => $g->user?->name ?? '—',
+                'jabatan' => $g->jabatan?->nama_jabatan ?? '—',
+                'skor'    => $skor,
+                'grade'   => $grade($skor),
+                // Komponen pembentuk skor (tanpa nominal rupiah — sesuai kebijakan).
+                'komponen' => $r ? [
+                    'absensi'      => $r->skor_absensi !== null ? round((float) $r->skor_absensi, 1) : null,
+                    'tugas'        => $r->skor_tugas !== null ? round((float) $r->skor_tugas, 1) : null,
+                    'administrasi' => $r->skor_administrasi !== null ? round((float) $r->skor_administrasi, 1) : null,
+                    'piket'        => $r->skor_piket !== null ? round((float) $r->skor_piket, 1) : null,
+                ] : null,
+                'absensi' => $r ? [
+                    'hadir' => (int) $r->total_hadir, 'terlambat' => (int) $r->total_terlambat,
+                    'izin' => (int) $r->total_izin, 'sakit' => (int) $r->total_sakit,
+                    'alfa' => (int) $r->total_alfa, 'hari_kerja' => (int) $r->total_hari_kerja,
+                ] : null,
+                'mengajar' => $r ? [
+                    'sesi_terlaksana' => (int) $r->total_sesi_terlaksana,
+                    'sesi_jadwal'     => (int) $r->total_sesi_jadwal,
+                ] : null,
+            ];
+        })->sortBy(fn($r) => $r['skor'] ?? 999)->values();  // skor terendah dulu = perlu perhatian
+
+        return response()->json(['success' => true, 'data' => [
+            'bulan' => $bulan, 'tahun' => $tahun, 'guru' => $rows,
         ]]);
     }
 }

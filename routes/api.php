@@ -269,6 +269,10 @@ Route::prefix('v1')->group(function () {
                 Route::get('/absen-harian',   [\App\Http\Controllers\Api\MonitoringApiController::class, 'absenHarian']);
                 Route::get('/absen-mengajar', [\App\Http\Controllers\Api\MonitoringApiController::class, 'absenMengajar']);
                 Route::get('/perizinan',      [\App\Http\Controllers\Api\MonitoringApiController::class, 'perizinan']);
+                Route::post('/perizinan/{izin}/setujui', [\App\Http\Controllers\Api\MonitoringApiController::class, 'setujuiIzin']);
+                Route::post('/perizinan/{izin}/tolak',   [\App\Http\Controllers\Api\MonitoringApiController::class, 'tolakIzin']);
+                Route::get('/tugas-tambahan', [\App\Http\Controllers\Api\MonitoringApiController::class, 'tugasTambahan']);
+                Route::get('/kinerja',        [\App\Http\Controllers\Api\MonitoringApiController::class, 'kinerja']);
             });
 
             // Pengajuan Izin / Cuti / Sakit / Dinas
