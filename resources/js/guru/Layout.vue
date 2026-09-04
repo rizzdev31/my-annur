@@ -7,11 +7,12 @@ import { notif, startNotifPolling } from './store/notif'
 import PengumumanPopup from './components/PengumumanPopup.vue'
 import InstallBanner from './components/InstallBanner.vue'
 import { pwa, resetInstallBanner } from './store/pwa'
+import { monitoring, muatMonitoring } from './store/monitoring'
 
 const route = useRoute()
 const router = useRouter()
 
-onMounted(startNotifPolling)
+onMounted(() => { startNotifPolling(); muatMonitoring() })
 
 const tabs = [
     { name: 'beranda',  label: 'Beranda', icon: 'M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3v-6h6v6h3a1 1 0 001-1V10' },
@@ -49,6 +50,14 @@ const sections = [
         { name: 'smart-health',     label: 'Smart Health',     sub: 'Lapor & pantau kesehatan', c: '#EF4444', icon: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z' },
     ]},
 ]
+
+// Menu PIMPINAN hanya muncul bila user diberi hak monitoring oleh admin.
+const sectionsTampil = computed(() => monitoring.is_pengawas
+    ? [...sections, { title: 'PIMPINAN', items: [
+        { name: 'monitoring', label: 'Monitoring', sub: 'Pantau aktivitas guru', c: '#0F766E',
+          icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' },
+    ]}]
+    : sections)
 
 const initials = computed(() => {
     const n = auth.user?.name || 'AN'
@@ -137,7 +146,7 @@ async function keluar() {
 
                 <!-- Menu -->
                 <div class="flex-1 overflow-y-auto py-3">
-                    <template v-for="sec in sections" :key="sec.title">
+                    <template v-for="sec in sectionsTampil" :key="sec.title">
                         <p class="px-5 pt-3 pb-1.5 text-[10px] font-extrabold text-gray-400 tracking-widest">{{ sec.title }}</p>
                         <button v-for="it in sec.items" :key="it.name" @click="go(it.name)"
                             class="w-full flex items-center gap-3 px-4 py-2.5 active:bg-white transition-colors"

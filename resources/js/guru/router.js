@@ -62,6 +62,7 @@ const routes = [
     { path: '/laporan-pencapaian/:jenis', name: 'laporan-pencapaian', component: LaporanPencapaian, meta: { title: 'Laporan Pencapaian' } },
     { path: '/sertifikat-tasmi/:id', name: 'sertifikat-tasmi', component: () => import('./pages/SertifikatTasmi.vue'), meta: { title: 'Sertifikat Tasmi', bare: true } },
     { path: '/sertifikat-tasnif/:id', name: 'sertifikat-tasnif', component: () => import('./pages/SertifikatTasnif.vue'), meta: { title: 'Sertifikat Tasnif', bare: true } },
+    { path: '/monitoring', name: 'monitoring', component: () => import('./pages/Monitoring.vue'), meta: { title: 'Monitoring' } },
     { path: '/piket', name: 'piket', component: Piket, meta: { title: 'Guru Piket' } },
     { path: '/piket/kegiatan', name: 'piket-kegiatan', component: () => import('./pages/PiketKegiatan.vue'), meta: { title: 'Absen Kegiatan' } },
     { path: '/smart-controlling', name: 'smart-controlling', component: SmartControlling, meta: { title: 'Smart Controlling' } },

@@ -263,6 +263,12 @@ Route::prefix('v1')->group(function () {
                 Route::post('/penilaian/{id}/sanggah', [PiketApiController::class, 'sanggah']);
             });
 
+            // ── Monitoring pimpinan (pengawas) — hak diberikan superadmin ──
+            Route::prefix('monitoring')->group(function () {
+                Route::get('/status',       [\App\Http\Controllers\Api\MonitoringApiController::class, 'status']);
+                Route::get('/absen-harian', [\App\Http\Controllers\Api\MonitoringApiController::class, 'absenHarian']);
+            });
+
             // Pengajuan Izin / Cuti / Sakit / Dinas
             Route::prefix('izin')->group(function () {
                 Route::get('/jenis', [IzinApiController::class, 'jenisIzin']);    // daftar jenis + sisa kuota

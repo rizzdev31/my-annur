@@ -244,6 +244,17 @@ Route::prefix('admin')
         });
 
         // ╔══════════════════════════════════════════════════════════════════╗
+        // ║  MONITORING PIMPINAN — penunjukan pengawas (dipakai di PWA)      ║
+        // ╚══════════════════════════════════════════════════════════════════╝
+        Route::prefix('pengawas')->name('pengawas.')->group(function () {
+            Route::get('/',                  [\App\Http\Controllers\Superadmin\PengawasController::class, 'index'])->name('index');
+            Route::post('/',                 [\App\Http\Controllers\Superadmin\PengawasController::class, 'store'])->name('store');
+            Route::put('/{pengawas}',        [\App\Http\Controllers\Superadmin\PengawasController::class, 'update'])->name('update');
+            Route::patch('/{pengawas}/toggle', [\App\Http\Controllers\Superadmin\PengawasController::class, 'toggle'])->name('toggle');
+            Route::delete('/{pengawas}',     [\App\Http\Controllers\Superadmin\PengawasController::class, 'destroy'])->name('destroy');
+        });
+
+        // ╔══════════════════════════════════════════════════════════════════╗
         // ║  SMART PAYROLL                                                   ║
         // ╚══════════════════════════════════════════════════════════════════╝
 
