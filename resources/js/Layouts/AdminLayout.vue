@@ -108,6 +108,10 @@
                 <SidebarItem v-if="boleh('monitoring')" :href="route('admin.smart-payroll.monitoring.index')" icon="monitor"
                     label="Monitoring Harian" :active="isActive('admin.smart-payroll.monitoring')"
                     :collapsed="!sidebarOpen" />
+                <!-- 2b. Pengawas: hak pimpinan memantau guru lain lewat PWA -->
+                <SidebarItem v-if="boleh('pengawas')" :href="route('admin.pengawas.index')" icon="users"
+                    label="Pengawas Monitoring" :active="isActive('admin.pengawas')"
+                    :collapsed="!sidebarOpen" />
 
                 <!-- 3. Kinerja -->
                 <SidebarGroup v-if="boleh('kinerja')" icon="trophy" label="Kinerja" :active="isActive('admin.smart-payroll.kinerja')"
@@ -690,6 +694,7 @@ const menuLinks = computed(() => {
         { label: 'Rubrik Kategori Piket', href: r('admin.piket.kategori.index'), icon: 'trophy' },
         { label: 'Penunjukan Piket', href: r('admin.piket.jadwal.index'), icon: 'trophy' },
         { label: 'Sanggah Penilaian', href: r('admin.piket.sanggah.index'), icon: 'trophy' },
+        { label: 'Pengawas Monitoring', href: r('admin.pengawas.index'), icon: 'users' },
         { label: 'Perizinan Santri', href: r('admin.perizinan.index'), icon: 'calendar' },
         { label: 'Smart Health', href: r('admin.smart-health.index'), icon: 'academic-cap' },
         { label: 'Inventaris', href: r('admin.inventaris.index'), icon: 'briefcase' },

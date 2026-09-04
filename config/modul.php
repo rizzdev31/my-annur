@@ -38,6 +38,14 @@ return [
             'beranda'  => 'admin.smart-payroll.monitoring.index',
             'prefix'   => ['admin.smart-payroll.monitoring'],
         ],
+        // Penunjukan pengawas: memberi guru/pimpinan hak memantau guru lain di PWA.
+        // Sensitif (membuka data pribadi rekan) → berikan hanya ke peran tepercaya.
+        'pengawas' => [
+            'nama'     => 'Pengawas Monitoring (PWA)',
+            'kategori' => 'Absensi & Kehadiran',
+            'beranda'  => 'admin.pengawas.index',
+            'prefix'   => ['admin.pengawas'],
+        ],
 
         // ── Kinerja & Tugas ──────────────────────────────────────────────────
         'kinerja' => [
