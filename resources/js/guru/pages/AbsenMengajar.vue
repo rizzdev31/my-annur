@@ -155,12 +155,12 @@ async function kirim() {
                             <div v-if="j.digantikan_oleh && (j.jp_terlaksana ?? 0) === 0"
                                 class="mt-2 rounded-xl bg-sky-50 border border-sky-100 p-2.5">
                                 <div class="flex items-center justify-between gap-2">
-                                    <p class="text-[11px] text-sky-700">👤 Pengganti: <b>{{ j.pengganti_nama || 'Ditunjuk' }}</b></p>
+                                    <p class="text-[11px] text-sky-700 min-w-0 truncate">👤 Pengganti: <b>{{ j.pengganti_nama || 'Ditunjuk' }}</b></p>
                                     <button @click="batalPengganti(j)" :disabled="j.assigning"
-                                        class="text-[11px] font-bold text-red-500 disabled:opacity-50">Batalkan</button>
+                                        class="shrink-0 px-2 py-1.5 rounded-lg text-[11px] font-bold text-red-500 active:bg-red-100/60 disabled:opacity-50 transition">Batalkan</button>
                                 </div>
                                 <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
-                                    class="mt-2 w-full py-1.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold">Batalkan & ajar sendiri</button>
+                                    class="mt-2 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">Batalkan &amp; ajar sendiri</button>
                             </div>
 
                             <!-- Sudah benar-benar diabsen/diajar -->
@@ -184,22 +184,22 @@ async function kirim() {
                             <!-- Saat izin: pilih guru pengganti / ajar sendiri (override) -->
                             <div v-else-if="j.is_izin_guru && j.boleh_tunjuk_pengganti"
                                 class="mt-2 rounded-xl bg-amber-50 border border-amber-100 p-2.5">
-                                <p class="text-[11px] font-bold text-amber-700 mb-1.5">
+                                <p class="text-[11px] font-bold text-amber-700 mb-1.5 leading-snug">
                                     Anda izin ({{ j.info_izin }}){{ j.is_dinas_luar ? ' — dinas luar' : '' }} · kelas ini kosong
                                 </p>
                                 <div class="flex gap-1.5">
                                     <select v-model="j.pengganti_id"
-                                        class="flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-[12px] outline-none bg-white">
+                                        class="flex-1 min-w-0 px-2 py-2 rounded-lg border border-gray-200 text-[12px] outline-none bg-white truncate">
                                         <option value="">Pilih guru pengganti…</option>
                                         <option v-for="o in penggantiOpsi" :key="o.id" :value="o.id">{{ o.nama }}</option>
                                     </select>
                                     <button @click="tunjukPengganti(j)" :disabled="!j.pengganti_id || j.assigning"
-                                        class="px-3 py-1.5 rounded-lg bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-50">
+                                        class="shrink-0 whitespace-nowrap px-3.5 py-2 rounded-lg bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-50 active:scale-[0.98] transition">
                                         {{ j.assigning ? '…' : 'Tunjuk' }}
                                     </button>
                                 </div>
                                 <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
-                                    class="mt-1.5 w-full py-1.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold">
+                                    class="mt-1.5 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">
                                     Saya ajar sendiri (izin selesai)
                                 </button>
                             </div>
