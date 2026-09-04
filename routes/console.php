@@ -32,3 +32,8 @@ Schedule::command('controlling:auto-alpha')->everyMinute()->withoutOverlapping()
 // Auto-isi absensi mengajar (reguler/tahfidz/tahsin) jadi 'libur' tiap hari libur.
 // Dini hari agar siap sebelum jam mengajar; tidak bergantung guru membuka aplikasi.
 Schedule::command('mengajar:isi-libur')->dailyAt('00:30');
+
+// Eskalasi anomali ke pengawas/pimpinan. Tiap jam pada jam kerja; aman diulang
+// karena tiap jenis di-dedup per hari (satu ringkasan per jenis per pengawas).
+Schedule::command('eskalasi:pimpinan')->hourlyAt(5)->between('07:00', '21:00')
+    ->withoutOverlapping()->runInBackground();
