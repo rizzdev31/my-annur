@@ -232,6 +232,9 @@ async function kirimAksi() {
                         class="w-full mt-1 py-1.5 text-[11px] font-bold text-[#0C78FF]">
                         {{ buka.tugas ? 'Tutup' : `Lihat semua (${d.tugas.daftar.length})` }}
                     </button>
+                    <p v-if="buka.tugas && d.tugas.berjalan > d.tugas.daftar.length" class="text-[10px] text-gray-400 text-center">
+                        Menampilkan {{ d.tugas.daftar.length }} terbaru dari {{ d.tugas.berjalan }}.
+                    </p>
                 </div>
 
                 <!-- KINERJA -->

@@ -158,9 +158,13 @@ class MonitoringApiController extends Controller
 
         // ── Tugas tambahan yang masih berjalan ───────────────────────────
         if (in_array('tugas_tambahan', $modul, true)) {
-            $tugas = \App\Models\PenugasanTambahan::with(['tenagaPendidik.user:id,name', 'tugasTambahan:id,judul,tanggal_selesai'])
-                ->whereIn('tenaga_pendidik_id', $guruIds)
-                ->whereIn('status_pengerjaan', ['belum', 'sedang'])
+            $qTugas = \App\Models\PenugasanTambahan::whereIn('tenaga_pendidik_id', $guruIds)
+                ->whereIn('status_pengerjaan', ['belum', 'sedang']);
+
+            // Hitung penuh dulu; daftar dibatasi agar payload dashboard tetap ringan.
+            $jumlahTugas = (clone $qTugas)->count();
+
+            $tugas = $qTugas->with(['tenagaPendidik.user:id,name', 'tugasTambahan:id,judul,tanggal_selesai'])
                 ->latest('id')->limit(40)->get()
                 ->map(fn($t) => [
                     'guru'    => $t->tenagaPendidik?->user?->name ?? '—',
@@ -169,7 +173,7 @@ class MonitoringApiController extends Controller
                     'status'  => $t->status_pengerjaan,
                 ])->values();
 
-            $out['tugas'] = ['berjalan' => $tugas->count(), 'daftar' => $tugas];
+            $out['tugas'] = ['berjalan' => $jumlahTugas, 'daftar' => $tugas];
         }
 
         // ── Kinerja bulan berjalan: yang terendah lebih dulu ─────────────
