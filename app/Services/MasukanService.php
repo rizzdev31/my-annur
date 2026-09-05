@@ -80,11 +80,17 @@ class MasukanService
 
         // Pesan dari satu sisi = belum dibaca oleh sisi lawan. Pesan bot dianggap
         // datang dari sisi admin (jawaban sistem untuk pelapor).
-        $m->forceFill([
+        //
+        // Sengaja HANYA menyentuh kolom sisi yang berubah — jangan baca-lalu-tulis
+        // kedua kolom: instance hasil create() belum memuat nilai default dari DB
+        // (terbaca null → gagal simpan), dan menulis ulang nilai lama bisa
+        // menghapus penanda yang baru diset permintaan lain.
+        Masukan::whereKey($m->id)->update([
+            $tipe === 'guru' ? 'belum_dibaca_admin' : 'belum_dibaca_user' => true,
             'pesan_terakhir_pada' => $pesan->created_at,
-            'belum_dibaca_admin'  => $tipe === 'guru' ? true : $m->belum_dibaca_admin,
-            'belum_dibaca_user'   => $tipe === 'guru' ? $m->belum_dibaca_user : true,
-        ])->save();
+            'updated_at'          => now(),
+        ]);
+        $m->refresh();
 
         return $pesan;
     }
