@@ -225,7 +225,7 @@
                     :active="isActive('admin.inventaris')" :collapsed="!sidebarOpen" />
 
                 <!-- ══ PENGATURAN ═══════════════════════════════════════════ -->
-                <SidebarSection v-if="sidebarOpen && (isSuper || boleh('whatsapp'))" label="Pengaturan" />
+                <SidebarSection v-if="sidebarOpen && (isSuper || boleh('whatsapp') || boleh('masukan'))" label="Pengaturan" />
 
                 <!-- Konfigurasi penggajian (superadmin) -->
                 <template v-if="isSuper">
@@ -257,6 +257,10 @@
                     <SidebarSubItem :href="route('admin.smart-payroll.wa-inbox.index')" label="Kotak Masuk" />
                     <SidebarSubItem :href="route('admin.smart-payroll.wa-outbox.index')" label="Monitor Outbox" />
                 </SidebarGroup>
+
+                <!-- Saran & Masukan dari pengguna sistem (dikirim lewat PWA) -->
+                <SidebarItem v-if="boleh('masukan')" :href="route('admin.masukan.index')" icon="inbox"
+                    label="Saran & Masukan" :active="isActive('admin.masukan')" :collapsed="!sidebarOpen" />
 
                 <!-- Sistem (superadmin) -->
                 <SidebarGroup v-if="isSuper" icon="settings" label="Sistem"

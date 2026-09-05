@@ -255,6 +255,17 @@ Route::prefix('admin')
         });
 
         // ╔══════════════════════════════════════════════════════════════════╗
+        // ║  SARAN & MASUKAN — kanal keluhan/usulan pengguna sistem          ║
+        // ╚══════════════════════════════════════════════════════════════════╝
+        Route::prefix('masukan')->name('masukan.')->group(function () {
+            Route::get('/',                 [\App\Http\Controllers\Superadmin\MasukanController::class, 'index'])->name('index');
+            Route::get('/{masukan}',        [\App\Http\Controllers\Superadmin\MasukanController::class, 'show'])->name('show');
+            Route::post('/{masukan}/balas', [\App\Http\Controllers\Superadmin\MasukanController::class, 'balas'])->name('balas');
+            Route::patch('/{masukan}/status', [\App\Http\Controllers\Superadmin\MasukanController::class, 'status'])->name('status');
+            Route::delete('/{masukan}',     [\App\Http\Controllers\Superadmin\MasukanController::class, 'destroy'])->name('destroy');
+        });
+
+        // ╔══════════════════════════════════════════════════════════════════╗
         // ║  SMART PAYROLL                                                   ║
         // ╚══════════════════════════════════════════════════════════════════╝
 

@@ -192,6 +192,14 @@ return [
         ],
 
         // ── Komunikasi ───────────────────────────────────────────────────────
+        // Saran & masukan pengguna sistem (keluhan/bug dari PWA) — berisi
+        // keluhan apa adanya, jadi berikan hanya ke pengelola sistem.
+        'masukan' => [
+            'nama'     => 'Saran & Masukan',
+            'kategori' => 'Komunikasi',
+            'beranda'  => 'admin.masukan.index',
+            'prefix'   => ['admin.masukan'],
+        ],
         'whatsapp' => [
             'nama'     => 'WhatsApp',
             'kategori' => 'Komunikasi',

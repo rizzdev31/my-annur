@@ -263,6 +263,16 @@ Route::prefix('v1')->group(function () {
                 Route::post('/penilaian/{id}/sanggah', [PiketApiController::class, 'sanggah']);
             });
 
+            // ── Saran & Masukan — kanal keluhan/usulan ke pengelola sistem ──
+            // Terbuka untuk semua pengguna PWA (tanpa hak khusus): justru guru
+            // di lapangan yang paling cepat menemukan bug.
+            Route::prefix('masukan')->group(function () {
+                Route::get('/',                [\App\Http\Controllers\Api\MasukanApiController::class, 'index']);
+                Route::post('/',               [\App\Http\Controllers\Api\MasukanApiController::class, 'store']);
+                Route::get('/{masukan}',       [\App\Http\Controllers\Api\MasukanApiController::class, 'show']);
+                Route::post('/{masukan}/balas', [\App\Http\Controllers\Api\MasukanApiController::class, 'balas']);
+            });
+
             // ── Monitoring pimpinan (pengawas) — hak diberikan superadmin ──
             Route::prefix('monitoring')->group(function () {
                 Route::get('/status',       [\App\Http\Controllers\Api\MonitoringApiController::class, 'status']);
