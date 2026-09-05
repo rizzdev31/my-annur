@@ -13,7 +13,9 @@ return new class extends Migration
             'nama'       => 'Masukan Baru dari Pengguna',
             'kategori'   => 'Saran & Masukan',
             'deskripsi'  => 'Ada saran / laporan bug baru dari pengguna sistem.',
-            'penerima'   => ['super_admin'],
+            // Token yang dikenal NotifikasiService::resolvePenerima() adalah
+            // 'admin' (= user ber-role super_admin). Bukan 'super_admin'.
+            'penerima'   => ['admin'],
             'maks'       => 30,
         ],
         [
