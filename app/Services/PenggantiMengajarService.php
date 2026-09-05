@@ -45,6 +45,24 @@ class PenggantiMengajarService
             throw new \DomainException('Jadwal ini tidak berlangsung pada tanggal tersebut.');
         }
 
+        // Sesi yang JAMNYA SUDAH LEWAT tidak boleh ditunjuk pengganti: penugasan
+        // seperti itu mustahil menghasilkan JP (absennya pasti melewati tenggang),
+        // sementara guru asli tetap kena potongan sesi. Lebih baik ditolak di depan
+        // daripada menciptakan penugasan yang sia-sia sejak dibuat.
+        $hariIni = TimezoneHelper::today();
+        if ($tanggal->lt($hariIni->copy()->startOfDay())) {
+            throw new \DomainException('Tidak bisa menunjuk pengganti untuk tanggal yang sudah lewat.');
+        }
+        if ($tanggal->isSameDay($hariIni)
+            && KebijakanMengajar::lewatTenggang($tanggal->toDateString(), $jadwal->jam_selesai)) {
+            $batas = KebijakanMengajar::batasAbsenSesi($tanggal->toDateString(), $jadwal->jam_selesai);
+            throw new \DomainException(
+                'Sesi ini sudah berakhir pukul ' . substr((string) $jadwal->jam_selesai, 0, 5)
+                . ' (batas penunjukan ' . $batas->format('H:i') . '). '
+                . 'Pengganti tidak lagi bisa ditunjuk karena JP-nya sudah tidak dapat dihitung.'
+            );
+        }
+
         // Guru harus punya izin disetujui yang mencakup tanggal target.
         $izin = PengajuanIzin::where('tenaga_pendidik_id', $guruTpId)
             ->where('status', 'disetujui')
@@ -160,12 +178,13 @@ class PenggantiMengajarService
             throw new \DomainException('Sesi pengganti ini hanya bisa diabsen pada tanggalnya.');
         }
 
-        // Cutoff vakasi: lewat jam_selesai → JP 0 (vakasi hangus), tapi sesi & absen santri tetap.
-        $jamSelesaiC = \Carbon\Carbon::parse(
-            $absensi->tanggal->toDateString() . ' ' . $absensi->jadwalMengajar?->jam_selesai,
-            TimezoneHelper::TZ
+        // Cutoff vakasi: lewat jam_selesai + TENGGANG → JP 0 (vakasi hangus),
+        // tapi sesi & absen santri tetap tercatat. Tenggang memberi ruang memotret
+        // bukti & mengisi materi setelah bel; sama persis dengan guru reguler.
+        $batas = KebijakanMengajar::batasAbsenSesi(
+            $absensi->tanggal->toDateString(), (string) $absensi->jadwalMengajar?->jam_selesai
         );
-        $telat = TimezoneHelper::now()->gt($jamSelesaiC);
+        $telat = TimezoneHelper::now()->gt($batas);
         $jp    = $telat ? 0 : ($absensi->jadwalMengajar?->jumlah_jp ?? 0);
 
         DB::transaction(function () use ($absensi, $jp, $telat, $fotoPath, $materi, $keterangan, $absensiSantri) {
@@ -178,7 +197,9 @@ class PenggantiMengajarService
                 'materi'            => $materi,
                 'sudah_buka_jurnal' => true,
                 'keterangan'        => trim(($absensi->keterangan ? $absensi->keterangan . ' | ' : '')
-                    . 'Diajar pengganti' . ($telat ? ' (TELAT — vakasi hangus)' : '') . ($keterangan ? ': ' . $keterangan : '')),
+                    . 'Diajar pengganti'
+                    . ($telat ? ' (LEWAT tenggang ' . KebijakanMengajar::GRACE_MENIT . ' menit — vakasi hangus)' : '')
+                    . ($keterangan ? ': ' . $keterangan : '')),
             ]);
 
             // Rekam kehadiran santri SEKALI (idempoten — sesi pengganti baru pertama absen).

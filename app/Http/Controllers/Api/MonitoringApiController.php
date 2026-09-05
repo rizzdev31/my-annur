@@ -100,7 +100,9 @@ class MonitoringApiController extends Controller
 
             $sesi = $jadwal->map(function ($j) use ($am, $tglStr, $sekarang) {
                 $a = $am->get($j->id);
-                $lewat = $sekarang->gt(\Carbon\Carbon::parse($tglStr . ' ' . $j->jam_selesai, TimezoneHelper::TZ));
+                // Pakai batas yang sama dengan absen (jam_selesai + tenggang) agar
+                // pimpinan tidak melihat "terlewat" padahal guru masih berhak mengisi.
+                $lewat = $sekarang->gt(\App\Services\KebijakanMengajar::batasAbsenSesi($tglStr, (string) $j->jam_selesai));
                 return [
                     'guru'           => $j->tenagaPendidik?->user?->name ?? '—',
                     'mata_pelajaran' => $j->mataPelajaran?->nama ?? '—',
@@ -286,8 +288,9 @@ class MonitoringApiController extends Controller
         $rows = $guru->map(function ($g) use ($jadwal, $absensi, $tanggal, $sekarang, &$ringkas) {
             $sesi = $jadwal->where('tenaga_pendidik_id', $g->id)->map(function ($j) use ($absensi, $tanggal, $sekarang, &$ringkas) {
                 $a = $absensi->get($j->id);
-                $lewat = $sekarang->gt(\Carbon\Carbon::parse(
-                    $tanggal->toDateString() . ' ' . $j->jam_selesai, TimezoneHelper::TZ
+                // Sama dengan dashboard: hormati tenggang jurnal sebelum menandai terlewat.
+                $lewat = $sekarang->gt(\App\Services\KebijakanMengajar::batasAbsenSesi(
+                    $tanggal->toDateString(), (string) $j->jam_selesai
                 ));
                 // Belum ada catatan & jam sudah lewat → TERLEWAT (sinyal utama pimpinan).
                 $status = $a?->status ?? ($lewat ? 'terlewat' : 'belum');

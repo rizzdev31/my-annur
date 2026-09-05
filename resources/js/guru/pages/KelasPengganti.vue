@@ -5,6 +5,7 @@ import { kompresFoto } from '../foto'
 import PageHeader from '../components/PageHeader.vue'
 
 const list = ref([])
+const graceMenit = ref(15)
 const loading = ref(true)
 const error = ref('')
 const msg = ref(null)
@@ -22,6 +23,7 @@ async function load() {
         const res = await api.get('/absensi/mengajar/pengganti-saya')
         const d = res.data.data ?? res.data
         list.value = d.kelas ?? d ?? []
+        if (d.grace_menit) graceMenit.value = d.grace_menit
     } catch (e) {
         error.value = e.response?.data?.message || 'Gagal memuat kelas pengganti.'
     } finally { loading.value = false }
@@ -37,6 +39,12 @@ async function pilihFoto(e) {
 
 async function kirim() {
     if (!foto.value) { msg.value = { ok: false, text: 'Foto bukti mengajar wajib diisi.' }; return }
+    // Sesi yang sudah lewat batas: JP pasti 0. Pastikan guru sadar SEBELUM mengirim,
+    // bukan baru tahu dari toast setelah tersimpan.
+    if (aktif.value.lewat_jam && !confirm(
+        `Batas absen sesi ini sudah lewat (pukul ${aktif.value.batas_absen}).\n\n`
+        + 'JP TIDAK akan dihitung. Jurnal & absensi santri tetap tersimpan.\n\nTetap kirim?'
+    )) return
     saving.value = true
     try {
         const fd = new FormData()
@@ -72,7 +80,10 @@ async function kirim() {
             <p v-if="msg" :class="msg.ok ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'"
                 class="text-sm rounded-xl px-3 py-2 mb-3">{{ msg.text }}</p>
 
-            <p class="text-xs text-gray-400 mb-3">Sesi mengajar yang dilimpahkan ke Anda (guru asli izin). JP penuh masuk ke Anda setelah absen.</p>
+            <p class="text-xs text-gray-400 mb-3">
+                Sesi mengajar yang dilimpahkan ke Anda (guru asli izin). JP penuh masuk ke Anda bila absen
+                paling lambat <b>{{ graceMenit }} menit</b> setelah jam selesai — lewat itu JP tidak dihitung.
+            </p>
 
             <div v-if="!list.length" class="pt-16 text-center text-sm text-gray-400">Tidak ada kelas pengganti hari ini.</div>
 
@@ -88,11 +99,34 @@ async function kirim() {
                             <p class="text-[11px] text-gray-400">{{ k.kelas }} · {{ k.jumlah_jp }} JP</p>
                             <p class="text-[11px] text-violet-500 mt-0.5">Gantikan: {{ k.guru_asli }}</p>
 
+                            <!-- Sudah diabsen: tampilkan JP yang BENAR-BENAR didapat, jangan
+                                 hanya centang hijau — 0 JP tidak boleh terlihat seperti sukses. -->
                             <div v-if="k.sudah_diajar" class="mt-2">
-                                <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">✓ Sudah diabsen</span>
+                                <span v-if="k.jp_terlaksana > 0"
+                                    class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                    ✓ Sudah diabsen · {{ k.jp_terlaksana }} JP masuk
+                                </span>
+                                <span v-else
+                                    class="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                                    ✓ Sudah diabsen · 0 JP (lewat batas waktu)
+                                </span>
                             </div>
+
+                            <!-- Belum diabsen & batas sudah lewat: jangan tawarkan seolah normal. -->
+                            <div v-else-if="k.lewat_jam" class="mt-2">
+                                <p class="text-[10px] font-bold text-red-600 bg-red-50 rounded-lg px-2 py-1 mb-1.5">
+                                    ⚠ Batas absen lewat (pukul {{ k.batas_absen }}) — JP tidak akan dihitung.
+                                </p>
+                                <button @click="bukaAbsen(k)"
+                                    class="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold">
+                                    Tetap Isi Jurnal (0 JP)
+                                </button>
+                            </div>
+
                             <button v-else @click="bukaAbsen(k)"
-                                class="mt-2 px-4 py-1.5 rounded-lg bg-[#0C78FF] text-white text-xs font-bold">Absen Pengganti</button>
+                                class="mt-2 px-4 py-1.5 rounded-lg bg-[#0C78FF] text-white text-xs font-bold">
+                                Absen Pengganti<span v-if="k.batas_absen" class="font-normal opacity-80"> · s/d {{ k.batas_absen }}</span>
+                            </button>
                         </div>
                     </div>
                 </li>
@@ -105,7 +139,15 @@ async function kirim() {
                 <div class="w-full max-w-md bg-white rounded-t-3xl p-5 pb-8 safe-b">
                     <div class="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4"></div>
                     <h3 class="text-base font-extrabold text-gray-900">{{ aktif.mata_pelajaran }}</h3>
-                    <p class="text-xs text-gray-400 mb-4">{{ aktif.kelas }} · gantikan {{ aktif.guru_asli }}</p>
+                    <p class="text-xs text-gray-400 mb-3">{{ aktif.kelas }} · gantikan {{ aktif.guru_asli }}</p>
+
+                    <p v-if="aktif.lewat_jam" class="text-[11px] font-bold text-red-600 bg-red-50 rounded-xl px-3 py-2 mb-3">
+                        ⚠ Batas absen sudah lewat pukul {{ aktif.batas_absen }}. JP tidak akan dihitung,
+                        tetapi jurnal &amp; absensi santri tetap tersimpan.
+                    </p>
+                    <p v-else-if="aktif.batas_absen" class="text-[11px] text-emerald-700 bg-emerald-50 rounded-xl px-3 py-2 mb-3">
+                        Kirim sebelum pukul <b>{{ aktif.batas_absen }}</b> agar {{ aktif.jumlah_jp }} JP masuk ke Anda.
+                    </p>
 
                     <label class="block text-xs font-medium text-gray-600 mb-1">Materi (opsional)</label>
                     <textarea v-model="materi" rows="2" placeholder="Materi yang diajarkan…"

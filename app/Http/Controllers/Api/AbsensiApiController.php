@@ -878,8 +878,12 @@ class AbsensiApiController extends Controller
                         'keterangan'     => 'Libur '.ucfirst($hariLibur->sumber ?: $hariLibur->tipe ?: 'pesantren').': '.($hariLibur->nama ?? 'Libur'),
                     ]
                 );
-            } elseif ($sekarang->gt($jamSelesaiC)) {
-                // Jam mengajar sudah selesai — auto-mark berdasarkan kondisi guru
+            } elseif ($sekarang->gt(\App\Services\KebijakanMengajar::batasAbsen($jamSelesaiC))) {
+                // Jam mengajar selesai DAN tenggang jurnal habis — auto-mark
+                // berdasarkan kondisi guru. WAJIB memakai tenggang yang sama dengan
+                // absenMengajar(): kalau auto-mark jalan lebih dulu, barisnya sudah
+                // terbuat dan guru yang mengisi di dalam tenggang akan ditolak
+                // ALREADY_ABSEN — tenggangnya jadi tidak pernah berlaku.
                 if ($isIzinGuru) {
                     // Guru izin resmi + jam sudah selesai → auto-mark izin, jp_full
                     // (guru seharusnya mengkonfirmasi tugas sebelum jam selesai,
@@ -940,7 +944,13 @@ class AbsensiApiController extends Controller
             $jamMulai   = Carbon::parse($today->toDateString().' '.$jadwal->jam_mulai, TimezoneHelper::TZ);
             $jamSelesai = Carbon::parse($today->toDateString().' '.$jadwal->jam_selesai, TimezoneHelper::TZ);
 
-            $dalamWindow = $sekarang->between($jamMulai->copy()->subMinutes(15), $jamSelesai);
+            // Jendela absen: 15 menit sebelum mulai s/d jam_selesai + tenggang jurnal.
+            // Batas atas HARUS sama dengan cutoff JP, kalau tidak tombol absen sudah
+            // hilang padahal guru masih berhak JP penuh.
+            $dalamWindow = $sekarang->between(
+                $jamMulai->copy()->subMinutes(15),
+                \App\Services\KebijakanMengajar::batasAbsen($jamSelesai)
+            );
 
             $jadwalLebihAwal = $jadwalList->filter(fn($j) => $j->jam_mulai < $jadwal->jam_mulai);
             $semuaLebihAwalSudahAbsen = $jadwalLebihAwal->every(
@@ -983,7 +993,8 @@ class AbsensiApiController extends Controller
                 } elseif (!$dalamWindow) {
                     $pesanBlokir = $sekarang->lt($jamMulai->copy()->subMinutes(15))
                         ? 'Belum waktunya. Absen mulai pukul '.$jamMulai->copy()->subMinutes(15)->format('H:i').'.'
-                        : 'Waktu mengajar sudah selesai.';
+                        : 'Batas absen sudah lewat (pukul '
+                            .\App\Services\KebijakanMengajar::batasAbsen($jamSelesai)->format('H:i').').';
                 }
             }
 
@@ -995,6 +1006,8 @@ class AbsensiApiController extends Controller
                 'ruangan'        => $jadwal->ruangan ?? '—',
                 'jam_mulai'      => $jadwal->jam_mulai,
                 'jam_selesai'    => $jadwal->jam_selesai,
+                // Batas akhir absen agar JP tetap penuh (jam_selesai + tenggang).
+                'batas_absen'    => \App\Services\KebijakanMengajar::batasAbsen($jamSelesai)->format('H:i'),
                 'jumlah_jp'      => $jadwal->jumlah_jp,
                 'durasi_menit'   => $durMenit,
 
@@ -1193,29 +1206,48 @@ class AbsensiApiController extends Controller
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return response()->json(['success' => false, 'message' => 'Data tidak ditemukan.'], 404);
 
-        $today = TimezoneHelper::tanggalDariRequest($request->device_date);
+        $today    = TimezoneHelper::tanggalDariRequest($request->device_date);
+        $sekarang = TimezoneHelper::now();
+
         $list = (new \App\Services\PenggantiMengajarService())->penggantiSaya($tp->id, $today)
-            ->map(fn($a) => [
-                'absensi_id'     => $a->id,
-                'jadwal_id'      => $a->jadwal_mengajar_id,
-                'mata_pelajaran' => $a->jadwalMengajar?->mataPelajaran?->nama ?? '—',
-                'kelas'          => $a->jadwalMengajar?->kelas ?? '—',
-                'jam_mulai'      => $a->jadwalMengajar?->jam_mulai,
-                'jam_selesai'    => $a->jadwalMengajar?->jam_selesai,
-                'jumlah_jp'      => $a->jadwalMengajar?->jumlah_jp ?? 0,
-                'guru_asli'      => $a->tenagaPendidik?->user?->name ?? '—',
-                'keterangan'     => $a->keterangan,
-                'tanggal'        => $a->tanggal?->toDateString(),
-                'is_hari_ini'    => $a->tanggal?->toDateString() === $today->toDateString(),
-                // "sudah diajar" = sudah absen (jam_selesai_aktual terisi), bukan jp>0
-                // (kasus telat: jp=0 tapi sesi sudah diabsen).
-                'sudah_diajar'   => !is_null($a->jam_selesai_aktual),
-            ])->values();
+            ->map(function ($a) use ($today, $sekarang) {
+                $jamSelesai = (string) $a->jadwalMengajar?->jam_selesai;
+                $tglSesi    = $a->tanggal?->toDateString();
+                $hariIni    = $tglSesi === $today->toDateString();
+
+                // Batas absen = jam_selesai + tenggang. Lewat itu JP hangus, jadi
+                // klien HARUS tahu agar bisa memperingatkan SEBELUM guru mengirim.
+                $batas    = $jamSelesai ? \App\Services\KebijakanMengajar::batasAbsenSesi($tglSesi, $jamSelesai) : null;
+                $lewatJam = $hariIni && $batas && $sekarang->gt($batas);
+                $jpJadwal = $a->jadwalMengajar?->jumlah_jp ?? 0;
+
+                return [
+                    'absensi_id'     => $a->id,
+                    'jadwal_id'      => $a->jadwal_mengajar_id,
+                    'mata_pelajaran' => $a->jadwalMengajar?->mataPelajaran?->nama ?? '—',
+                    'kelas'          => $a->jadwalMengajar?->kelas ?? '—',
+                    'jam_mulai'      => $a->jadwalMengajar?->jam_mulai,
+                    'jam_selesai'    => $jamSelesai,
+                    'jumlah_jp'      => $jpJadwal,
+                    'guru_asli'      => $a->tenagaPendidik?->user?->name ?? '—',
+                    'keterangan'     => $a->keterangan,
+                    'tanggal'        => $tglSesi,
+                    'is_hari_ini'    => $hariIni,
+                    // "sudah diajar" = sudah absen (jam_selesai_aktual terisi), bukan jp>0
+                    // (kasus telat: jp=0 tapi sesi sudah diabsen).
+                    'sudah_diajar'   => !is_null($a->jam_selesai_aktual),
+                    'jp_terlaksana'  => (int) $a->jp_terlaksana,   // JP yang BENAR-BENAR didapat
+                    'batas_absen'    => $batas?->format('H:i'),
+                    'lewat_jam'      => $lewatJam,
+                    'jp_bila_absen_sekarang' => $lewatJam ? 0 : $jpJadwal,
+                ];
+            })->values();
 
         return response()->json(['success' => true, 'data' => [
-            'tanggal' => $today->toDateString(),
-            'kelas'   => $list,
-            'total'   => $list->count(),
+            'tanggal'     => $today->toDateString(),
+            'grace_menit' => \App\Services\KebijakanMengajar::GRACE_MENIT,
+            'kelas'       => $list,
+            'total'       => $list->count(),
         ]]);
     }
 
@@ -1264,10 +1296,17 @@ class AbsensiApiController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage(), 'code' => 'PENGGANTI'], 422);
         }
 
+        $jpDapat = (int) $absensi->jp_terlaksana;
+
         return response()->json([
             'success' => true,
-            'message' => 'Absen pengganti tersimpan. JP ' . $absensi->jp_terlaksana . ' diberikan ke Anda.',
-            'data'    => ['absensi_id' => $absensi->id, 'jp_terlaksana' => $absensi->jp_terlaksana],
+            'message' => $jpDapat > 0
+                ? "Absen pengganti tersimpan. {$jpDapat} JP masuk ke Anda."
+                : 'Absen pengganti tersimpan, TAPI melewati batas waktu ('
+                    . \App\Services\KebijakanMengajar::GRACE_MENIT . ' menit setelah jam selesai) '
+                    . 'sehingga JP tidak dihitung. Jurnal & absensi santri tetap tercatat.',
+            'jp_terlaksana' => $jpDapat,
+            'data'    => ['absensi_id' => $absensi->id, 'jp_terlaksana' => $jpDapat],
         ]);
     }
 
@@ -1428,9 +1467,11 @@ class AbsensiApiController extends Controller
             ], 422);
         }
 
-        // Lewat jam_selesai → sesi tetap dibuat sebagai "tidak hadir" (vakasi hangus),
-        // agar absensi santri tetap bisa diisi. (Handoff ke guru piket = pengembangan berikutnya.)
-        $telat  = $sekarang->gt($jamSelesaiC);
+        // Lewat jam_selesai + TENGGANG → sesi tetap dibuat sebagai "tidak hadir"
+        // (vakasi hangus), agar absensi santri tetap bisa diisi. Tenggang memberi
+        // ruang memotret bukti & mengisi materi setelah bel.
+        $batasAbsen = \App\Services\KebijakanMengajar::batasAbsen($jamSelesaiC);
+        $telat  = $sekarang->gt($batasAbsen);
         $status = $telat ? 'tidak_terlaksana' : 'terlaksana';
         $jp     = $telat ? 0 : $jadwal->jumlah_jp;
 

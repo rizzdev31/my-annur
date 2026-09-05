@@ -123,8 +123,10 @@ class EskalasiPimpinanService
 
         $nama = [];
         foreach ($jadwal as $j) {
-            $selesai = Carbon::parse($today . ' ' . $j->jam_selesai, TimezoneHelper::TZ);
-            if ($now->lte($selesai)) continue;            // sesi belum berakhir
+            // Tunggu sampai tenggang jurnal habis — guru masih berhak mengisi
+            // (dan tetap dapat JP) di dalam tenggang, jadi belum layak dieskalasi.
+            $selesai = KebijakanMengajar::batasAbsenSesi($today, (string) $j->jam_selesai);
+            if ($now->lte($selesai)) continue;            // sesi belum lewat tenggang
 
             $a = $absensi->get($j->id);
             // Bermasalah bila TIDAK ada catatan sama sekali, atau ditandai tidak terlaksana.
