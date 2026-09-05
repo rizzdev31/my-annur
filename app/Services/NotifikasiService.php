@@ -120,14 +120,18 @@ class NotifikasiService
             // TODO fase 3: kanal WA (WaService) — dicek dari $cfg->kanal.
         }
 
-        // Dikerjakan di belakang layar: HTTP ke layanan push (FCM/Apple/Mozilla)
-        // makan ratusan milidetik per perangkat — jangan sampai menahan request
-        // guru yang sedang absen.
+        // Lempar ke ANTREAN (worker queue:work sudah jalan di supervisor): HTTP
+        // ke layanan push (FCM/Apple/Mozilla) makan ratusan milidetik per
+        // perangkat, jangan sampai menahan request guru yang sedang absen.
+        //
+        // Sengaja bukan afterResponse(): itu menjalankan job di proses yang sama
+        // sehingga worker PHP-FPM tetap tertahan sampai semua perangkat selesai
+        // dikirimi, dan percobaan ulang tidak berlaku.
         if ($push && $idPush) {
             \App\Jobs\KirimPushJob::dispatch(
                 array_values(array_unique($idPush)), $judul, $pesan,
                 ['route' => $data['route'] ?? '/notifikasi', 'tag' => $kode]
-            )->afterResponse();
+            );
         }
 
         return $terkirim;
