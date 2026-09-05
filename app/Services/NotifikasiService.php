@@ -79,13 +79,15 @@ class NotifikasiService
         $ids = array_values(array_unique(array_filter($ids)));
         if (empty($ids)) return 0;
 
-        // Kanal (MVP: in-app; wa/push ditunda).
+        // Kanal: in-app (lonceng) + push (notifikasi HP). WA masih ditunda.
         $inApp = !$cfg || $cfg->kanalAktif('in_app');
+        $push  = $cfg && $cfg->kanalAktif('push');
 
         $dedup   = $konteks['dedup'] ?? null;
         $maksHari = $cfg?->maks_per_hari;
         $today   = now()->toDateString();
         $terkirim = 0;
+        $idPush   = [];   // user yang lolos dedup/kuota → berhak dapat push
 
         foreach ($ids as $uid) {
             // Dedup: sudah pernah kirim event+dedup ke user ini hari ini?
@@ -111,7 +113,21 @@ class NotifikasiService
                 self::kirim($uid, $judul, $pesan, $tipe, $payload, $kode, $prio);
                 $terkirim++;
             }
-            // TODO fase 2: kanal WA (WaService) & push (FCM) — dicek dari $cfg->kanal.
+
+            // Push mengikuti dedup & kuota yang sama — supaya HP tidak berbunyi
+            // untuk hal yang lonceng in-app sendiri sudah menolaknya.
+            if ($push) $idPush[] = $uid;
+            // TODO fase 3: kanal WA (WaService) — dicek dari $cfg->kanal.
+        }
+
+        // Dikerjakan di belakang layar: HTTP ke layanan push (FCM/Apple/Mozilla)
+        // makan ratusan milidetik per perangkat — jangan sampai menahan request
+        // guru yang sedang absen.
+        if ($push && $idPush) {
+            \App\Jobs\KirimPushJob::dispatch(
+                array_values(array_unique($idPush)), $judul, $pesan,
+                ['route' => $data['route'] ?? '/notifikasi', 'tag' => $kode]
+            )->afterResponse();
         }
 
         return $terkirim;

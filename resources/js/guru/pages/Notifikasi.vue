@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import { notif, loadNotif, bacaSatu, bacaSemua } from '../store/notif'
+import { push, cekPush, aktifkanPush, matikanPush, ujiPush } from '../push'
 
 const router = useRouter()
 
@@ -23,12 +24,60 @@ async function buka(n) {
     if (n.link) router.push(n.link)
 }
 
-onMounted(loadNotif)
+onMounted(() => { loadNotif(); cekPush() })
 </script>
 
 <template>
     <div>
         <PageHeader title="Notifikasi" />
+
+        <!-- Notifikasi HP (Web Push). Izin HANYA diminta lewat tap tombol —
+             browser tidak akan bertanya lagi bila sekali ditolak. -->
+        <div class="rounded-2xl bg-white border border-gray-100 p-3 mb-3">
+            <div class="flex items-start gap-2.5">
+                <span class="shrink-0 text-lg leading-none mt-0.5">🔔</span>
+                <div class="flex-1 min-w-0">
+                    <p class="text-[13px] font-extrabold text-gray-800">Notifikasi di HP</p>
+                    <p class="text-[11px] text-gray-400 leading-snug">
+                        Pengingat absen &amp; jurnal muncul di layar HP walau aplikasi ditutup.
+                    </p>
+
+                    <!-- iPhone: tombol pasti gagal sebelum dipasang ke Layar Utama,
+                         jadi tampilkan panduannya, bukan tombolnya. -->
+                    <div v-if="push.perluHomeScreen" class="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-2.5 py-2">
+                        <p class="text-[11px] text-amber-800 leading-snug">
+                            <b>iPhone:</b> pasang dulu ke Layar Utama — ketuk tombol
+                            <b>Bagikan</b> di Safari → <b>Tambah ke Layar Utama</b>, lalu buka aplikasi
+                            dari ikonnya dan kembali ke halaman ini.
+                        </p>
+                    </div>
+
+                    <p v-else-if="!push.didukung" class="mt-2 text-[11px] text-gray-400">
+                        Browser ini belum mendukung notifikasi HP.
+                    </p>
+
+                    <div v-else class="mt-2 flex flex-wrap gap-2">
+                        <button v-if="!push.aktif" @click="aktifkanPush" :disabled="push.sibuk"
+                            class="px-4 py-1.5 rounded-lg bg-[#0C78FF] text-white text-xs font-bold disabled:opacity-60">
+                            {{ push.sibuk ? 'Memproses…' : 'Aktifkan' }}
+                        </button>
+                        <template v-else>
+                            <span class="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">✓ Aktif</span>
+                            <button @click="ujiPush" :disabled="push.sibuk"
+                                class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold disabled:opacity-60">
+                                Coba kirim
+                            </button>
+                            <button @click="matikanPush" :disabled="push.sibuk"
+                                class="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-bold disabled:opacity-60">
+                                Matikan
+                            </button>
+                        </template>
+                    </div>
+
+                    <p v-if="push.pesan" class="mt-2 text-[11px] text-gray-500 leading-snug">{{ push.pesan }}</p>
+                </div>
+            </div>
+        </div>
 
         <div class="flex items-center justify-between mb-3 -mt-1">
             <p class="text-xs text-gray-400">

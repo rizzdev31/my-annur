@@ -263,6 +263,14 @@ Route::prefix('v1')->group(function () {
                 Route::post('/penilaian/{id}/sanggah', [PiketApiController::class, 'sanggah']);
             });
 
+            // ── Notifikasi push (Web Push) — pendaftaran perangkat PWA ──
+            Route::prefix('push')->group(function () {
+                Route::get('/kunci',         [\App\Http\Controllers\Api\PushApiController::class, 'kunci']);
+                Route::post('/langganan',    [\App\Http\Controllers\Api\PushApiController::class, 'daftar']);
+                Route::delete('/langganan',  [\App\Http\Controllers\Api\PushApiController::class, 'batal']);
+                Route::post('/uji',          [\App\Http\Controllers\Api\PushApiController::class, 'uji']);
+            });
+
             // ── Saran & Masukan — kanal keluhan/usulan ke pengelola sistem ──
             // Terbuka untuk semua pengguna PWA (tanpa hak khusus): justru guru
             // di lapangan yang paling cepat menemukan bug.
