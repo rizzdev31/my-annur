@@ -25,10 +25,21 @@ class PushApiController extends Controller
     public function daftar(Request $request): JsonResponse
     {
         $request->validate([
-            'endpoint' => 'required|string|max:1000',
+            'endpoint' => 'required|string|max:1000|url',
             'p256dh'   => 'required|string|max:255',
             'auth'     => 'required|string|max:255',
         ]);
+
+        // Tolak kunci yang bentuknya salah DI SINI, jangan sampai tersimpan:
+        // kunci rusak baru meledak saat pengiriman (gagal menghitung kunci
+        // kesepakatan ECDH) dan bisa menggagalkan kiriman untuk guru lain.
+        // p256dh = titik kurva P-256 tak terkompresi: 65 byte diawali 0x04.
+        if (!$this->kunciValid($request->p256dh, 65) || !$this->kunciValid($request->auth, 16)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data langganan tidak valid. Muat ulang aplikasi lalu aktifkan lagi.',
+            ], 422);
+        }
 
         // updateOrCreate berdasar hash endpoint: memasang ulang di HP yang sama
         // memperbarui baris lama, bukan menumpuk duplikat.
@@ -48,6 +59,15 @@ class PushApiController extends Controller
             'success' => true,
             'message' => 'Notifikasi HP diaktifkan untuk perangkat ini.',
         ]);
+    }
+
+    /** Kunci base64url harus terurai tepat $byte byte (p256dh juga wajib diawali 0x04). */
+    private function kunciValid(string $nilai, int $byte): bool
+    {
+        $bin = base64_decode(strtr($nilai, '-_', '+/'), true);
+        if ($bin === false || strlen($bin) !== $byte) return false;
+
+        return $byte !== 65 || $bin[0] === "\x04";
     }
 
     /** DELETE /push/langganan — matikan di perangkat ini. */

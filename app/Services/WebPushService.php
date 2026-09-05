@@ -85,22 +85,33 @@ class WebPushService
         $berhasil = 0;
         $matikan  = [];
 
-        foreach ($webPush->flush() as $report) {
-            $endpoint = $report->getRequest()->getUri()->__toString();
+        // flush() adalah generator: satu langganan yang bikin exception
+        // (mis. kunci p256dh rusak) MENGHENTIKAN seluruh iterasi, sehingga
+        // guru lain di batch yang sama ikut tidak menerima apa pun. Karena itu
+        // kegagalan di sini ditangkap, lalu sisanya dikirim satu per satu.
+        try {
+            foreach ($webPush->flush() as $report) {
+                $endpoint = $report->getRequest()->getUri()->__toString();
 
-            if ($report->isSuccess()) {
-                $berhasil++;
-                continue;
-            }
+                if ($report->isSuccess()) {
+                    $berhasil++;
+                    continue;
+                }
 
-            // 404/410 = langganan sudah tidak berlaku (izin dicabut, aplikasi
-            // dihapus, browser membuang endpoint). WAJIB dibuang, kalau tidak
-            // tabel menumpuk sampah dan tiap kiriman memboroskan waktu.
-            if ($report->isSubscriptionExpired()) {
-                $matikan[] = PushSubscription::hash($endpoint);
-            } else {
-                Log::info('WebPush gagal: ' . $report->getReason());
+                // 404/410 = langganan sudah tidak berlaku (izin dicabut, aplikasi
+                // dihapus, browser membuang endpoint). WAJIB dibuang, kalau tidak
+                // tabel menumpuk sampah dan tiap kiriman memboroskan waktu.
+                if ($report->isSubscriptionExpired()) {
+                    $matikan[] = PushSubscription::hash($endpoint);
+                } else {
+                    Log::info('WebPush gagal: ' . $report->getReason());
+                }
             }
+        } catch (\Throwable $e) {
+            Log::warning('WebPush batch terhenti: ' . $e->getMessage() . ' — dicoba satu per satu.');
+            [$berhasilSatuan, $matikanSatuan] = $this->kirimSatuPerSatu($langganan, $payload);
+            $berhasil += $berhasilSatuan;
+            $matikan   = array_merge($matikan, $matikanSatuan);
         }
 
         if ($matikan) {
@@ -113,5 +124,47 @@ class WebPushService
         }
 
         return $berhasil;
+    }
+
+    /**
+     * Cadangan bila pengiriman batch terhenti: kirim per langganan, masing-masing
+     * terisolasi, agar satu perangkat rusak tidak menjatuhkan yang lain.
+     *
+     * @return array{0:int,1:array<string>}  [jumlah berhasil, hash yang harus dihapus]
+     */
+    private function kirimSatuPerSatu($langganan, string $payload): array
+    {
+        $berhasil = 0;
+        $matikan  = [];
+
+        foreach ($langganan as $s) {
+            try {
+                $w = new WebPush(['VAPID' => [
+                    'subject'    => config('webpush.subject'),
+                    'publicKey'  => config('webpush.public_key'),
+                    'privateKey' => config('webpush.private_key'),
+                ]]);
+
+                $report = $w->sendOneNotification(
+                    Subscription::create([
+                        'endpoint'  => $s->endpoint,
+                        'publicKey' => $s->p256dh,
+                        'authToken' => $s->auth,
+                    ]),
+                    $payload
+                );
+
+                if ($report->isSuccess())               $berhasil++;
+                elseif ($report->isSubscriptionExpired()) $matikan[] = $s->endpoint_hash;
+                else Log::info('WebPush gagal: ' . $report->getReason());
+            } catch (\Throwable $e) {
+                // Langganan ini memang tidak bisa dipakai (mis. kunci rusak) —
+                // buang agar tidak mengganggu kiriman berikutnya.
+                Log::warning("WebPush sub {$s->id} dibuang: " . $e->getMessage());
+                $matikan[] = $s->endpoint_hash;
+            }
+        }
+
+        return [$berhasil, $matikan];
     }
 }
