@@ -69,6 +69,13 @@
                 <SidebarItem v-if="isSuper" :href="route('admin.dashboard')" icon="grid" label="Dashboard"
                     :active="isActive('admin.dashboard')" :collapsed="!sidebarOpen" />
 
+                <!-- Saran & Masukan dari pengguna PWA. Ditaruh di atas (bukan di
+                     grup Pengaturan) karena isinya antrean yang menuntut jawaban
+                     harian, bukan konfigurasi yang jarang disentuh. -->
+                <SidebarItem v-if="boleh('masukan')" :href="route('admin.masukan.index')" icon="inbox"
+                    label="Saran & Masukan" :active="isActive('admin.masukan')"
+                    :collapsed="!sidebarOpen" :badge="masukanBaru" />
+
                 <!-- ══ MASTER DATA (superadmin) ═══════════════════════════════ -->
                 <SidebarSection v-if="sidebarOpen && isSuper" label="Master Data" />
 
@@ -225,7 +232,7 @@
                     :active="isActive('admin.inventaris')" :collapsed="!sidebarOpen" />
 
                 <!-- ══ PENGATURAN ═══════════════════════════════════════════ -->
-                <SidebarSection v-if="sidebarOpen && (isSuper || boleh('whatsapp') || boleh('masukan'))" label="Pengaturan" />
+                <SidebarSection v-if="sidebarOpen && (isSuper || boleh('whatsapp'))" label="Pengaturan" />
 
                 <!-- Konfigurasi penggajian (superadmin) -->
                 <template v-if="isSuper">
@@ -257,10 +264,6 @@
                     <SidebarSubItem :href="route('admin.smart-payroll.wa-inbox.index')" label="Kotak Masuk" />
                     <SidebarSubItem :href="route('admin.smart-payroll.wa-outbox.index')" label="Monitor Outbox" />
                 </SidebarGroup>
-
-                <!-- Saran & Masukan dari pengguna sistem (dikirim lewat PWA) -->
-                <SidebarItem v-if="boleh('masukan')" :href="route('admin.masukan.index')" icon="inbox"
-                    label="Saran & Masukan" :active="isActive('admin.masukan')" :collapsed="!sidebarOpen" />
 
                 <!-- Sistem (superadmin) -->
                 <SidebarGroup v-if="isSuper" icon="settings" label="Sistem"
@@ -544,6 +547,9 @@ const userEmail = computed(() => page.props.auth?.user?.email ?? '')
 // `foto` dari HandleInertiaRequests sudah berupa URL penuh (asset('storage/..')).
 const userFoto = computed(() => page.props.auth?.user?.foto ?? null)
 const pendingCount = computed(() => page.props.auth?.pending_pengajuan ?? 0)
+// Masukan yang belum dibaca admin — badge di sidebar. 0 → SidebarItem tak
+// menampilkan badge, jadi tidak perlu dijaga di template.
+const masukanBaru = computed(() => page.props.auth?.masukan_baru ?? 0)
 const tahun = new Date().getFullYear()
 
 // ── RBAC: filter menu per modul ────────────────────────────────────────────────
@@ -705,6 +711,7 @@ const menuLinks = computed(() => {
         { label: 'Template WhatsApp', href: r('admin.smart-payroll.setting-wa.index'), icon: 'inbox' },
         { label: 'Monitor WhatsApp', href: r('admin.smart-payroll.wa-outbox.index'), icon: 'monitor' },
         { label: 'Kotak Masuk WA', href: r('admin.smart-payroll.wa-inbox.index'), icon: 'inbox' },
+        { label: 'Saran & Masukan', href: r('admin.masukan.index'), icon: 'inbox' },
     ].filter(m => m.href)
 })
 const searchActive = computed(() => searchMenu.value.trim().length > 0)

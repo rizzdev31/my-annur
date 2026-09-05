@@ -37,6 +37,21 @@ class HandleInertiaRequests extends Middleware
                         : 0
                 ),
 
+                // Saran & masukan yang belum dibaca admin — badge sidebar.
+                // Dibatasi ke pemegang modul 'masukan' agar tidak membocorkan
+                // adanya keluhan kepada pengelola yang tak berhak membacanya.
+                'masukan_baru' => fn () => $this->safeCount(function () use ($request) {
+                    $u = $request->user();
+                    if (!$u) return 0;
+
+                    $boleh = $u->isSuperAdmin()
+                        || in_array('masukan', (array) $u->modulSaya(), true);
+
+                    return $boleh
+                        ? \App\Models\Masukan::where('belum_dibaca_admin', true)->count()
+                        : 0;
+                }),
+
                 // RBAC: superadmin? + daftar kode modul yang boleh diakses (untuk filter sidebar)
                 'is_superadmin' => fn () => (bool) $request->user()?->isSuperAdmin(),
                 'modul' => function () use ($request) {
