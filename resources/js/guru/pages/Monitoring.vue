@@ -1,97 +1,67 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 import { tanggalLokal } from '../tanggal'
-import { monitoring, muatMonitoring, bolehModul } from '../store/monitoring'
+import { monitoring, muatMonitoring } from '../store/monitoring'
 import PageHeader from '../components/PageHeader.vue'
 
 const loading = ref(true)
 const error = ref('')
 const tanggal = ref(tanggalLokal())
-const cari = ref('')
-const tab = ref('')
+const d = ref(null)
 
-const data = ref(null)          // absen harian
-const mengajar = ref(null)      // absen mengajar
-const izin = ref(null)          // perizinan
-const izinStatus = ref('pending')
-const tugas = ref(null)         // tugas tambahan
-const tugasStatus = ref('')
-const kinerja = ref(null)       // kinerja
-
-// Aksi persetujuan izin (final)
-const aksi = ref(null)          // { izin, tipe: 'setujui'|'tolak' }
+// Aksi persetujuan izin
+const aksi = ref(null)
 const catatanAksi = ref('')
 const jamAksi = ref('')
 const saving = ref(false)
 
-// Tab hanya untuk modul yang diberikan admin.
-const tabs = computed(() => [
-    { k: 'absen_harian',   t: 'Absen Harian' },
-    { k: 'absen_mengajar', t: 'Pembelajaran' },
-    { k: 'perizinan',      t: 'Perizinan' },
-    { k: 'tugas_tambahan', t: 'Tugas' },
-    { k: 'kinerja',        t: 'Kinerja' },
-].filter((x) => bolehModul(x.k)))
+// Section yang dibentangkan (default ringkas agar dashboard tetap terbaca)
+const buka = ref({})
+const toggle = (k) => (buka.value[k] = !buka.value[k])
 
-const adaAkses = computed(() => tabs.value.length > 0)
+const punya = (k) => (d.value?.modul ?? []).includes(k)
 
 const ST = {
-    hadir:            { t: 'Hadir',      c: 'bg-emerald-50 text-emerald-700' },
-    terlaksana:       { t: 'Terlaksana', c: 'bg-emerald-50 text-emerald-700' },
-    terlambat:        { t: 'Terlambat',  c: 'bg-amber-50 text-amber-700' },
-    izin:             { t: 'Izin',       c: 'bg-sky-50 text-sky-700' },
-    sakit:            { t: 'Sakit',      c: 'bg-violet-50 text-violet-700' },
-    dinas_luar:       { t: 'Dinas Luar', c: 'bg-indigo-50 text-indigo-700' },
-    pengganti:        { t: 'Pengganti',  c: 'bg-sky-50 text-sky-700' },
-    libur:            { t: 'Libur',      c: 'bg-gray-100 text-gray-500' },
-    alfa:             { t: 'Alfa',       c: 'bg-red-50 text-red-600' },
-    tidak_terlaksana: { t: 'Tak terlaksana', c: 'bg-red-50 text-red-600' },
-    terlewat:         { t: 'Terlewat',   c: 'bg-red-50 text-red-600' },
-    belum:            { t: 'Belum',      c: 'bg-gray-100 text-gray-500' },
-    pending:          { t: 'Menunggu',   c: 'bg-amber-50 text-amber-700' },
-    disetujui:        { t: 'Disetujui',  c: 'bg-emerald-50 text-emerald-700' },
-    ditolak:          { t: 'Ditolak',    c: 'bg-red-50 text-red-600' },
+    hadir: { t: 'Hadir', c: 'text-emerald-700 bg-emerald-50' },
+    terlaksana: { t: 'Terlaksana', c: 'text-emerald-700 bg-emerald-50' },
+    terlambat: { t: 'Terlambat', c: 'text-amber-700 bg-amber-50' },
+    izin: { t: 'Izin', c: 'text-sky-700 bg-sky-50' },
+    sakit: { t: 'Sakit', c: 'text-violet-700 bg-violet-50' },
+    dinas_luar: { t: 'Dinas Luar', c: 'text-indigo-700 bg-indigo-50' },
+    pengganti: { t: 'Pengganti', c: 'text-sky-700 bg-sky-50' },
+    libur: { t: 'Libur', c: 'text-gray-500 bg-gray-100' },
+    alfa: { t: 'Alfa', c: 'text-red-600 bg-red-50' },
+    tidak_terlaksana: { t: 'Tak terlaksana', c: 'text-red-600 bg-red-50' },
+    terlewat: { t: 'Terlewat', c: 'text-red-600 bg-red-50' },
+    belum: { t: 'Belum', c: 'text-gray-500 bg-gray-100' },
 }
 const lbl = (s) => ST[s]?.t ?? s
-const wrn = (s) => ST[s]?.c ?? 'bg-gray-100 text-gray-500'
+const wrn = (s) => ST[s]?.c ?? 'text-gray-500 bg-gray-100'
 
-const saring = (list) => {
-    const q = cari.value.trim().toLowerCase()
-    return q ? (list ?? []).filter((g) => (g.nama || g.guru || '').toLowerCase().includes(q)) : (list ?? [])
-}
+// Kartu statistik kehadiran (urut: yang perlu perhatian dulu)
+const tiles = computed(() => {
+    const r = d.value?.absen?.ringkasan
+    if (!r) return []
+    const urut = ['belum', 'alfa', 'terlambat', 'hadir', 'izin', 'sakit', 'dinas_luar']
+    return urut.filter((k) => r[k]).map((k) => ({ k, n: r[k], t: lbl(k), c: wrn(k) }))
+})
 
 async function load() {
     if (!monitoring.dimuat) await muatMonitoring()
-    if (!tab.value) tab.value = tabs.value[0]?.k ?? ''
-    if (!adaAkses.value) { loading.value = false; return }
-
     loading.value = true; error.value = ''
     try {
-        if (tab.value === 'absen_harian') {
-            data.value = (await api.get('/monitoring/absen-harian', { params: { tanggal: tanggal.value } })).data.data
-        } else if (tab.value === 'absen_mengajar') {
-            mengajar.value = (await api.get('/monitoring/absen-mengajar', { params: { tanggal: tanggal.value } })).data.data
-        } else if (tab.value === 'perizinan') {
-            izin.value = (await api.get('/monitoring/perizinan', { params: { status: izinStatus.value || undefined } })).data.data
-        } else if (tab.value === 'tugas_tambahan') {
-            tugas.value = (await api.get('/monitoring/tugas-tambahan', { params: { status: tugasStatus.value || undefined } })).data.data
-        } else if (tab.value === 'kinerja') {
-            kinerja.value = (await api.get('/monitoring/kinerja')).data.data
-        }
+        d.value = (await api.get('/monitoring/dashboard', { params: { tanggal: tanggal.value } })).data.data
     } catch (e) {
-        error.value = e.response?.data?.message || 'Gagal memuat data monitoring.'
+        error.value = e.response?.data?.message || 'Gagal memuat dashboard monitoring.'
     } finally { loading.value = false }
 }
-watch([tab, izinStatus, tugasStatus], load)
 onMounted(load)
 
 function bukaAksi(i, tipe) { aksi.value = { izin: i, tipe }; catatanAksi.value = ''; jamAksi.value = '' }
 async function kirimAksi() {
     const { izin: i, tipe } = aksi.value
-    if (tipe === 'tolak' && catatanAksi.value.trim().length < 3) {
-        error.value = 'Alasan penolakan wajib (min 3 huruf).'; return
-    }
+    if (tipe === 'tolak' && catatanAksi.value.trim().length < 3) { error.value = 'Alasan penolakan wajib (min 3 huruf).'; return }
     saving.value = true; error.value = ''
     try {
         const body = { catatan: catatanAksi.value.trim() || undefined }
@@ -109,198 +79,174 @@ async function kirimAksi() {
     <div>
         <PageHeader title="Monitoring" />
 
-        <div v-if="loading && !tabs.length" class="pt-16 flex justify-center">
+        <div v-if="loading" class="pt-16 flex justify-center">
             <div class="w-8 h-8 border-2 border-[#0C78FF] border-t-transparent rounded-full animate-spin"></div>
         </div>
 
-        <div v-else-if="!adaAkses" class="pt-10 text-center px-6">
-            <p class="text-sm text-gray-500">Anda belum diberi akses monitoring.</p>
-            <p class="text-[11px] text-gray-400 mt-1">Hak ini diberikan oleh admin.</p>
+        <div v-else-if="error" class="pt-8 text-center">
+            <p class="text-sm text-gray-500">{{ error }}</p>
+            <button @click="load" class="mt-3 px-4 py-2 rounded-xl bg-[#0C78FF] text-white text-sm font-semibold">Coba lagi</button>
         </div>
 
-        <template v-else>
-            <!-- Tab modul -->
-            <div v-if="tabs.length > 1" class="flex gap-1 bg-gray-100 rounded-2xl p-1 mb-3 overflow-x-auto">
-                <button v-for="x in tabs" :key="x.k" @click="tab = x.k"
-                    class="flex-1 shrink-0 whitespace-nowrap py-2 px-3 rounded-xl text-[12px] font-bold transition"
-                    :class="tab === x.k ? 'bg-white text-[#0C78FF] shadow-sm' : 'text-gray-400'">{{ x.t }}</button>
-            </div>
-
-            <!-- Filter atas -->
-            <div v-if="tab !== 'perizinan'" class="flex items-center gap-2 mb-3">
+        <template v-else-if="d">
+            <!-- Kepala: tanggal -->
+            <div class="flex items-center gap-2 mb-3">
                 <input v-model="tanggal" @change="load" type="date"
                     class="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none bg-white" />
+                <span class="shrink-0 text-[11px] text-gray-400">{{ d.total_guru }} guru</span>
             </div>
-            <div v-else class="flex gap-1 bg-gray-100 rounded-2xl p-1 mb-3">
-                <button v-for="s in [['pending','Menunggu'],['disetujui','Disetujui'],['ditolak','Ditolak'],['','Semua']]" :key="s[0]"
-                    @click="izinStatus = s[0]"
-                    class="flex-1 py-1.5 rounded-xl text-[11px] font-bold transition"
-                    :class="izinStatus === s[0] ? 'bg-white text-[#0C78FF] shadow-sm' : 'text-gray-400'">{{ s[1] }}</button>
+            <p class="text-[11px] text-gray-400 -mt-1 mb-3">{{ d.hari }}</p>
+
+            <div v-if="!d.total_guru" class="pt-10 text-center text-sm text-gray-400">
+                Belum ada guru yang ditugaskan untuk Anda pantau.
             </div>
 
-            <div v-if="loading" class="pt-10 flex justify-center">
-                <div class="w-7 h-7 border-2 border-[#0C78FF] border-t-transparent rounded-full animate-spin"></div>
-            </div>
-            <div v-else-if="error" class="pt-8 text-center">
-                <p class="text-sm text-gray-500">{{ error }}</p>
-                <button @click="load" class="mt-3 px-4 py-2 rounded-xl bg-[#0C78FF] text-white text-sm font-semibold">Coba lagi</button>
-            </div>
+            <template v-else>
+                <!-- PERLU PERHATIAN -->
+                <div v-if="d.perhatian.length" class="rounded-2xl bg-red-50 border border-red-100 p-3 mb-3">
+                    <p class="text-[12px] font-extrabold text-red-700 mb-1.5">⚠ Perlu perhatian</p>
+                    <div v-for="(x, i) in d.perhatian" :key="i" class="py-1 border-t border-red-100/70 first:border-0">
+                        <p class="text-[12px] font-bold text-red-700">{{ x.teks }}</p>
+                        <p class="text-[11px] text-red-500/90 leading-snug">{{ x.nama.join(' · ') }}</p>
+                    </div>
+                </div>
+                <div v-else class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 mb-3 text-center">
+                    <p class="text-[12px] font-bold text-emerald-700">✓ Tidak ada masalah hari ini</p>
+                </div>
 
-            <!-- ── ABSEN HARIAN ── -->
-            <template v-else-if="tab === 'absen_harian' && data">
-                <div v-if="Object.keys(data.ringkasan || {}).length" class="flex flex-wrap gap-1.5 mb-3">
-                    <span v-for="(n, s) in data.ringkasan" :key="s" :class="['px-2.5 py-1 rounded-full text-[11px] font-bold', wrn(s)]">{{ lbl(s) }} {{ n }}</span>
-                </div>
-                <input v-model="cari" placeholder="Cari nama guru…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3" />
-                <div v-if="!saring(data.guru).length" class="pt-10 text-center text-sm text-gray-400">
-                    {{ data.total ? 'Tidak ada guru cocok.' : 'Belum ada guru yang ditugaskan untuk Anda pantau.' }}
-                </div>
-                <ul v-else class="space-y-2">
-                    <li v-for="g in saring(data.guru)" :key="g.tenaga_pendidik_id" class="rounded-2xl bg-white border border-gray-100 p-3">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0">
-                                <p class="text-sm font-bold text-gray-800 truncate">{{ g.nama }}</p>
-                                <p class="text-[11px] text-gray-400 truncate">{{ g.jabatan }}</p>
-                            </div>
-                            <span :class="['shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold', wrn(g.status)]">{{ lbl(g.status) }}</span>
+                <!-- KEHADIRAN -->
+                <template v-if="punya('absen_harian') && d.absen">
+                    <div class="grid grid-cols-3 gap-2 mb-2">
+                        <div v-for="t in tiles" :key="t.k" :class="['rounded-2xl p-2.5 text-center', t.c]">
+                            <p class="text-xl font-extrabold leading-none">{{ t.n }}</p>
+                            <p class="text-[10px] font-semibold mt-0.5">{{ t.t }}</p>
                         </div>
-                        <div v-if="g.jam_masuk || g.jam_pulang || g.menit_terlambat" class="mt-1.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
-                            <span v-if="g.jam_masuk">Masuk <b class="text-gray-700">{{ g.jam_masuk }}</b></span>
-                            <span v-if="g.jam_pulang">Pulang <b class="text-gray-700">{{ g.jam_pulang }}</b></span>
-                            <span v-if="g.menit_terlambat > 0" class="text-amber-600 font-semibold">Telat {{ g.menit_terlambat }} mnt</span>
-                        </div>
-                    </li>
-                </ul>
-            </template>
+                    </div>
+                    <div class="rounded-2xl bg-white border border-gray-100 p-3 mb-3">
+                        <button @click="toggle('absen')" class="w-full flex items-center justify-between gap-2">
+                            <span class="text-[13px] font-extrabold text-gray-800">Kehadiran Guru</span>
+                            <span class="text-[11px] text-[#0C78FF] font-bold">{{ buka.absen ? 'Tutup' : 'Lihat semua' }}</span>
+                        </button>
+                        <ul v-if="buka.absen" class="mt-2 divide-y divide-gray-50">
+                            <li v-for="(g, i) in d.absen.guru" :key="i" class="py-2 flex items-center justify-between gap-2">
+                                <div class="min-w-0">
+                                    <p class="text-[12px] font-semibold text-gray-800 truncate">{{ g.nama }}</p>
+                                    <p class="text-[10px] text-gray-400">
+                                        <span v-if="g.jam_masuk">masuk {{ g.jam_masuk }}</span>
+                                        <span v-if="g.menit_terlambat > 0" class="text-amber-600"> · telat {{ g.menit_terlambat }} mnt</span>
+                                    </p>
+                                </div>
+                                <span :class="['shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold', wrn(g.status)]">{{ lbl(g.status) }}</span>
+                            </li>
+                        </ul>
+                    </div>
+                </template>
 
-            <!-- ── ABSENSI PEMBELAJARAN ── -->
-            <template v-else-if="tab === 'absen_mengajar' && mengajar">
-                <div v-if="Object.keys(mengajar.ringkasan || {}).length" class="flex flex-wrap gap-1.5 mb-3">
-                    <span v-for="(n, s) in mengajar.ringkasan" :key="s" :class="['px-2.5 py-1 rounded-full text-[11px] font-bold', wrn(s)]">{{ lbl(s) }} {{ n }}</span>
-                </div>
-                <input v-model="cari" placeholder="Cari nama guru…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3" />
-                <div v-if="!saring(mengajar.guru).length" class="pt-10 text-center text-sm text-gray-400">Tidak ada jadwal mengajar pada tanggal ini.</div>
-                <ul v-else class="space-y-2">
-                    <li v-for="g in saring(mengajar.guru)" :key="g.tenaga_pendidik_id" class="rounded-2xl bg-white border border-gray-100 p-3">
-                        <div class="flex items-start justify-between gap-2 mb-2">
-                            <div class="min-w-0">
-                                <p class="text-sm font-bold text-gray-800 truncate">{{ g.nama }}</p>
-                                <p class="text-[11px] text-gray-400">{{ g.beres }}/{{ g.total }} sesi beres</p>
-                            </div>
-                            <span v-if="g.bermasalah" class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600">{{ g.bermasalah }} bermasalah</span>
-                            <span v-else class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">Aman</span>
-                        </div>
-                        <div v-for="s in g.sesi" :key="s.jadwal_id" class="flex items-center gap-2 py-1.5 border-t border-gray-50">
+                <!-- JADWAL MENGAJAR HARI INI -->
+                <div v-if="punya('absen_mengajar') && d.mengajar" class="rounded-2xl bg-white border border-gray-100 p-3 mb-3">
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <span class="text-[13px] font-extrabold text-gray-800">Jadwal Mengajar Hari Ini</span>
+                        <span class="shrink-0 text-[11px] font-bold"
+                            :class="d.mengajar.bermasalah ? 'text-red-600' : 'text-emerald-600'">
+                            {{ d.mengajar.beres }}/{{ d.mengajar.total }} beres
+                        </span>
+                    </div>
+                    <p v-if="!d.mengajar.total" class="text-[11px] text-gray-400 py-2">Tidak ada jadwal mengajar.</p>
+                    <ul v-else class="divide-y divide-gray-50">
+                        <li v-for="(s, i) in (buka.mengajar ? d.mengajar.sesi : d.mengajar.sesi.slice(0, 5))" :key="i"
+                            class="py-2 flex items-center gap-2">
                             <span class="shrink-0 text-[10px] text-gray-400 w-[76px]">{{ s.jam }}</span>
                             <div class="min-w-0 flex-1">
-                                <p class="text-[12px] font-semibold text-gray-700 truncate">{{ s.mata_pelajaran }}</p>
+                                <p class="text-[12px] font-semibold text-gray-800 truncate">{{ s.guru }}</p>
                                 <p class="text-[10px] text-gray-400 truncate">
-                                    {{ s.kelas }}<span v-if="s.pengganti"> · diganti {{ s.pengganti }}</span>
+                                    {{ s.mata_pelajaran }} · {{ s.kelas }}<span v-if="s.pengganti"> · diganti {{ s.pengganti }}</span>
                                 </p>
                             </div>
                             <span :class="['shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold', wrn(s.status)]">{{ lbl(s.status) }}</span>
-                        </div>
-                    </li>
-                </ul>
-            </template>
-
-            <!-- ── PERIZINAN (lihat) ── -->
-            <template v-else-if="tab === 'perizinan' && izin">
-                <div v-if="Object.keys(izin.ringkasan || {}).length" class="flex flex-wrap gap-1.5 mb-3">
-                    <span v-for="(n, s) in izin.ringkasan" :key="s" :class="['px-2.5 py-1 rounded-full text-[11px] font-bold', wrn(s)]">{{ lbl(s) }} {{ n }}</span>
+                        </li>
+                    </ul>
+                    <button v-if="d.mengajar.sesi.length > 5" @click="toggle('mengajar')"
+                        class="w-full mt-1 py-1.5 text-[11px] font-bold text-[#0C78FF]">
+                        {{ buka.mengajar ? 'Tutup' : `Lihat semua (${d.mengajar.sesi.length})` }}
+                    </button>
                 </div>
-                <input v-model="cari" placeholder="Cari nama guru…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3" />
-                <div v-if="!saring(izin.izin).length" class="pt-10 text-center text-sm text-gray-400">Tidak ada pengajuan izin.</div>
-                <ul v-else class="space-y-2">
-                    <li v-for="i in saring(izin.izin)" :key="i.id" class="rounded-2xl bg-white border border-gray-100 p-3">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0">
-                                <p class="text-sm font-bold text-gray-800 truncate">{{ i.guru }}</p>
-                                <p class="text-[11px] text-gray-500 truncate">
-                                    {{ i.jenis }}<span v-if="i.sementara"> · sementara</span><span v-if="i.datang_terlambat"> · datang terlambat</span>
-                                </p>
+
+                <!-- PERIZINAN -->
+                <div v-if="punya('perizinan') && d.izin" class="rounded-2xl bg-white border border-gray-100 p-3 mb-3">
+                    <p class="text-[13px] font-extrabold text-gray-800 mb-1.5">Perizinan</p>
+
+                    <p class="text-[11px] font-bold text-gray-500 mb-1">Sedang izin hari ini
+                        <span class="text-gray-400 font-normal">({{ d.izin.aktif_hari_ini.length }})</span></p>
+                    <p v-if="!d.izin.aktif_hari_ini.length" class="text-[11px] text-gray-400 mb-2">Tidak ada.</p>
+                    <ul v-else class="mb-2">
+                        <li v-for="(z, i) in d.izin.aktif_hari_ini" :key="i" class="py-1 flex items-center justify-between gap-2">
+                            <span class="text-[12px] text-gray-800 truncate min-w-0">{{ z.guru }}</span>
+                            <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold text-sky-700 bg-sky-50">{{ z.jenis }}</span>
+                        </li>
+                    </ul>
+
+                    <p class="text-[11px] font-bold text-gray-500 mb-1 pt-1 border-t border-gray-50">Menunggu keputusan
+                        <span class="text-gray-400 font-normal">({{ d.izin.menunggu.length }})</span></p>
+                    <p v-if="!d.izin.menunggu.length" class="text-[11px] text-gray-400">Tidak ada.</p>
+                    <ul v-else class="divide-y divide-gray-50">
+                        <li v-for="z in d.izin.menunggu" :key="z.id" class="py-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0">
+                                    <p class="text-[12px] font-semibold text-gray-800 truncate">{{ z.guru }}</p>
+                                    <p class="text-[10px] text-gray-400">{{ z.jenis }} · {{ z.mulai }}<span v-if="z.selesai && z.selesai !== z.mulai"> — {{ z.selesai }}</span></p>
+                                </div>
+                                <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold text-amber-700 bg-amber-50">Menunggu</span>
                             </div>
-                            <span :class="['shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold', wrn(i.status)]">{{ lbl(i.status) }}</span>
-                        </div>
-                        <p class="text-[11px] text-gray-400 mt-1">
-                            {{ i.tanggal_mulai }}<span v-if="i.tanggal_selesai && i.tanggal_selesai !== i.tanggal_mulai"> — {{ i.tanggal_selesai }}</span>
-                            <span v-if="i.jumlah_hari"> · {{ i.jumlah_hari }} hari</span>
-                        </p>
-                        <p v-if="i.alasan" class="text-[12px] text-gray-600 mt-1">{{ i.alasan }}</p>
-                        <p v-if="i.catatan_admin" class="text-[11px] text-gray-400 mt-1 italic">Catatan: {{ i.catatan_admin }}</p>
-
-                        <div v-if="izin.boleh_setujui_izin && i.status === 'pending'" class="flex gap-2 mt-2.5">
-                            <button @click="bukaAksi(i, 'setujui')"
-                                class="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">Setujui</button>
-                            <button @click="bukaAksi(i, 'tolak')"
-                                class="flex-1 py-2 rounded-lg bg-red-50 text-red-600 text-[12px] font-bold active:scale-[0.98] transition">Tolak</button>
-                        </div>
-                    </li>
-                </ul>
-            </template>
-
-            <!-- ── TUGAS TAMBAHAN ── -->
-            <template v-else-if="tab === 'tugas_tambahan' && tugas">
-                <div class="flex gap-1 bg-gray-100 rounded-2xl p-1 mb-3">
-                    <button v-for="s in [['','Semua'],['belum','Belum'],['sedang','Dikerjakan'],['selesai','Selesai']]" :key="s[0]"
-                        @click="tugasStatus = s[0]" class="flex-1 py-1.5 rounded-xl text-[11px] font-bold transition"
-                        :class="tugasStatus === s[0] ? 'bg-white text-[#0C78FF] shadow-sm' : 'text-gray-400'">{{ s[1] }}</button>
+                            <p v-if="z.alasan" class="text-[11px] text-gray-500 mt-0.5">{{ z.alasan }}</p>
+                            <div v-if="d.izin.boleh_setujui_izin" class="flex gap-2 mt-2">
+                                <button @click="bukaAksi(z, 'setujui')"
+                                    class="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">Setujui</button>
+                                <button @click="bukaAksi(z, 'tolak')"
+                                    class="flex-1 py-2 rounded-lg bg-red-50 text-red-600 text-[12px] font-bold active:scale-[0.98] transition">Tolak</button>
+                            </div>
+                        </li>
+                    </ul>
                 </div>
-                <input v-model="cari" placeholder="Cari nama guru…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3" />
-                <div v-if="!saring(tugas.tugas).length" class="pt-10 text-center text-sm text-gray-400">Tidak ada penugasan.</div>
-                <ul v-else class="space-y-2">
-                    <li v-for="t in saring(tugas.tugas)" :key="t.id" class="rounded-2xl bg-white border border-gray-100 p-3">
-                        <div class="flex items-start justify-between gap-2">
+
+                <!-- TUGAS TAMBAHAN -->
+                <div v-if="punya('tugas_tambahan') && d.tugas" class="rounded-2xl bg-white border border-gray-100 p-3 mb-3">
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <span class="text-[13px] font-extrabold text-gray-800">Tugas Tambahan Berjalan</span>
+                        <span class="shrink-0 text-[11px] font-bold text-gray-500">{{ d.tugas.berjalan }}</span>
+                    </div>
+                    <p v-if="!d.tugas.berjalan" class="text-[11px] text-gray-400 py-1">Tidak ada tugas berjalan.</p>
+                    <ul v-else class="divide-y divide-gray-50">
+                        <li v-for="(t, i) in (buka.tugas ? d.tugas.daftar : d.tugas.daftar.slice(0, 5))" :key="i"
+                            class="py-2 flex items-start justify-between gap-2">
                             <div class="min-w-0">
-                                <p class="text-sm font-bold text-gray-800 truncate">{{ t.judul }}</p>
-                                <p class="text-[11px] text-gray-500 truncate">{{ t.guru }}</p>
+                                <p class="text-[12px] font-semibold text-gray-800 truncate">{{ t.judul }}</p>
+                                <p class="text-[10px] text-gray-400 truncate">{{ t.guru }}<span v-if="t.selesai"> · s/d {{ t.selesai }}</span></p>
                             </div>
                             <span :class="['shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold',
-                                t.status === 'selesai' ? 'bg-emerald-50 text-emerald-700' : t.status === 'sedang' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500']">
-                                {{ t.status === 'selesai' ? 'Selesai' : t.status === 'sedang' ? 'Dikerjakan' : 'Belum' }}
+                                t.status === 'sedang' ? 'text-amber-700 bg-amber-50' : 'text-gray-500 bg-gray-100']">
+                                {{ t.status === 'sedang' ? 'Dikerjakan' : 'Belum' }}
                             </span>
-                        </div>
-                        <p class="text-[11px] text-gray-400 mt-1">
-                            {{ t.mulai }}<span v-if="t.selesai && t.selesai !== t.mulai"> — {{ t.selesai }}</span>
-                            <span v-if="t.dilaporkan"> · dilaporkan {{ t.dilaporkan }}</span>
-                        </p>
-                        <p v-if="t.laporan" class="text-[12px] text-gray-600 mt-1 line-clamp-2">{{ t.laporan }}</p>
-                    </li>
-                </ul>
-            </template>
+                        </li>
+                    </ul>
+                    <button v-if="d.tugas.daftar.length > 5" @click="toggle('tugas')"
+                        class="w-full mt-1 py-1.5 text-[11px] font-bold text-[#0C78FF]">
+                        {{ buka.tugas ? 'Tutup' : `Lihat semua (${d.tugas.daftar.length})` }}
+                    </button>
+                </div>
 
-            <!-- ── KINERJA (ringkas + komponen, tanpa rupiah) ── -->
-            <template v-else-if="tab === 'kinerja' && kinerja">
-                <p class="text-[11px] text-gray-400 mb-2">Bulan {{ kinerja.bulan }}/{{ kinerja.tahun }} · skor terendah di atas.</p>
-                <input v-model="cari" placeholder="Cari nama guru…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3" />
-                <div v-if="!saring(kinerja.guru).length" class="pt-10 text-center text-sm text-gray-400">Belum ada data kinerja.</div>
-                <ul v-else class="space-y-2">
-                    <li v-for="g in saring(kinerja.guru)" :key="g.tenaga_pendidik_id" class="rounded-2xl bg-white border border-gray-100 p-3">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0">
-                                <p class="text-sm font-bold text-gray-800 truncate">{{ g.nama }}</p>
-                                <p class="text-[11px] text-gray-400 truncate">{{ g.jabatan }}</p>
-                            </div>
-                            <div class="shrink-0 text-right">
-                                <p class="text-lg font-extrabold leading-none"
-                                    :class="g.skor === null ? 'text-gray-300' : g.skor >= 80 ? 'text-emerald-600' : g.skor >= 70 ? 'text-amber-600' : 'text-red-500'">
-                                    {{ g.skor ?? '–' }}
-                                </p>
-                                <p class="text-[9px] text-gray-400">{{ g.grade ?? 'belum' }}</p>
-                            </div>
-                        </div>
-                        <div v-if="g.komponen" class="grid grid-cols-4 gap-1.5 mt-2">
-                            <div v-for="(v, k) in g.komponen" :key="k" class="rounded-lg bg-gray-50 py-1.5 text-center">
-                                <p class="text-[8px] text-gray-400 capitalize leading-tight">{{ k }}</p>
-                                <p class="text-[12px] font-bold text-gray-700">{{ v ?? '–' }}</p>
-                            </div>
-                        </div>
-                        <p v-if="g.absensi" class="text-[11px] text-gray-500 mt-1.5">
-                            Hadir {{ g.absensi.hadir }} · Telat {{ g.absensi.terlambat }} · Izin {{ g.absensi.izin }} · Alfa {{ g.absensi.alfa }}
-                            <span v-if="g.mengajar"> · Sesi {{ g.mengajar.sesi_terlaksana }}/{{ g.mengajar.sesi_jadwal }}</span>
-                        </p>
-                    </li>
-                </ul>
+                <!-- KINERJA -->
+                <div v-if="punya('kinerja') && d.kinerja" class="rounded-2xl bg-white border border-gray-100 p-3 mb-3">
+                    <p class="text-[13px] font-extrabold text-gray-800 mb-0.5">Kinerja Terendah Bulan Ini</p>
+                    <p class="text-[10px] text-gray-400 mb-1.5">Perlu perhatian lebih dulu.</p>
+                    <p v-if="!d.kinerja.terendah.length" class="text-[11px] text-gray-400">Belum ada data kinerja.</p>
+                    <ul v-else class="divide-y divide-gray-50">
+                        <li v-for="(g, i) in d.kinerja.terendah" :key="i" class="py-1.5 flex items-center justify-between gap-2">
+                            <span class="text-[12px] text-gray-800 truncate min-w-0">{{ g.guru }}</span>
+                            <span class="shrink-0 text-[13px] font-extrabold"
+                                :class="g.skor >= 80 ? 'text-emerald-600' : g.skor >= 70 ? 'text-amber-600' : 'text-red-500'">{{ g.skor }}</span>
+                        </li>
+                    </ul>
+                </div>
             </template>
         </template>
 

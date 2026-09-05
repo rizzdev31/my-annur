@@ -29,6 +29,165 @@ class MonitoringApiController extends Controller
         return response()->json(['success' => true, 'data' => $this->pengawas->ringkasan($tp->id)]);
     }
 
+    /**
+     * GET /monitoring/dashboard?tanggal= — RINGKASAN SATU LAYAR untuk pimpinan.
+     * Mengambil semua modul yang diizinkan dalam satu panggilan agar pimpinan
+     * langsung melihat kondisi hari ini tanpa berpindah-pindah tab.
+     */
+    public function dashboard(Request $request): JsonResponse
+    {
+        $tp = $request->user()?->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Bukan tenaga pendidik.'], 403);
+
+        $p = $this->pengawas->untuk($tp->id);
+        if (!$p) return response()->json(['success' => false, 'message' => 'Anda tidak diberi akses monitoring.'], 403);
+
+        $modul   = array_values((array) ($p->modul ?? []));
+        $tanggal = $request->filled('tanggal') ? \Carbon\Carbon::parse($request->tanggal) : TimezoneHelper::today();
+        $tglStr  = $tanggal->toDateString();
+        $namaHari = TimezoneHelper::namaHariDB($tanggal);
+        $sekarang = TimezoneHelper::now();
+
+        $guru    = $this->pengawas->guruDiawasi($tp->id);
+        $guruIds = $guru->pluck('id');
+
+        $out = [
+            'tanggal'    => $tglStr,
+            'hari'       => ucfirst($tanggal->locale('id')->isoFormat('dddd, D MMMM YYYY')),
+            'total_guru' => $guru->count(),
+            'modul'      => $modul,
+            'perhatian'  => [],   // ringkasan anomali paling penting
+        ];
+        if ($guru->isEmpty()) return response()->json(['success' => true, 'data' => $out]);
+
+        // ── Kehadiran hari ini ────────────────────────────────────────────
+        if (in_array('absen_harian', $modul, true)) {
+            $absen = AbsensiHarian::whereDate('tanggal', $tglStr)
+                ->whereIn('tenaga_pendidik_id', $guruIds)->get()->keyBy('tenaga_pendidik_id');
+
+            $rows = $guru->map(function ($g) use ($absen) {
+                $a = $absen->get($g->id);
+                return [
+                    'nama'            => $g->user?->name ?? '—',
+                    'jabatan'         => $g->jabatan?->nama_jabatan ?? '—',
+                    'status'          => $a?->status ?? 'belum',
+                    'jam_masuk'       => $a?->jam_masuk ? substr((string) $a->jam_masuk, 0, 5) : null,
+                    'menit_terlambat' => (int) ($a?->menit_terlambat ?? 0),
+                ];
+            })->values();
+
+            $hitung = [];
+            foreach ($rows as $r) $hitung[$r['status']] = ($hitung[$r['status']] ?? 0) + 1;
+
+            $out['absen'] = ['ringkasan' => $hitung, 'guru' => $rows];
+
+            $belum = $rows->where('status', 'belum')->pluck('nama')->all();
+            if ($belum) $out['perhatian'][] = ['tipe' => 'absen', 'jumlah' => count($belum),
+                'teks' => count($belum) . ' guru belum absen', 'nama' => array_slice($belum, 0, 6)];
+        }
+
+        // ── Jadwal & absensi mengajar hari ini ────────────────────────────
+        if (in_array('absen_mengajar', $modul, true)) {
+            $jadwal = \App\Models\JadwalMengajar::with(['mataPelajaran:id,nama', 'tenagaPendidik.user:id,name'])
+                ->whereIn('tenaga_pendidik_id', $guruIds)
+                ->where('hari', $namaHari)->where('is_aktif', true)
+                ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+                ->orderBy('jam_mulai')->get();
+
+            $am = \App\Models\AbsensiMengajar::with('digantikanOleh.user:id,name')
+                ->whereDate('tanggal', $tglStr)->whereIn('jadwal_mengajar_id', $jadwal->pluck('id'))
+                ->get()->keyBy('jadwal_mengajar_id');
+
+            $sesi = $jadwal->map(function ($j) use ($am, $tglStr, $sekarang) {
+                $a = $am->get($j->id);
+                $lewat = $sekarang->gt(\Carbon\Carbon::parse($tglStr . ' ' . $j->jam_selesai, TimezoneHelper::TZ));
+                return [
+                    'guru'           => $j->tenagaPendidik?->user?->name ?? '—',
+                    'mata_pelajaran' => $j->mataPelajaran?->nama ?? '—',
+                    'kelas'          => $j->kelas,
+                    'jam'            => substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5),
+                    'status'         => $a?->status ?? ($lewat ? 'terlewat' : 'belum'),
+                    'pengganti'      => $a?->digantikanOleh?->user?->name,
+                ];
+            })->values();
+
+            $bermasalah = $sesi->whereIn('status', ['terlewat', 'tidak_terlaksana']);
+            $out['mengajar'] = [
+                'total'      => $sesi->count(),
+                'beres'      => $sesi->whereIn('status', ['terlaksana', 'hadir', 'pengganti', 'libur'])->count(),
+                'bermasalah' => $bermasalah->count(),
+                'sesi'       => $sesi,
+            ];
+            if ($bermasalah->count()) $out['perhatian'][] = ['tipe' => 'mengajar', 'jumlah' => $bermasalah->count(),
+                'teks' => $bermasalah->count() . ' sesi mengajar belum tercatat',
+                'nama' => $bermasalah->take(6)->map(fn($s) => $s['guru'] . ' · ' . $s['mata_pelajaran'])->values()->all()];
+        }
+
+        // ── Perizinan: yang sedang izin hari ini + menunggu keputusan ─────
+        if (in_array('perizinan', $modul, true)) {
+            $izinAktif = \App\Models\PengajuanIzin::with(['tenagaPendidik.user:id,name', 'jenisPengajuan:id,nama'])
+                ->whereIn('tenaga_pendidik_id', $guruIds)->where('status', 'disetujui')
+                ->where('tanggal_mulai', '<=', $tglStr)->where('tanggal_selesai', '>=', $tglStr)
+                ->get()->map(fn($i) => [
+                    'guru'  => $i->tenagaPendidik?->user?->name ?? '—',
+                    'jenis' => $i->jenisPengajuan?->nama ?? 'Izin',
+                    'sampai'=> $i->tanggal_selesai?->toDateString(),
+                ])->values();
+
+            $menunggu = \App\Models\PengajuanIzin::with(['tenagaPendidik.user:id,name', 'jenisPengajuan:id,nama'])
+                ->whereIn('tenaga_pendidik_id', $guruIds)->where('status', 'pending')
+                ->orderBy('tanggal_mulai')->get()->map(fn($i) => [
+                    'id'    => $i->id,
+                    'guru'  => $i->tenagaPendidik?->user?->name ?? '—',
+                    'jenis' => $i->jenisPengajuan?->nama ?? 'Izin',
+                    'mulai' => $i->tanggal_mulai?->toDateString(),
+                    'selesai' => $i->tanggal_selesai?->toDateString(),
+                    'alasan'  => $i->alasan,
+                    'datang_terlambat' => (bool) $i->is_datang_terlambat,
+                ])->values();
+
+            $out['izin'] = [
+                'aktif_hari_ini'     => $izinAktif,
+                'menunggu'           => $menunggu,
+                'boleh_setujui_izin' => $this->pengawas->bolehSetujuiIzin($tp->id),
+            ];
+            if ($menunggu->count()) $out['perhatian'][] = ['tipe' => 'izin', 'jumlah' => $menunggu->count(),
+                'teks' => $menunggu->count() . ' izin menunggu keputusan',
+                'nama' => $menunggu->take(6)->pluck('guru')->all()];
+        }
+
+        // ── Tugas tambahan yang masih berjalan ───────────────────────────
+        if (in_array('tugas_tambahan', $modul, true)) {
+            $tugas = \App\Models\PenugasanTambahan::with(['tenagaPendidik.user:id,name', 'tugasTambahan:id,judul,tanggal_selesai'])
+                ->whereIn('tenaga_pendidik_id', $guruIds)
+                ->whereIn('status_pengerjaan', ['belum', 'sedang'])
+                ->latest('id')->limit(40)->get()
+                ->map(fn($t) => [
+                    'guru'    => $t->tenagaPendidik?->user?->name ?? '—',
+                    'judul'   => $t->tugasTambahan?->judul ?? '—',
+                    'selesai' => optional($t->tugasTambahan?->tanggal_selesai)->toDateString(),
+                    'status'  => $t->status_pengerjaan,
+                ])->values();
+
+            $out['tugas'] = ['berjalan' => $tugas->count(), 'daftar' => $tugas];
+        }
+
+        // ── Kinerja bulan berjalan: yang terendah lebih dulu ─────────────
+        if (in_array('kinerja', $modul, true)) {
+            $rekap = \App\Models\RekapKinerjaBulanan::with('tenagaPendidik.user:id,name')
+                ->whereIn('tenaga_pendidik_id', $guruIds)
+                ->where('bulan', (int) $tanggal->month)->where('tahun', (int) $tanggal->year)
+                ->whereNotNull('skor_total')->orderBy('skor_total')->limit(10)->get()
+                ->map(fn($r) => [
+                    'guru' => $r->tenagaPendidik?->user?->name ?? '—',
+                    'skor' => round((float) $r->skor_total, 1),
+                ])->values();
+            $out['kinerja'] = ['terendah' => $rekap];
+        }
+
+        return response()->json(['success' => true, 'data' => $out]);
+    }
+
     /** GET /monitoring/absen-harian?tanggal= — status absen guru yang diawasi. */
     public function absenHarian(Request $request): JsonResponse
     {
