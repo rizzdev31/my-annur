@@ -424,15 +424,29 @@ class AbsensiApiController extends Controller
      *
      * @return array{0: ?AbsensiHarian, 1: Carbon, 2: bool}  [record, tanggalShift, overnightCarry]
      */
+    /** "2 jam 15 menit" / "45 menit" — dipakai pesan & keterangan check out. */
+    private function formatDurasi(int $menit): string
+    {
+        $j = intdiv($menit, 60);
+        $m = $menit % 60;
+
+        return $j > 0 ? "{$j} jam {$m} menit" : "{$m} menit";
+    }
+
     private function resolveAbsensiAktif($tp, Carbon $today, ?SettingJamKerja $jamKerja): array
     {
         $today = $today->copy()->startOfDay();
 
         $rec = AbsensiHarian::where('tenaga_pendidik_id', $tp->id)
             ->whereDate('tanggal', $today)->first();
-        if ($rec) return [$rec, $today, false];
 
-        // Tidak ada record hari ini → cek shift lintas-hari kemarin yang belum check out.
+        // Record hari ini dipakai HANYA bila benar-benar sudah check-in. Baris
+        // tanpa jam_masuk (mis. auto-alfa atau izin yang dimaterialisasi) bukan
+        // shift berjalan; bila dipakai, guru shift malam yang belum check out
+        // akan ditolak "belum check in" dan kehilangan jalan pulang.
+        if ($rec && $rec->jam_masuk) return [$rec, $today, false];
+
+        // Tidak ada shift berjalan hari ini → cek shift lintas-hari kemarin yang belum check out.
         $yesterday = $today->copy()->subDay();
         $yRec = AbsensiHarian::where('tenaga_pendidik_id', $tp->id)
             ->whereDate('tanggal', $yesterday)
@@ -445,7 +459,9 @@ class AbsensiApiController extends Controller
             }
         }
 
-        return [null, $today, false];
+        // Tidak ada shift malam yang terbuka → kembalikan record hari ini apa
+        // adanya (bisa null, atau baris alfa/izin) agar pesan errornya tetap tepat.
+        return [$rec, $today, false];
     }
 
     /**
@@ -566,12 +582,14 @@ class AbsensiApiController extends Controller
             .' gunakan_per_hari='.($jamKerja?->gunakan_jadwal_per_hari ? 'true':'false'));
 
         // Validasi: checkout hanya boleh saat atau setelah jam pulang
+        $jadwalPulangDt = null;   // dipakai lagi saat mencatat keterlambatan pulang
         if ($jamPulangStr) {
             $jamPulangJadwal = Carbon::parse(
                 $shiftDate->toDateString() . ' ' . $jamPulangStr
             )->setTimezone(TimezoneHelper::TZ);
 
             if ($isLintas) $jamPulangJadwal->addDay();
+            $jadwalPulangDt = $jamPulangJadwal->copy();
 
             // Checkout boleh dilakukan tepat pada jam pulang (tidak ada toleransi sebelum jam pulang)
             if ($jamSekarang->lt($jamPulangJadwal)) {
@@ -653,7 +671,15 @@ class AbsensiApiController extends Controller
         }
 
         $jamPulang = TimezoneHelper::now(); // WIB, bukan UTC
-        $absensi->update([
+
+        // Pulang jauh setelah jadwal (mis. guru asrama baru sempat check out
+        // beberapa jam setelah 07:00) tetap dicatat apa adanya, TAPI diberi
+        // keterangan agar riwayat tidak terbaca seolah ia bekerja selama itu.
+        $telatPulangMenit = $jadwalPulangDt && $jamPulang->gt($jadwalPulangDt)
+            ? (int) $jadwalPulangDt->diffInMinutes($jamPulang)
+            : 0;
+
+        $ubah = [
             'jam_pulang'         => $jamPulang->format('H:i:s'),
             'foto_pulang'        => $fotoPulangPath,
             'lat_pulang'         => $request->latitude,
@@ -661,18 +687,37 @@ class AbsensiApiController extends Controller
             'pulang_luar_lokasi' => $pulangLuarLokasi,
             'alasan_pulang'      => $pulangLuarLokasi ? $alasanPulang : null,
             'jarak_pulang_meter' => $jarakPulang,
-        ]);
+        ];
 
-        // Hitung durasi kerja (dari tanggal & jam masuk shift → jam pulang aktual)
-        $masuk      = Carbon::parse($shiftDate->toDateString() . ' ' . $absensi->jam_masuk);
+        // Ambang 30 menit: molor sebentar saat serah terima itu wajar, tidak
+        // perlu dicatat. Yang perlu terlihat admin adalah selisih yang mencolok.
+        if ($telatPulangMenit > 30) {
+            $ubah['keterangan'] = trim(($absensi->keterangan ? $absensi->keterangan . ' | ' : '')
+                . 'Check out ' . $this->formatDurasi($telatPulangMenit)
+                . ' setelah jadwal pulang (' . $jadwalPulangDt->format('H:i') . ').');
+        }
+
+        $absensi->update($ubah);
+
+        // Durasi = rentang check-in → check-out. Bila pulangnya jauh lewat jadwal,
+        // sebutkan juga durasi sesuai jadwal supaya angkanya tidak menyesatkan.
+        $masuk      = Carbon::parse($shiftDate->toDateString() . ' ' . $absensi->jam_masuk, TimezoneHelper::TZ);
         $totalMenit = (int) $masuk->diffInMinutes($jamPulang);
-        $jam        = floor($totalMenit / 60);
-        $menit      = $totalMenit % 60;
+
+        $pesan = 'Check out berhasil. Durasi kerja: ' . $this->formatDurasi($totalMenit) . '.';
+        if ($telatPulangMenit > 30) {
+            $sesuaiJadwal = (int) $masuk->diffInMinutes($jadwalPulangDt);
+            $pesan = 'Check out tercatat pukul ' . $jamPulang->format('H:i')
+                . ' — ' . $this->formatDurasi($telatPulangMenit) . ' setelah jadwal pulang '
+                . $jadwalPulangDt->format('H:i') . '. Durasi sesuai jadwal: '
+                . $this->formatDurasi($sesuaiJadwal) . '.';
+        }
 
         return response()->json([
-            'success' => true,
-            'message' => "Check out berhasil. Durasi kerja: {$jam} jam {$menit} menit.",
-            'data'    => $this->formatAbsensi($absensi->fresh()),
+            'success'            => true,
+            'message'            => $pesan,
+            'telat_pulang_menit' => $telatPulangMenit,
+            'data'               => $this->formatAbsensi($absensi->fresh()),
         ]);
     }
 

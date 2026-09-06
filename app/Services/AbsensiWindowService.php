@@ -128,7 +128,19 @@ class AbsensiWindowService
         if ($yJadwal && ($yJadwal['lintas_hari'] ?? false)) {
             $yStart = Carbon::parse($yesterday->toDateString() . ' ' . $yJadwal['jam_masuk'], TimezoneHelper::TZ)->subMinutes(self::BUKA_SEBELUM_MENIT);
             $yEnd   = Carbon::parse($yesterday->toDateString() . ' ' . $yJadwal['jam_pulang'], TimezoneHelper::TZ)->addDay();
-            if ($now->gte($yStart) && $now->lte($yEnd)) {
+
+            // Shift kemarin yang SUDAH check-in tapi BELUM check-out belum selesai
+            // secara administratif, betapapun jam pulang sudah lewat. Dulu shift itu
+            // ditinggalkan tepat pada detik jam pulang, sehingga guru asrama yang
+            // telat sedikit kehilangan satu-satunya jalan check out — tombolnya
+            // hilang karena halaman menganggap ia belum absen hari ini.
+            // Batas atasnya diurus penjaga di bawah (shift HARI INI belum buka),
+            // jadi tidak mungkin dua shift aktif bersamaan.
+            $masihTerbuka = AbsensiHarian::where('tenaga_pendidik_id', $tp->id)
+                ->whereDate('tanggal', $yesterday)
+                ->whereNotNull('jam_masuk')->whereNull('jam_pulang')->exists();
+
+            if ($now->gte($yStart) && ($masihTerbuka || $now->lte($yEnd))) {
                 $tJadwal = $jamKerja->getJamUntukHari(TimezoneHelper::namaHariDB($today));
                 $tOpen = $tJadwal
                     ? Carbon::parse($today->toDateString() . ' ' . $tJadwal['jam_masuk'], TimezoneHelper::TZ)->subMinutes(self::BUKA_SEBELUM_MENIT)
