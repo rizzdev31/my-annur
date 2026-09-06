@@ -15,6 +15,11 @@ Schedule::job(new \App\Jobs\SyncVariabelJob)->hourly();
 // sampai shift kerjanya berakhir (overnight-aware). Idempotent + lewati libur.
 Schedule::command('absensi:auto-alfa')->everyFifteenMinutes()->withoutOverlapping();
 
+// Auto-Checkout tiap 30 menit: tutup absensi yang sudah check-in tapi tak pernah
+// check-out, SETELAH kesempatan check-out manual habis (window shift berikutnya
+// sudah buka). Jam pulang diisi sesuai jadwal, bukan waktu perintah berjalan.
+Schedule::command('absensi:auto-checkout')->everyThirtyMinutes()->withoutOverlapping();
+
 // Pengingat & eskalasi notifikasi wajib (absensi + mengajar) tiap 15 menit.
 Schedule::command('notifikasi:reminder')->everyFifteenMinutes()->withoutOverlapping();
 
