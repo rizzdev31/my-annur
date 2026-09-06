@@ -28,6 +28,9 @@ class AbsensiAutoCheckoutService
     /** Batas cadangan bila hari berikutnya tidak punya jadwal (libur). */
     public const BATAS_KERAS_JAM = 12;
 
+    /** Durasi shift terpanjang yang masih dianggap masuk akal. */
+    public const MAKS_DURASI_JAM = 20;
+
     /**
      * @param  string|null $sejak            Tanggal kerja paling awal diproses (Y-m-d).
      * @param  string|null $sampai           Tanggal kerja paling akhir (default: kemarin).
@@ -66,21 +69,27 @@ class AbsensiAutoCheckoutService
             $lintas = (bool) ($jadwal['lintas_hari'] ?? false);
             if ($hanyaLintasHari && !$lintas) { $hasil['dilewati']++; continue; }
 
+            // Akhir shift = kemunculan jam pulang PERTAMA setelah jam masuk.
+            // Aturan tunggal ini menangani semua kasus tanpa cabang khusus:
+            //   masuk 15:15, pulang 07:00 → 07:00 besok  (shift malam biasa)
+            //   masuk 01:31, pulang 07:00 → 07:00 hari ini (check-in dini hari;
+            //     memaksa "besok" akan menghasilkan durasi ~24 jam yang palsu)
+            //   masuk 07:00, pulang 16:00 → 16:00 hari ini (shift normal)
+            $masukDt    = Carbon::parse("$tgl {$a->jam_masuk}", TimezoneHelper::TZ);
             $akhirShift = Carbon::parse("$tgl {$jadwal['jam_pulang']}", TimezoneHelper::TZ);
-            if ($lintas) $akhirShift->addDay();
+            if ($akhirShift->lte($masukDt)) $akhirShift->addDay();
 
             if ($now->lte($this->batasManual($tp, $a->tanggal, $akhirShift))) {
                 $hasil['dilewati']++;   // guru masih boleh check out sendiri
                 continue;
             }
 
-            // Guru yang check-in SETELAH jam pulang jadwal (shift non-lintas,
-            // datang sangat telat): memakai jam pulang jadwal akan membuat
-            // pulang mendahului masuk. Pakai jam masuk → durasi 0, bukan negatif.
+            // Data ganjil (mis. check-in jauh setelah shift berakhir) bisa
+            // menghasilkan durasi tak masuk akal. Daripada mengarang jam pulang,
+            // pakai jam masuknya sendiri → durasi 0 dan jelas perlu koreksi admin.
             $jamPulang = $akhirShift->format('H:i:s');
-            if (!$lintas && $a->jam_masuk > $jadwal['jam_pulang']) {
-                $jamPulang = $a->jam_masuk;
-            }
+            $wajar     = $masukDt->diffInHours($akhirShift) <= self::MAKS_DURASI_JAM;
+            if (!$wajar) $jamPulang = $a->jam_masuk;
 
             $hasil['rincian'][] = [
                 'tanggal' => $tgl,
