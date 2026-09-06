@@ -446,16 +446,19 @@ class AbsensiApiController extends Controller
         // akan ditolak "belum check in" dan kehilangan jalan pulang.
         if ($rec && $rec->jam_masuk) return [$rec, $today, false];
 
-        // Tidak ada shift berjalan hari ini → cek shift lintas-hari kemarin yang belum check out.
+        // Tidak ada shift berjalan hari ini → cek shift lintas-hari kemarin.
+        // Sengaja TIDAK menyaring jam_pulang: record yang sudah ditutup pun
+        // dikembalikan, supaya percobaan check out kedua dijawab "sudah check
+        // out pukul sekian" — bukan "belum check in" yang membingungkan.
         $yesterday = $today->copy()->subDay();
         $yRec = AbsensiHarian::where('tenaga_pendidik_id', $tp->id)
             ->whereDate('tanggal', $yesterday)
-            ->whereNotNull('jam_masuk')->whereNull('jam_pulang')->first();
+            ->whereNotNull('jam_masuk')->first();
 
         if ($yRec && $jamKerja) {
             $yJadwal = $jamKerja->getJamUntukHari(TimezoneHelper::namaHariDB($yesterday));
             if ($yJadwal && ($yJadwal['lintas_hari'] ?? false)) {
-                return [$yRec, $yesterday, true]; // shift malam masih berjalan
+                return [$yRec, $yesterday, true]; // shift malam (berjalan atau baru ditutup)
             }
         }
 
