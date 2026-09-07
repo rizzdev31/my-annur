@@ -25,14 +25,21 @@ class KegiatanPentingApiController extends Controller
         $isPiket = PiketJadwal::whereDate('tanggal', $today)->where('tenaga_pendidik_id', $tp->id)->exists();
 
         $list = KegiatanPenting::where('is_aktif', true)->orderBy('jam')->get()->map(function ($keg) use ($today) {
-            $rec = AbsensiKegiatanPenting::where('kegiatan_penting_id', $keg->id)->whereDate('tanggal', $today);
+            // Sejak peserta tidak lagi otomatis 'tidak_hadir', yang belum ditandai
+            // benar-benar berarti BELUM dikerjakan piket — jadi angkanya ditampilkan
+            // agar tidak ada kegiatan yang terlewat separuh jalan.
+            $r = $this->service->ringkasan($keg, $today);
+
             return [
-                'id'         => $keg->id,
-                'nama'       => $keg->nama,
-                'jam'        => substr((string) $keg->jam, 0, 5),
-                'sasaran'    => $keg->sasaran,
-                'sudah_hadir'=> (clone $rec)->where('status', 'hadir')->count(),
-                'sudah_catat'=> (clone $rec)->count(),
+                'id'          => $keg->id,
+                'nama'        => $keg->nama,
+                'jam'         => substr((string) $keg->jam, 0, 5),
+                'sasaran'     => $keg->sasaran,
+                'sudah_hadir' => $r['hadir'],
+                'sudah_catat' => $r['ditandai'],
+                'total'       => $r['total'],
+                'belum'       => $r['belum'],
+                'lengkap'     => $r['belum'] === 0 && $r['total'] > 0,
             ];
         });
 
@@ -75,6 +82,15 @@ class KegiatanPentingApiController extends Controller
 
         $n = $this->service->simpanBanyak($kegiatan, $today, $data['items'], $request->user()->id);
 
-        return response()->json(['success' => true, 'message' => "Kehadiran {$kegiatan->nama} tersimpan ({$n})."]);
+        // Beri tahu sisa yang belum ditandai — piket sering menyimpan separuh
+        // jalan, dan yang belum ditandai tidak tercatat sama sekali.
+        $r = $this->service->ringkasan($kegiatan, $today);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Kehadiran {$kegiatan->nama} tersimpan ({$n})."
+                . ($r['belum'] > 0 ? " Masih ada {$r['belum']} guru belum ditandai." : ' Semua peserta sudah ditandai.'),
+            'ringkasan' => $r,
+        ]);
     }
 }

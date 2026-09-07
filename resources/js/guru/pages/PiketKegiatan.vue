@@ -22,9 +22,16 @@
                     <div class="w-11 h-11 rounded-xl bg-[#0C78FF]/10 grid place-items-center text-[#0C78FF] font-bold text-sm shrink-0">{{ k.jam }}</div>
                     <div class="flex-1 min-w-0">
                         <p class="font-semibold text-gray-800 truncate">{{ k.nama }}</p>
-                        <p class="text-xs text-gray-400">{{ labelSasaran(k.sasaran) }} · {{ k.sudah_catat ? (k.sudah_hadir + ' hadir tercatat') : 'belum dicatat' }}</p>
+                        <p class="text-xs text-gray-400">
+                            {{ labelSasaran(k.sasaran) }} · {{ k.sudah_catat }}/{{ k.total }} ditandai
+                            <span v-if="k.sudah_catat"> · {{ k.sudah_hadir }} hadir</span>
+                        </p>
                     </div>
-                    <svg class="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    <!-- Penanda kelengkapan: kegiatan yang separuh jalan paling
+                         mudah terlewat, jadi dibuat terlihat dari daftar. -->
+                    <span v-if="k.lengkap" class="shrink-0 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">Lengkap</span>
+                    <span v-else-if="k.total" class="shrink-0 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold">{{ k.belum }} belum</span>
+                    <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                 </button>
             </div>
 
@@ -129,6 +136,13 @@ async function simpan() {
         .map(p => ({ tenaga_pendidik_id: p.tenaga_pendidik_id, status: p.status }))
 
     if (!items.length) { msg.value = { ok: false, text: 'Belum ada yang ditandai.' }; return }
+
+    // Yang belum ditandai tidak tercatat sama sekali — pastikan piket sadar,
+    // bukan menemukannya nanti saat laporan sudah telanjur timpang.
+    if (belumDitandai.value && !confirm(
+        `${belumDitandai.value} guru belum ditandai.\n\n`
+        + 'Mereka tidak akan tercatat hadir maupun tidak hadir untuk kegiatan ini.\n\nTetap simpan?'
+    )) return
 
     busy.value = true; msg.value = null
     try {

@@ -29,21 +29,29 @@ use Illuminate\Support\Collection;
  */
 class KegiatanPentingService
 {
-    public function pesertaHariIni(KegiatanPenting $keg, string $tanggal): Collection
+    /** Memo peserta yang diharapkan, per (sasaran + tanggal) dalam satu request. */
+    private array $memoPeserta = [];
+
+    /**
+     * Guru yang WAJIB ikut kegiatan bersasaran ini pada tanggal tsb.
+     * Dipisah agar bisa dipakai berulang (daftar kegiatan memanggilnya sekali
+     * per sasaran, bukan sekali per kegiatan).
+     *
+     * @return array{0: Collection<TenagaPendidik>, 1: Collection}  [guru, absensi harian]
+     */
+    private function pesertaDiharapkan(KegiatanPenting $keg, string $tanggal): array
     {
-        $tgl      = Carbon::parse($tanggal);
-        $namaHari = TimezoneHelper::namaHariDB($tgl);
-        $jenis    = $keg->jenisGuruSasaran();
+        $kunci = implode('|', $keg->jenisGuruSasaran()) . '@' . $tanggal;
+        if (isset($this->memoPeserta[$kunci])) return $this->memoPeserta[$kunci];
+
+        $namaHari = TimezoneHelper::namaHariDB(Carbon::parse($tanggal));
 
         $guru = TenagaPendidik::where('is_aktif', true)
-            ->whereIn('jenis_guru', $jenis)
+            ->whereIn('jenis_guru', $keg->jenisGuruSasaran())
             ->with(['user', 'jabatan'])
             ->get();
 
         $ids = $guru->pluck('id');
-
-        $records = AbsensiKegiatanPenting::where('kegiatan_penting_id', $keg->id)
-            ->whereDate('tanggal', $tanggal)->get()->keyBy('tenaga_pendidik_id');
 
         $absen = AbsensiHarian::whereDate('tanggal', $tanggal)
             ->whereIn('tenaga_pendidik_id', $ids)->get()->keyBy('tenaga_pendidik_id');
@@ -57,18 +65,49 @@ class KegiatanPentingService
             ->where(fn ($q) => $q->whereNull('tanggal_selesai')->orWhere('tanggal_selesai', '>=', $tanggal))
             ->exists();
 
-        $peserta = collect();
-        foreach ($guru as $g) {
+        $wajib = $guru->filter(function ($g) use ($izin, $liburNasional, $namaHari, $tanggal) {
             // Jabatan dikecualikan dari kegiatan (mis. Satpam, Kebersihan) → kinerja aman.
-            if ($g->jabatan && $g->jabatan->wajib_kegiatan === false) continue;
-            if ($izin->has($g->id)) continue;                                  // sedang izin
-            if ($liburNasional) continue;                                      // libur nasional/pesantren
+            if ($g->jabatan && $g->jabatan->wajib_kegiatan === false) return false;
+            if ($izin->has($g->id)) return false;                              // sedang izin
+            if ($liburNasional) return false;                                  // libur nasional/pesantren
             // Jam kerja WAJIB diresolusi per tanggal kegiatan — guru shift
             // (satpam/asrama) bisa memakai jadwal berbeda pada tanggal tertentu.
             $jk = $g->jamKerjaAktif($tanggal);
-            if ($jk && $jk->isHariLibur($namaHari)) continue;                  // libur mingguan
-            if (LiburTendik::isLibur($g->id, $tanggal)) continue;              // libur individu
+            if ($jk && $jk->isHariLibur($namaHari)) return false;              // libur mingguan
 
+            return !LiburTendik::isLibur($g->id, $tanggal);                    // libur individu
+        })->values();
+
+        return $this->memoPeserta[$kunci] = [$wajib, $absen];
+    }
+
+    /** Ringkasan kelengkapan penandaan satu kegiatan (untuk daftar & peringatan). */
+    public function ringkasan(KegiatanPenting $keg, string $tanggal): array
+    {
+        [$wajib] = $this->pesertaDiharapkan($keg, $tanggal);
+
+        $rec = AbsensiKegiatanPenting::where('kegiatan_penting_id', $keg->id)
+            ->whereDate('tanggal', $tanggal)
+            ->whereIn('tenaga_pendidik_id', $wajib->pluck('id'))->get();
+
+        return [
+            'total'    => $wajib->count(),
+            'hadir'    => $rec->where('status', 'hadir')->count(),
+            'tidak'    => $rec->where('status', 'tidak_hadir')->count(),
+            'ditandai' => $rec->count(),
+            'belum'    => max($wajib->count() - $rec->count(), 0),
+        ];
+    }
+
+    public function pesertaHariIni(KegiatanPenting $keg, string $tanggal): Collection
+    {
+        [$guru, $absen] = $this->pesertaDiharapkan($keg, $tanggal);
+
+        $records = AbsensiKegiatanPenting::where('kegiatan_penting_id', $keg->id)
+            ->whereDate('tanggal', $tanggal)->get()->keyBy('tenaga_pendidik_id');
+
+        $peserta = collect();
+        foreach ($guru as $g) {
             $rec = $records->get($g->id);
             $peserta->push([
                 'tenaga_pendidik_id' => $g->id,
