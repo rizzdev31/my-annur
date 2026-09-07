@@ -17,9 +17,15 @@ use Illuminate\Support\Collection;
  *
  * Peserta yang DIHARAPKAN = guru aktif dgn jenis_guru sesuai sasaran kegiatan,
  * yang hari itu BUKAN libur (mingguan/nasional/individu) & TIDAK sedang izin.
- *   - Sudah absen harian (masuk kerja)  → piket menandai hadir/tidak.
- *   - Hari kerja tapi TIDAK absen harian → otomatis 'tidak_hadir'.
  * Guru libur/izin dikecualikan (dianggap tidak wajib ikut).
+ *
+ * ABSEN HARIAN TIDAK LAGI MENENTUKAN APA PUN. Dulu guru yang belum tercatat
+ * absen harian otomatis berstatus 'tidak_hadir', dan itu MENGHUKUM guru yang
+ * sebenarnya hadir: shift asrama (15:15→07:00) tercatat pada tanggal KEMARIN,
+ * sehingga pada kegiatan pagi hari ini mereka terlihat "belum masuk kerja"
+ * lalu tersimpan absen — padahal justru sedang bertugas di lokasi. Kini semua
+ * peserta mulai TANPA status; guru piket yang menentukan, sesuai kenyataan
+ * di lapangan. `hadir_kerja` hanya keterangan tambahan.
  */
 class KegiatanPentingService
 {
@@ -57,27 +63,53 @@ class KegiatanPentingService
             if ($g->jabatan && $g->jabatan->wajib_kegiatan === false) continue;
             if ($izin->has($g->id)) continue;                                  // sedang izin
             if ($liburNasional) continue;                                      // libur nasional/pesantren
-            $jk = $g->jamKerjaAktif();
+            // Jam kerja WAJIB diresolusi per tanggal kegiatan — guru shift
+            // (satpam/asrama) bisa memakai jadwal berbeda pada tanggal tertentu.
+            $jk = $g->jamKerjaAktif($tanggal);
             if ($jk && $jk->isHariLibur($namaHari)) continue;                  // libur mingguan
             if (LiburTendik::isLibur($g->id, $tanggal)) continue;              // libur individu
-
-            $ah = $absen->get($g->id);
-            $hadirKerja = $ah && $ah->jam_masuk && in_array($ah->status, ['hadir', 'terlambat', 'dinas_luar']);
 
             $rec = $records->get($g->id);
             $peserta->push([
                 'tenaga_pendidik_id' => $g->id,
                 'nama'        => $g->user?->name ?? ('Guru #' . $g->id),
                 'jenis_guru'  => $g->jenis_guru,
-                'hadir_kerja' => (bool) $hadirKerja,
-                // belum masuk kerja (hari kerja) → otomatis tidak_hadir; jika sudah → belum ditandai (null)
-                'status'      => $rec?->status ?? ($hadirKerja ? null : 'tidak_hadir'),
+                'hadir_kerja' => $this->tercatatMasukKerja($g, $tanggal, $absen),
+                // Belum ditandai = null. TIDAK pernah diisi otomatis 'tidak_hadir'
+                // hanya karena absen harian belum ada (lihat catatan kelas).
+                'status'      => $rec?->status,
                 'jam_hadir'   => $rec?->jam_hadir ? substr((string) $rec->jam_hadir, 0, 5) : null,
                 'tercatat'    => (bool) $rec,
             ]);
         }
 
-        return $peserta->sortByDesc('hadir_kerja')->sortBy('nama')->values();
+        return $peserta->sortBy('nama')->values();
+    }
+
+    /**
+     * Sekadar KETERANGAN untuk guru piket: apakah guru ini tercatat masuk kerja?
+     *
+     * Overnight-aware: shift lintas hari (asrama 15:15→07:00) tercatat pada
+     * tanggal MULAI shift, jadi pada kegiatan pagi hari berikutnya baris hari
+     * ini memang kosong — bukan berarti guru tidak masuk. Tanpa penyesuaian
+     * ini keterangannya menyesatkan dan piket ikut salah menandai.
+     */
+    private function tercatatMasukKerja(TenagaPendidik $g, string $tanggal, Collection $absen): bool
+    {
+        $sah = ['hadir', 'terlambat', 'dinas_luar'];
+
+        $ah = $absen->get($g->id);
+        if ($ah && $ah->jam_masuk && in_array($ah->status, $sah, true)) return true;
+
+        // Shift kemarin yang lintas hari & belum ditutup → guru masih bertugas.
+        $kemarin  = Carbon::parse($tanggal)->subDay();
+        $jkKemarin = $g->jamKerjaAktif($kemarin->toDateString());
+        $jadwal    = $jkKemarin?->getJamUntukHari(TimezoneHelper::namaHariDB($kemarin));
+        if (!$jadwal || !($jadwal['lintas_hari'] ?? false)) return false;
+
+        return AbsensiHarian::where('tenaga_pendidik_id', $g->id)
+            ->whereDate('tanggal', $kemarin)
+            ->whereNotNull('jam_masuk')->whereIn('status', $sah)->exists();
     }
 
     /** Simpan/mutakhirkan banyak status kehadiran sekaligus (dipakai guru piket). */
@@ -87,7 +119,12 @@ class KegiatanPentingService
         foreach ($items as $it) {
             $tpId = (int) ($it['tenaga_pendidik_id'] ?? 0);
             if (!$tpId) continue;
-            $status = in_array($it['status'] ?? null, ['hadir', 'tidak_hadir'], true) ? $it['status'] : 'tidak_hadir';
+
+            // Status kosong = BELUM ditandai → lewati, jangan diam-diam dianggap
+            // 'tidak_hadir'. Menandai absen memotong poin kinerja guru, jadi
+            // harus lahir dari keputusan piket, bukan dari data yang belum diisi.
+            $status = $it['status'] ?? null;
+            if (!in_array($status, ['hadir', 'tidak_hadir'], true)) continue;
 
             AbsensiKegiatanPenting::updateOrCreate(
                 ['kegiatan_penting_id' => $keg->id, 'tenaga_pendidik_id' => $tpId, 'tanggal' => $tanggal],

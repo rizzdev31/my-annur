@@ -32,13 +32,31 @@
             <div v-else>
                 <button @click="sel = null" class="text-sm text-[#0C78FF] font-semibold mb-3">← Kembali</button>
                 <h2 class="text-base font-extrabold text-gray-900">{{ sel.nama }} <span class="text-sm font-medium text-gray-400">· {{ sel.jam }}</span></h2>
-                <p class="text-xs text-gray-400 mb-3">Tandai kehadiran. Guru boleh ditandai <b>hadir</b> walau belum absen harian (mis. kegiatan sebelum jam kerjanya, seperti Dzuhur untuk guru shift sore).</p>
+                <p class="text-xs text-gray-400 mb-2">
+                    Tandai sesuai kenyataan di lapangan. Absen harian tidak memengaruhi apa pun di sini —
+                    guru shift sore/asrama tetap bisa ditandai <b>hadir</b>.
+                </p>
+
+                <div v-if="isPiket" class="flex items-center gap-2 mb-2">
+                    <button @click="tandaiSemua('hadir')"
+                        class="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">Semua hadir</button>
+                    <button @click="tandaiSemua(null)"
+                        class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-500 text-xs font-bold">Bersihkan</button>
+                    <span class="ml-auto text-[11px]" :class="belumDitandai ? 'text-amber-600 font-semibold' : 'text-gray-400'">
+                        {{ belumDitandai ? belumDitandai + ' belum ditandai' : 'Semua sudah ditandai' }}
+                    </span>
+                </div>
 
                 <div class="divide-y divide-gray-50 bg-white rounded-2xl border border-gray-100 overflow-hidden">
                     <div v-for="p in peserta" :key="p.tenaga_pendidik_id" class="px-4 py-3 flex items-center gap-3">
                         <div class="flex-1 min-w-0">
                             <p class="text-sm font-medium text-gray-800 truncate">{{ p.nama }}</p>
-                            <p class="text-[11px] text-gray-400">{{ p.jenis_guru }}<span v-if="!p.hadir_kerja" class="text-amber-500"> · belum absen harian</span></p>
+                            <p class="text-[11px] text-gray-400">
+                                {{ p.jenis_guru }}
+                                <!-- Keterangan saja, bukan larangan: guru shift bisa saja
+                                     belum absen harian tapi memang sedang bertugas. -->
+                                <span v-if="!p.hadir_kerja" class="text-gray-300"> · belum tercatat masuk kerja</span>
+                            </p>
                         </div>
                         <div class="flex gap-1 shrink-0">
                             <button @click="isPiket && (p.status = 'hadir')" :disabled="!isPiket"
@@ -61,7 +79,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 import PageHeader from '../components/PageHeader.vue'
 
@@ -95,13 +113,25 @@ async function pilih(k) {
     } catch (e) { msg.value = { ok: false, text: 'Gagal memuat peserta.' } }
 }
 
+const belumDitandai = computed(() =>
+    peserta.value.filter(p => p.status !== 'hadir' && p.status !== 'tidak_hadir').length)
+
+function tandaiSemua(status) {
+    peserta.value.forEach(p => { p.status = status })
+}
+
 async function simpan() {
+    // Hanya kirim yang BENAR-BENAR ditandai. Dulu semua yang belum ditandai
+    // ikut tersimpan sebagai 'tidak_hadir' — memotong poin kinerja guru yang
+    // sebenarnya hadir, hanya karena piket belum sempat menyentuh barisnya.
+    const items = peserta.value
+        .filter(p => p.status === 'hadir' || p.status === 'tidak_hadir')
+        .map(p => ({ tenaga_pendidik_id: p.tenaga_pendidik_id, status: p.status }))
+
+    if (!items.length) { msg.value = { ok: false, text: 'Belum ada yang ditandai.' }; return }
+
     busy.value = true; msg.value = null
     try {
-        const items = peserta.value.map(p => ({
-            tenaga_pendidik_id: p.tenaga_pendidik_id,
-            status: p.status === 'hadir' ? 'hadir' : 'tidak_hadir',
-        }))
         const res = await api.post(`/piket/kegiatan/${sel.value.id}/simpan`, { items })
         msg.value = { ok: true, text: res.data.message || 'Tersimpan.' }
         sel.value = null
