@@ -24,7 +24,7 @@ async function load() {
         const res = await api.get(`/education/tahsin/jadwal/${jadwalId}/roster`)
         info.value = res.data.data ?? res.data
         santri.value = info.value.santri ?? []
-        santri.value.forEach((x) => { if (!absenStatus[x.santri_id]) absenStatus[x.santri_id] = 'hadir' })
+        santri.value.forEach((x) => { if (!absenStatus[x.santri_id]) absenStatus[x.santri_id] = x.status || 'hadir' })
     } catch (e) {
         error.value = e.response?.data?.message || 'Gagal memuat roster.'
     } finally { loading.value = false }
@@ -159,8 +159,21 @@ async function kirimTasnif() {
     } finally { tSaving.value = false }
 }
 
-const cycleAbsen = (id) => { const seq = ['hadir', 'telat', 'alpha']; absenStatus[id] = seq[(seq.indexOf(absenStatus[id]) + 1) % 3] }
-const absenColor = (s) => ({ hadir: 'bg-emerald-100 text-emerald-700', telat: 'bg-amber-100 text-amber-700', alpha: 'bg-red-100 text-red-600' }[s])
+// Urutan ketuk: Hadir → Telat → Izin → Sakit → Alpha. Izin & sakit umumnya
+// sudah terisi otomatis dari Perizinan Santri / Smart Health, jadi guru jarang
+// perlu memutar sampai ke sana.
+const SEQ_ABSEN = ['hadir', 'telat', 'izin', 'sakit', 'alpha']
+const cycleAbsen = (id) => {
+    const i = SEQ_ABSEN.indexOf(absenStatus[id])
+    absenStatus[id] = SEQ_ABSEN[(i + 1) % SEQ_ABSEN.length]
+}
+const absenColor = (s) => ({
+    hadir: 'bg-emerald-100 text-emerald-700',
+    telat: 'bg-amber-100 text-amber-700',
+    izin:  'bg-sky-100 text-sky-700',
+    sakit: 'bg-violet-100 text-violet-700',
+    alpha: 'bg-red-100 text-red-600',
+}[s] || 'bg-gray-100 text-gray-500')
 </script>
 
 <template>
@@ -184,11 +197,16 @@ const absenColor = (s) => ({ hadir: 'bg-emerald-100 text-emerald-700', telat: 'b
             <!-- GERBANG ABSEN -->
             <div v-if="info.wajib_absen" class="rounded-2xl bg-amber-50 border border-amber-200 p-4 mb-4">
                 <p class="text-sm font-bold text-amber-800 mb-1">Absen Kehadiran Dulu</p>
-                <p class="text-[11px] text-amber-600 mb-3">Ketuk status tiap santri (Hadir → Telat → Alpha), lalu simpan.</p>
+                <p class="text-[11px] text-amber-600 mb-3">Ketuk status tiap santri (Hadir → Telat → Izin → Sakit → Alpha), lalu simpan. Santri yang punya izin disetujui atau laporan Smart Health aktif sudah terisi otomatis.</p>
                 <div class="space-y-1.5 mb-3 max-h-64 overflow-y-auto">
-                    <div v-for="s in santri" :key="s.santri_id" class="flex items-center justify-between bg-white rounded-xl px-3 py-2">
-                        <span class="text-sm text-gray-700 truncate">{{ s.nama }}</span>
-                        <button @click="cycleAbsen(s.santri_id)" class="text-[11px] font-bold px-2.5 py-1 rounded-full capitalize" :class="absenColor(absenStatus[s.santri_id])">{{ absenStatus[s.santri_id] }}</button>
+                    <div v-for="s in santri" :key="s.santri_id" class="flex items-center justify-between gap-2 bg-white rounded-xl px-3 py-2">
+                        <div class="min-w-0">
+                            <span class="text-sm text-gray-700 truncate block">{{ s.nama }}</span>
+                            <!-- Asal-usul status otomatis, agar guru tahu ini bukan tebakan. -->
+                            <span v-if="s.sakit_health" class="text-[10px] text-violet-600">Smart Health: sedang sakit</span>
+                            <span v-else-if="s.izin_disetujui" class="text-[10px] text-sky-600">Izin disetujui<span v-if="s.izin_jenis"> · {{ s.izin_jenis }}</span></span>
+                        </div>
+                        <button @click="cycleAbsen(s.santri_id)" class="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full capitalize" :class="absenColor(absenStatus[s.santri_id])">{{ absenStatus[s.santri_id] }}</button>
                     </div>
                 </div>
                 <input v-model="absenCatatan" type="text" placeholder="Catatan sesi (opsional)" class="w-full px-3 py-2.5 rounded-xl border border-amber-200 text-sm outline-none mb-3" />

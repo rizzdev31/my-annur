@@ -114,7 +114,7 @@ class TahfidzApiController extends Controller
             'jadwal_id'           => 'required|exists:jadwal_mengajar,id',
             'absensi'             => 'required|array|min:1',
             'absensi.*.santri_id' => 'required|integer|exists:santri,id',
-            'absensi.*.status'    => 'required|in:hadir,telat,alpha',
+            'absensi.*.status'    => \App\Services\KehadiranSantriService::aturanStatus(),
             'deskripsi'           => 'nullable|string|max:500',
             'catatan'             => 'nullable|string|max:300',
         ]);
@@ -193,12 +193,14 @@ class TahfidzApiController extends Controller
             "{$request->user()->name} (NIP {$tp->nip})",
         );
 
-        // Notifikasi WA wali per santri (hadir/telat/alfa) — idempotent per baris.
-        $pembelajaran = $jadwal->mataPelajaran?->nama ?? 'Tahfidz';
-        foreach (AbsensiSantri::where('absensi_mengajar_id', $am->id)->get() as $as) {
-            app(\App\Services\WaService::class)->absenMengajar(
-                $as->santri_id, $as->status, $pembelajaran, $today->toDateString(), $as->id);
-        }
+        // Notifikasi WA wali per santri — idempotent per baris. Aturan anti-ganda
+        // (izin & sakit dari Smart Health tidak di-WA lagi) ada di service, sama
+        // dengan absensi mengajar reguler.
+        app(\App\Services\KehadiranSantriService::class)->kirimWa(
+            AbsensiSantri::where('absensi_mengajar_id', $am->id)->get(),
+            $jadwal->mataPelajaran?->nama ?? 'Tahfidz',
+            $today->toDateString()
+        );
 
         return response()->json([
             'success' => true,
@@ -228,57 +230,21 @@ class TahfidzApiController extends Controller
             return response()->json(['success' => false, 'message' => 'Kelas sesi belum tersinkron.', 'code' => 'KELAS_BELUM_SINKRON'], 422);
         }
 
-        $totalQuran = (int) Surah::sum('jumlah_ayat');
-        $santri = Santri::aktif()
-            ->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelasId))
-            ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
+        // Sesi sudah terkunci → tampilkan status kehadiran yang TERSIMPAN,
+        // bukan tebakan izin/sakit. Payload memakai pembangun yang sama dengan
+        // rosterJadwal agar keduanya tidak pernah berbeda bentuk.
+        $tersimpan = AbsensiSantri::where('absensi_mengajar_id', $am->id)
+            ->pluck('status', 'santri_id')->all();
 
-        $ids      = $santri->pluck('id');
-        $hafalan  = HafalanSantri::whereIn('santri_id', $ids)->get()->keyBy('santri_id');
-        $tasmiJuz = HafalanJuz::whereIn('santri_id', $ids)->where('status', 'selesai')
-            ->get()->groupBy('santri_id');
-        $quran = new \App\Services\QuranReferenceService();
-
-        $data = $santri->map(function ($s) use ($hafalan, $tasmiJuz, $totalQuran, $quran) {
-            $h = $hafalan->get($s->id);
-            $total = $h?->total_ayat ?? 0;
-            // Saran "lanjut dari" = ayat setelah hafalan terakhir (untuk hafalan baru).
-            $lanjutSurah = null; $lanjutAyat = null;
-            if ($h && $h->last_surah) {
-                $batasPos = $quran->posisiAbsolut((int) ($h->last_surah_selesai ?? $h->last_surah), (int) ($h->last_ayat_selesai ?? 0));
-                if ($batasPos < $quran->totalAyatQuran()) {
-                    [$lanjutSurah, $lanjutAyat] = $quran->posisiKeSurahAyat($batasPos + 1);
-                }
-            }
-            return [
-                'santri_id'       => $s->id,
-                'nip'             => $s->nip,
-                'nama'            => $s->nama_lengkap,
-                'total_ayat'      => $total,
-                'persen'          => $totalQuran > 0 ? round($total / $totalQuran * 100, 2) : 0,
-                'perlu_murojaah'  => (bool) ($h?->perlu_murojaah ?? false),
-                'juz_perlu_tasmi' => $tasmiJuz->get($s->id)?->pluck('juz')->values() ?? [],
-                'last_surah'         => $h?->last_surah,
-                'last_surah_selesai' => $h?->last_surah_selesai,
-                'last_ayat_mulai'    => $h?->last_ayat_mulai,
-                'last_ayat_selesai'  => $h?->last_ayat_selesai,
-                'lanjut_surah'       => $lanjutSurah,
-                'lanjut_ayat'        => $lanjutAyat,
-                // "Selesai semua" = total ayat hafalan ≥ total Quran (independen urutan juz).
-                // Mencegah salah "30 juz selesai" untuk hafidz juz-amma yang baru juz 30.
-                'selesai_semua'      => $total >= $totalQuran,
-            ];
-        })->values();
+        $payload = $this->rosterPayload($kelasId, $am->tanggal?->toDateString(), $tersimpan);
 
         return response()->json([
             'success' => true,
-            'data'    => [
+            'data'    => array_merge([
                 'absensi_mengajar_id' => $am->id,
                 'kelas'               => $am->jadwalMengajar?->kelasRel?->nama ?? $am->jadwalMengajar?->kelas ?? '—',
                 'mapel'               => $am->jadwalMengajar?->mataPelajaran?->nama ?? '—',
-                'total_santri'        => $data->count(),
-                'santri'              => $data,
-            ],
+            ], $payload),
         ]);
     }
 
@@ -340,7 +306,7 @@ class TahfidzApiController extends Controller
     }
 
     /** Bangun payload roster (total_santri + santri) untuk satu kelas. */
-    private function rosterPayload(int $kelasId): array
+    private function rosterPayload(int $kelasId, ?string $tanggal = null, array $tersimpan = []): array
     {
         $totalQuran = (int) Surah::sum('jumlah_ayat');
         $santri = Santri::aktif()
@@ -353,7 +319,12 @@ class TahfidzApiController extends Controller
             ->get()->groupBy('santri_id');
         $quran = new \App\Services\QuranReferenceService();
 
-        $data = $santri->map(function ($s) use ($hafalan, $tasmiJuz, $totalQuran, $quran) {
+        // Izin (Perizinan Santri) & sakit (Smart Health) → status awal absensi,
+        // sama persis dengan roster mengajar reguler.
+        $kh      = app(\App\Services\KehadiranSantriService::class);
+        $konteks = $kh->konteks($ids, $tanggal ?? TimezoneHelper::today()->toDateString());
+
+        $data = $santri->map(function ($s) use ($hafalan, $tasmiJuz, $totalQuran, $quran, $kh, $konteks, $tersimpan) {
             $h = $hafalan->get($s->id);
             $total = $h?->total_ayat ?? 0;
             // Saran "lanjut dari" = ayat setelah hafalan terakhir (untuk hafalan baru).
@@ -364,7 +335,7 @@ class TahfidzApiController extends Controller
                     [$lanjutSurah, $lanjutAyat] = $quran->posisiKeSurahAyat($batasPos + 1);
                 }
             }
-            return [
+            return array_merge([
                 'santri_id'       => $s->id,
                 'nip'             => $s->nip,
                 'nama'            => $s->nama_lengkap,
@@ -381,7 +352,7 @@ class TahfidzApiController extends Controller
                 // "Selesai semua" = total ayat hafalan ≥ total Quran (independen urutan juz).
                 // Mencegah salah "30 juz selesai" untuk hafidz juz-amma yang baru juz 30.
                 'selesai_semua'      => $total >= $totalQuran,
-            ];
+            ], $kh->baris($s->id, $konteks, $tersimpan[$s->id] ?? null));
         })->values();
 
         return ['total_santri' => $data->count(), 'santri' => $data];

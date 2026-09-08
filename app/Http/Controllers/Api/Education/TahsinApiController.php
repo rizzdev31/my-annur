@@ -89,7 +89,7 @@ class TahsinApiController extends Controller
             'jadwal_id'           => 'required|exists:jadwal_mengajar,id',
             'absensi'             => 'required|array|min:1',
             'absensi.*.santri_id' => 'required|integer|exists:santri,id',
-            'absensi.*.status'    => 'required|in:hadir,telat,alpha',
+            'absensi.*.status'    => \App\Services\KehadiranSantriService::aturanStatus(),
             'deskripsi'           => 'nullable|string|max:500',
             'catatan'             => 'nullable|string|max:300',
         ]);
@@ -148,12 +148,13 @@ class TahsinApiController extends Controller
             "{$request->user()->name} (NIP {$tp->nip})",
         );
 
-        // Notifikasi WA wali per santri (hadir/telat/alfa).
-        $pembelajaran = $jadwal->mataPelajaran?->nama ?? 'Tahsin';
-        foreach (AbsensiSantri::where('absensi_mengajar_id', $am->id)->get() as $as) {
-            app(\App\Services\WaService::class)->absenMengajar(
-                $as->santri_id, $as->status, $pembelajaran, $today->toDateString(), $as->id);
-        }
+        // Notifikasi WA wali per santri. Aturan anti-ganda (izin & sakit dari
+        // Smart Health tidak di-WA lagi) ada di service, sama dengan reguler.
+        app(\App\Services\KehadiranSantriService::class)->kirimWa(
+            AbsensiSantri::where('absensi_mengajar_id', $am->id)->get(),
+            $jadwal->mataPelajaran?->nama ?? 'Tahsin',
+            $today->toDateString()
+        );
 
         return response()->json(['success' => true,
             'message' => 'Absen kelas tahsin tersimpan & dikunci.',
@@ -171,36 +172,16 @@ class TahsinApiController extends Controller
         $kelasId = $am->jadwalMengajar?->kelas_id;
         if (!$kelasId) return response()->json(['success' => false, 'message' => 'Kelas belum tersinkron.'], 422);
 
-        $santri = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelasId))
-            ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap', 'tahsin_level']);
+        // Sesi terkunci → tampilkan status kehadiran yang TERSIMPAN, memakai
+        // pembangun payload yang sama dengan rosterJadwal agar tak pernah beda.
+        $tersimpan = AbsensiSantri::where('absensi_mengajar_id', $am->id)
+            ->pluck('status', 'santri_id')->all();
 
-        // total materi aktif per level (cache)
-        $materiTotal = SettingTahsinMateri::where('is_aktif', true)
-            ->selectRaw('level, COUNT(*) as jml')->groupBy('level')->pluck('jml', 'level');
-        $lulus = TahsinPenilaian::whereIn('santri_id', $santri->pluck('id'))->where('lulus', true)
-            ->selectRaw('santri_id, level, COUNT(*) as jml')->groupBy('santri_id', 'level')->get();
-
-        $data = $santri->map(function ($s) use ($materiTotal, $lulus) {
-            $lv = $s->tahsin_level ?? 1;
-            $total = (int) ($materiTotal[$lv] ?? 0);
-            $sudah = (int) ($lulus->where('santri_id', $s->id)->where('level', $lv)->first()->jml ?? 0);
-            return [
-                'santri_id'    => $s->id,
-                'nip'          => $s->nip,
-                'nama'         => $s->nama_lengkap,
-                'level'        => $lv,
-                'materi_total' => $total,
-                'materi_lulus' => $sudah,
-                'level_selesai'=> $total > 0 && $sudah >= $total,
-            ];
-        })->values();
-
-        return response()->json(['success' => true, 'data' => [
+        return response()->json(['success' => true, 'data' => array_merge([
             'absensi_mengajar_id' => $am->id,
             'kelas' => $am->jadwalMengajar?->kelasRel?->nama ?? '—',
             'level' => $am->jadwalMengajar?->kelasRel?->level_tahsin,
-            'santri' => $data,
-        ]]);
+        ], $this->rosterPayload($kelasId, $am->tanggal?->toDateString(), $tersimpan))]);
     }
 
     /**
@@ -247,7 +228,7 @@ class TahsinApiController extends Controller
     }
 
     /** Bangun payload roster tahsin (total_santri + santri dgn ringkasan materi). */
-    private function rosterPayload(int $kelasId): array
+    private function rosterPayload(int $kelasId, ?string $tanggal = null, array $tersimpan = []): array
     {
         $santri = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelasId))
             ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap', 'tahsin_level']);
@@ -257,15 +238,20 @@ class TahsinApiController extends Controller
         $lulus = TahsinPenilaian::whereIn('santri_id', $santri->pluck('id'))->where('lulus', true)
             ->selectRaw('santri_id, level, COUNT(*) as jml')->groupBy('santri_id', 'level')->get();
 
-        $data = $santri->map(function ($s) use ($materiTotal, $lulus) {
+        // Izin (Perizinan Santri) & sakit (Smart Health) → status awal absensi,
+        // sama persis dengan roster mengajar reguler & tahfidz.
+        $kh      = app(\App\Services\KehadiranSantriService::class);
+        $konteks = $kh->konteks($santri->pluck('id'), $tanggal ?? TimezoneHelper::today()->toDateString());
+
+        $data = $santri->map(function ($s) use ($materiTotal, $lulus, $kh, $konteks, $tersimpan) {
             $lv = $s->tahsin_level ?? 1;
             $total = (int) ($materiTotal[$lv] ?? 0);
             $sudah = (int) ($lulus->where('santri_id', $s->id)->where('level', $lv)->first()->jml ?? 0);
-            return [
+            return array_merge([
                 'santri_id' => $s->id, 'nip' => $s->nip, 'nama' => $s->nama_lengkap, 'level' => $lv,
                 'materi_total' => $total, 'materi_lulus' => $sudah,
                 'level_selesai' => $total > 0 && $sudah >= $total,
-            ];
+            ], $kh->baris($s->id, $konteks, $tersimpan[$s->id] ?? null));
         })->values();
 
         return ['total_santri' => $data->count(), 'santri' => $data];

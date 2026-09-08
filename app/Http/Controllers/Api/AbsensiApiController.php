@@ -1650,38 +1650,17 @@ class AbsensiApiController extends Controller
 
         $santriIds = $santri->pluck('id');
 
-        // Perizinan santri yang SUDAH DISETUJUI mencakup tanggal sesi → auto-isi 'izin'.
-        // Guru tetap bisa mengubah manual (kecuali absensi sudah dikunci).
-        $izinDisetujui = \App\Models\IzinSantri::where('status', 'disetujui')
-            ->whereIn('santri_id', $santriIds)
-            ->whereDate('tanggal_mulai', '<=', $today)
-            ->whereDate('tanggal_selesai', '>=', $today)
-            ->get()
-            ->keyBy('santri_id');
+        // Izin (Perizinan Santri) & sakit (Smart Health) → status awal absensi.
+        // Aturannya dipusatkan agar roster reguler, tahfidz, dan tahsin tidak
+        // pernah berbeda perlakuan.
+        $kh      = app(\App\Services\KehadiranSantriService::class);
+        $konteks = $kh->konteks($santriIds, $today instanceof \Carbon\Carbon ? $today->toDateString() : (string) $today);
 
-        // Smart Health: santri yang sedang sakit (laporan masih menunggu/dalam pengecekan,
-        // belum selesai/sembuh) → auto-isi 'sakit'. Berlaku selama laporan masih aktif.
-        $sakitAktif = \App\Models\SmartHealthLaporan::whereIn('status', ['menunggu', 'dalam_pengecekan'])
-            ->whereIn('santri_id', $santriIds)
-            ->pluck('santri_id')
-            ->flip();
-
-        $santri = $santri->map(function ($s) use ($terisi, $izinDisetujui, $sakitAktif) {
-            $izin  = $izinDisetujui->get($s->id);
-            $sakit = $sakitAktif->has($s->id);
-            // Prioritas: status tersimpan > sakit (Smart Health aktif) > izin (perizinan) > hadir.
-            $status = $terisi[$s->id]
-                ?? ($sakit ? 'sakit' : ($izin ? 'izin' : 'hadir'));
-            return [
-                'santri_id'      => $s->id,
-                'nip'            => $s->nip,
-                'nama'           => $s->nama_lengkap,
-                'status'         => $status,
-                'izin_disetujui' => (bool) $izin,             // penanda badge di UI
-                'izin_jenis'     => $izin?->jenis_label,        // "Syar'i" / "Non-Syar'i"
-                'sakit_health'   => $sakit,                     // penanda badge Smart Health
-            ];
-        })->values();
+        $santri = $santri->map(fn($s) => array_merge([
+            'santri_id' => $s->id,
+            'nip'       => $s->nip,
+            'nama'      => $s->nama_lengkap,
+        ], $kh->baris($s->id, $konteks, $terisi[$s->id] ?? null)))->values();
 
         return response()->json([
             'success' => true,
@@ -1752,24 +1731,14 @@ class AbsensiApiController extends Controller
             "{$request->user()->name} (NIP {$tp->nip})",
         );
 
-        // Notifikasi WA wali per santri (hadir/telat/alfa).
-        $pembelajaran = $absensi->jadwalMengajar?->mataPelajaran?->nama ?? 'KBM';
+        // Notifikasi WA wali per santri (aturan anti-ganda ada di service).
         $tglAjr = $absensi->tanggal instanceof \Carbon\Carbon
             ? $absensi->tanggal->toDateString() : (string) $absensi->tanggal;
-        $rowsSantri = \App\Models\AbsensiSantri::where('absensi_mengajar_id', $absensi->id)->get();
-        // Santri yang sakitnya bersumber Smart Health (wali sudah dikabari saat lapor sakit)
-        // → jangan WA ganda. Sakit yang ditandai manual guru tetap di-WA.
-        $sakitHealth = \App\Models\SmartHealthLaporan::whereIn('status', ['menunggu', 'dalam_pengecekan'])
-            ->whereIn('santri_id', $rowsSantri->pluck('santri_id'))
-            ->pluck('santri_id')->flip();
-        foreach ($rowsSantri as $as) {
-            // 'izin' tak di-WA lagi di sini — wali sudah dikabari saat izin disetujui
-            // di modul Perizinan Santri, agar tidak ada notifikasi ganda.
-            if ($as->status === 'izin') continue;
-            if ($as->status === 'sakit' && $sakitHealth->has($as->santri_id)) continue;
-            app(\App\Services\WaService::class)->absenMengajar(
-                $as->santri_id, $as->status, $pembelajaran, $tglAjr, $as->id);
-        }
+        app(\App\Services\KehadiranSantriService::class)->kirimWa(
+            \App\Models\AbsensiSantri::where('absensi_mengajar_id', $absensi->id)->get(),
+            $absensi->jadwalMengajar?->mataPelajaran?->nama ?? 'KBM',
+            $tglAjr
+        );
 
         $rekap = \App\Models\AbsensiSantri::where('absensi_mengajar_id', $absensi->id)
             ->selectRaw('status, COUNT(*) as jml')->groupBy('status')->pluck('jml', 'status');
