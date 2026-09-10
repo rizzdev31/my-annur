@@ -358,6 +358,126 @@ class TahfidzApiController extends Controller
         return ['total_santri' => $data->count(), 'santri' => $data];
     }
 
+    /**
+     * GET /education/tahfidz/jadwal/{jadwalId}/sinkron
+     * Santri kelas ini yang pencapaian awalnya BELUM tercatat.
+     *
+     * Sengaja hanya menampilkan yang belum tercatat: begitu tersimpan, santri
+     * hilang dari daftar. Itulah yang membuat sinkronisasi ini "sekali saja" —
+     * tanpa perlu penanda terpisah yang bisa tidak sinkron dengan data.
+     */
+    public function sinkronDaftar(Request $request, $jadwalId): JsonResponse
+    {
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Data tenaga pendidik tidak ditemukan.'], 404);
+
+        $jadwal = JadwalMengajar::with(['mataPelajaran', 'kelasRel'])->findOrFail($jadwalId);
+        if ($jadwal->tenaga_pendidik_id !== $tp->id) {
+            return response()->json(['success' => false, 'message' => 'Jadwal ini bukan milik Anda.'], 403);
+        }
+        if (($jadwal->mataPelajaran?->tipe) !== 'tahfidz') {
+            return response()->json(['success' => false, 'message' => 'Jadwal ini bukan kelas tahfidz.'], 422);
+        }
+        if (!$jadwal->kelas_id) {
+            return response()->json(['success' => false, 'message' => 'Kelas jadwal belum tersinkron.', 'code' => 'KELAS_BELUM_SINKRON'], 422);
+        }
+
+        $santri = Santri::aktif()
+            ->whereHas('kelas', fn($q) => $q->where('kelas.id', $jadwal->kelas_id))
+            ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
+
+        $ids = $santri->pluck('id');
+        $sudahJuz = HafalanJuz::whereIn('santri_id', $ids)->distinct()->pluck('santri_id')->flip();
+        $sudahZiyadah = SetoranTahfidz::whereIn('santri_id', $ids)
+            ->where('jenis', 'ziyadah')->where('lulus', true)->distinct()->pluck('santri_id')->flip();
+        $haf = HafalanSantri::whereIn('santri_id', $ids)->get()->keyBy('santri_id');
+
+        $belum = collect();
+        $sudah = collect();
+        foreach ($santri as $s) {
+            $terkunci = $sudahJuz->has($s->id) || $sudahZiyadah->has($s->id)
+                || (bool) ($haf->get($s->id)?->last_surah);
+
+            ($terkunci ? $sudah : $belum)->push([
+                'santri_id' => $s->id,
+                'nip'       => $s->nip,
+                'nama'      => $s->nama_lengkap,
+                'total_ayat'=> (int) ($haf->get($s->id)?->total_ayat ?? 0),
+            ]);
+        }
+
+        return response()->json(['success' => true, 'data' => [
+            'jadwal_id'    => $jadwal->id,
+            'kelas'        => $jadwal->kelasRel?->nama ?? $jadwal->kelas ?? '—',
+            'total_santri' => $santri->count(),
+            'belum'        => $belum->values(),
+            'sudah'        => $sudah->values(),
+        ]]);
+    }
+
+    /**
+     * POST /education/tahfidz/sinkron
+     * Simpan pencapaian awal BANYAK santri sekaligus (input sekali oleh pengampu).
+     *
+     * Tiap santri diproses terpisah: yang gagal (mis. sudah punya pencapaian)
+     * dilaporkan tanpa membatalkan yang berhasil — guru tidak perlu mengulang
+     * seluruh kelas hanya karena satu baris bermasalah.
+     */
+    public function sinkronSimpan(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'jadwal_id'              => 'required|exists:jadwal_mengajar,id',
+            'items'                  => 'required|array|min:1',
+            'items.*.santri_id'      => 'required|integer|exists:santri,id',
+            'items.*.juz_lulus'      => 'nullable|array',
+            'items.*.juz_lulus.*'    => 'integer|min:1|max:30',
+            'items.*.last_surah'     => 'nullable|integer|min:1|max:114',
+            'items.*.last_ayat'      => 'nullable|integer|min:1',
+        ]);
+
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Data tenaga pendidik tidak ditemukan.'], 404);
+
+        $jadwal = JadwalMengajar::with('mataPelajaran')->findOrFail($d['jadwal_id']);
+        if ($jadwal->tenaga_pendidik_id !== $tp->id) {
+            return response()->json(['success' => false, 'message' => 'Jadwal ini bukan milik Anda.'], 403);
+        }
+        if (($jadwal->mataPelajaran?->tipe) !== 'tahfidz' || !$jadwal->kelas_id) {
+            return response()->json(['success' => false, 'message' => 'Jadwal tahfidz tidak valid.'], 422);
+        }
+
+        // Hanya santri kelas ini — id dari klien tidak dipercaya.
+        $sah = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $jadwal->kelas_id))
+            ->pluck('id')->flip();
+
+        $svc = app(TahfidzService::class);
+        $berhasil = 0; $gagal = [];
+
+        foreach ($d['items'] as $it) {
+            $sid = (int) $it['santri_id'];
+            if (!$sah->has($sid)) { $gagal[] = ['santri_id' => $sid, 'pesan' => 'Bukan santri kelas ini.']; continue; }
+
+            try {
+                $svc->seedPencapaian(
+                    $sid,
+                    $it['juz_lulus'] ?? [],
+                    $it['last_surah'] ?? null,
+                    $it['last_ayat'] ?? null,
+                );
+                $berhasil++;
+            } catch (\Throwable $e) {
+                $gagal[] = ['santri_id' => $sid, 'pesan' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'success' => $berhasil > 0,
+            'message' => "Pencapaian awal tersimpan untuk {$berhasil} santri."
+                . (count($gagal) ? ' ' . count($gagal) . ' gagal.' : ''),
+            'data'    => ['berhasil' => $berhasil, 'gagal' => $gagal],
+        ]);
+    }
+
     /** POST /education/tahfidz/setoran — catat setoran (ziyadah/murojaah/tasmi). */
     public function setoran(Request $request): JsonResponse
     {

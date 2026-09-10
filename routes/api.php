@@ -174,6 +174,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('/tahfidz/sesi/{absensiMengajarId}/santri', [TahfidzApiController::class, 'rosterSesi']);
                 Route::get('/tahfidz/jadwal/{jadwalId}/roster',   [TahfidzApiController::class, 'rosterJadwal']); // setoran luar jam
                 Route::post('/tahfidz/setoran',                   [TahfidzApiController::class, 'setoran']);
+                // Sinkronisasi pencapaian awal oleh guru pengampu (sekali per santri).
+                Route::get('/tahfidz/jadwal/{jadwalId}/sinkron',  [TahfidzApiController::class, 'sinkronDaftar']);
+                Route::post('/tahfidz/sinkron',                   [TahfidzApiController::class, 'sinkronSimpan']);
                 Route::get('/tahfidz/santri/{santriId}/status',   [TahfidzApiController::class, 'statusSantri']);
                 // Tasmi' sebagai tugas tambahan ber-vakasi
                 Route::get('/tahfidz/penguji-opsi',               [TahfidzApiController::class, 'pengujiOpsi']);

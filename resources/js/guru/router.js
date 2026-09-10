@@ -54,6 +54,7 @@ const routes = [
     { path: '/perizinan-santri', name: 'perizinan-santri', component: PerizinanSantri, meta: { title: 'Perizinan Santri' } },
     { path: '/tahfidz', name: 'tahfidz', component: Tahfidz, meta: { title: 'Kelas Tahfidz' } },
     { path: '/tahfidz/:jadwalId', name: 'tahfidz-roster', component: TahfidzRoster, meta: { title: 'Roster Tahfidz' } },
+    { path: '/tahfidz/:jadwalId/sinkron', name: 'tahfidz-sinkron', component: () => import('./pages/SinkronHafalan.vue'), meta: { title: 'Sinkron Hafalan Awal' } },
     { path: '/tahsin', name: 'tahsin', component: Tahsin, meta: { title: 'Kelas Tahsin' } },
     { path: '/tahsin/:jadwalId', name: 'tahsin-roster', component: TahsinRoster, meta: { title: 'Roster Tahsin' } },
     { path: '/tasmi', name: 'tasmi', component: TasmiSaya, meta: { title: "Tasmi' Saya" } },

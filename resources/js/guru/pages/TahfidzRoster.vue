@@ -1,12 +1,13 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { toast } from '../store/toast'
 import PageHeader from '../components/PageHeader.vue'
 import BottomSheet from '../components/BottomSheet.vue'
 
 const route = useRoute()
+const router = useRouter()
 const jadwalId = route.params.jadwalId
 
 const info = ref(null)
@@ -166,6 +167,17 @@ const bannerClass = { amber: 'bg-amber-50 border-amber-200 text-amber-700', emer
 <template>
     <div>
         <PageHeader :title="info?.kelas || 'Kelas Tahfidz'" />
+
+        <!-- Pencatatan hafalan awal santri (sekali per santri, oleh pengampu). -->
+        <button v-if="!loading && !error" @click="router.push(`/tahfidz/${route.params.jadwalId}/sinkron`)"
+            class="w-full flex items-center gap-2 rounded-2xl bg-sky-50 border border-sky-100 px-3 py-2.5 mb-3 text-left">
+            <span class="shrink-0 text-base">📖</span>
+            <span class="flex-1 min-w-0">
+                <span class="block text-[12px] font-bold text-sky-800">Sinkron Hafalan Awal</span>
+                <span class="block text-[10px] text-sky-600">Catat juz yang sudah dihafal sebelum masuk sistem · sekali saja</span>
+            </span>
+            <svg class="w-4 h-4 text-sky-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </button>
 
         <div v-if="loading" class="pt-10 flex justify-center"><div class="w-8 h-8 border-2 border-[#0C78FF] border-t-transparent rounded-full animate-spin"></div></div>
         <div v-else-if="error" class="pt-8 text-center">

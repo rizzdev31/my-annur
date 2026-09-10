@@ -266,12 +266,22 @@ class TahfidzService
      */
     public function seedPencapaian(int $santriId, array $juzLulus, ?int $lastSurah = null, ?int $lastAyat = null): array
     {
-        // Guard: hanya santri kosong.
-        $adaSetoran = SetoranTahfidz::where('santri_id', $santriId)->exists();
-        $adaJuz     = HafalanJuz::where('santri_id', $santriId)->exists();
-        $haf        = HafalanSantri::where('santri_id', $santriId)->first();
-        if ($adaSetoran || $adaJuz || ($haf && $haf->last_surah)) {
-            throw new \DomainException('Santri sudah memiliki data hafalan — sinkronisasi hanya untuk santri yang masih kosong.');
+        // Guard: cegah TIMPA / hitung ganda, bukan sekadar "pernah ada setoran".
+        //
+        // Yang benar-benar berbahaya hanyalah hafalan yang SUDAH masuk hitungan:
+        // ziyadah LULUS (satu-satunya jalur yang menambah total_ayat & membuat
+        // HafalanJuz). Setoran murojaah TIDAK menyentuh total_ayat sama sekali.
+        //
+        // Guard lama menolak setoran apa pun, sehingga santri yang baru murojaah
+        // — justru murojaah hafalan LAMA yang belum pernah dicatat — terkunci
+        // selamanya dan pencapaian awalnya mustahil dimasukkan.
+        $adaJuz = HafalanJuz::where('santri_id', $santriId)->exists();
+        $adaZiyadahLulus = SetoranTahfidz::where('santri_id', $santriId)
+            ->where('jenis', 'ziyadah')->where('lulus', true)->exists();
+        $haf = HafalanSantri::where('santri_id', $santriId)->first();
+
+        if ($adaJuz || $adaZiyadahLulus || ($haf && $haf->last_surah)) {
+            throw new \DomainException('Santri sudah punya pencapaian tercatat — sinkronisasi awal hanya sekali, sebelum ada setoran ziyadah yang lulus.');
         }
 
         $juzLulus = collect($juzLulus)->map(fn($j) => (int) $j)
