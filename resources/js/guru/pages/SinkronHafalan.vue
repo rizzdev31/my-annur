@@ -206,7 +206,15 @@ async function simpan() {
                         <span v-if="perkiraan(s.santri_id).persen >= 50"> — yakin sebanyak ini?</span>
                     </p>
                 </template>
-                <p v-else-if="!stel(s.santri_id).last_surah" class="text-[11px] text-gray-300 mt-1.5">
+                <!-- Posisi saja: persennya baru bisa dihitung server, jadi tegaskan
+                     pola yang dipakai agar salah pilih pola tidak lolos diam-diam. -->
+                <p v-else-if="stel(s.santri_id).last_surah && stel(s.santri_id).last_ayat"
+                    class="text-[11px] text-sky-700 bg-sky-50 rounded-lg px-2 py-1.5 mt-1.5 leading-snug">
+                    Dihitung dari posisi terakhir: semua juz sebelum posisi itu menurut urutan
+                    <b>{{ POLA.find(p => p.key === pola).label }}</b> akan dianggap sudah hafal.
+                    Periksa persentasenya di daftar "Sudah tercatat" setelah disimpan.
+                </p>
+                <p v-else class="text-[11px] text-gray-300 mt-1.5">
                     Belum diisi — santri ini akan dilewati.
                 </p>
 
