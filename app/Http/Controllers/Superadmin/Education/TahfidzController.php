@@ -76,19 +76,73 @@ class TahfidzController extends Controller
         return back()->with('success', 'Setting tahfidz & pola jadwal diperbarui.');
     }
 
-    /** Opsi santri untuk sinkronisasi; tandai yang sudah punya data hafalan. */
+    /** Opsi santri untuk sinkronisasi + kondisi pencapaiannya saat ini. */
     private function santriSyncOpsi()
     {
         $adaData = SetoranTahfidz::distinct()->pluck('santri_id')
             ->merge(HafalanJuz::distinct()->pluck('santri_id'))->unique()->flip();
 
+        // Santri yang sudah punya ziyadah lulus TIDAK bisa disinkron ulang lewat
+        // jalur biasa (anti hitung ganda) — untuk mereka dipakai Koreksi Admin
+        // yang membangun ulang dari baseline + riwayat setoran.
+        $adaZiyadah = SetoranTahfidz::where('jenis', 'ziyadah')->where('lulus', true)
+            ->distinct()->pluck('santri_id')->flip();
+
+        $haf   = \App\Models\HafalanSantri::get()->keyBy('santri_id');
+        $juz   = HafalanJuz::get()->groupBy('santri_id');
+        $total = (int) Surah::sum('jumlah_ayat');
+
         return Santri::aktif()->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap'])
-            ->map(fn($s) => [
-                'id'             => $s->id,
-                'nip'            => $s->nip,
-                'nama'           => $s->nama_lengkap,
-                'sudah_ada_data' => $adaData->has($s->id),
-            ])->values();
+            ->map(function ($s) use ($adaData, $adaZiyadah, $haf, $juz, $total) {
+                $ayat = (int) ($haf->get($s->id)?->total_ayat ?? 0);
+
+                return [
+                    'id'             => $s->id,
+                    'nip'            => $s->nip,
+                    'nama'           => $s->nama_lengkap,
+                    'sudah_ada_data' => $adaData->has($s->id),
+                    'ada_ziyadah'    => $adaZiyadah->has($s->id),
+                    'total_ayat'     => $ayat,
+                    'persen'         => $total > 0 ? round($ayat / $total * 100, 1) : 0,
+                    'juz'            => $juz->get($s->id)?->pluck('juz')->sort()->values() ?? [],
+                ];
+            })->values();
+    }
+
+    /**
+     * KOREKSI ADMIN — perbaiki pencapaian awal walau santri sudah setoran.
+     * Mode pratinjau (`simulasi`) menampilkan sebelum→sesudah tanpa menyimpan.
+     */
+    public function koreksiPencapaian(Request $request)
+    {
+        $d = $request->validate([
+            'santri_id'   => 'required|integer|exists:santri,id',
+            'juz_lulus'   => 'nullable|array',
+            'juz_lulus.*' => 'integer|min:1|max:30',
+            'last_surah'  => 'nullable|integer|min:1|max:114',
+            'last_ayat'   => 'nullable|integer|min:1',
+            'pola'        => 'nullable|in:' . implode(',', TahfidzService::POLA),
+            'simulasi'    => 'nullable|boolean',
+        ]);
+
+        try {
+            $res = app(TahfidzService::class)->bangunUlangPencapaian(
+                (int) $d['santri_id'], $d['juz_lulus'] ?? [],
+                $d['last_surah'] ?? null, $d['last_ayat'] ?? null,
+                $d['pola'] ?? null, (bool) ($d['simulasi'] ?? false),
+            );
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $nama = Santri::find($d['santri_id'])?->nama_lengkap ?? 'Santri';
+        $ringkas = $nama . ': ' . $res['sebelum']['total_ayat'] . ' → ' . $res['sesudah']['total_ayat']
+            . ' ayat (' . count($res['sesudah']['juz']) . ' juz, ' . $res['setoran_diputar'] . ' setoran diputar ulang)';
+
+        return back()->with(
+            $res['simulasi'] ? 'info' : 'success',
+            ($res['simulasi'] ? 'PRATINJAU (belum disimpan) — ' : 'Pencapaian diperbarui. ') . $ringkas
+        );
     }
 
     /** Sinkronisasi pencapaian awal santri (juz lulus + posisi tengah). Nilai lulus otomatis. */

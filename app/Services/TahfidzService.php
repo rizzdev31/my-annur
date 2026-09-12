@@ -254,6 +254,166 @@ class TahfidzService
         ];
     }
 
+    /**
+     * KOREKSI ADMIN — perbaiki pencapaian awal WALAU santri sudah setoran.
+     *
+     * Tidak menambal, melainkan MEMBANGUN ULANG dari dua sumber kebenaran:
+     *   1. baseline yang diberikan admin (juz lulus + posisi terakhir), lalu
+     *   2. seluruh setoran ziyadah LULUS yang sudah ada, diputar ulang menurut
+     *      urutan tanggal, ditambah juz yang sudah lulus tasmi'.
+     *
+     * Baris `setoran_tahfidz` TIDAK disentuh — itu riwayat asli apa yang benar-
+     * benar disetorkan. Yang ditulis ulang hanya tabel turunannya
+     * (`hafalan_juz` & `hafalan_santri`), sehingga hasilnya selalu konsisten
+     * dengan riwayat dan tidak mungkin terhitung ganda: `total_ayat` diambil
+     * dari jumlah ayat terkumpul tiap juz (sudah dibatasi kapasitas juz),
+     * bukan dari penjumlahan bebas.
+     *
+     * @param  bool $simulasi  true = hitung & kembalikan pratinjau, lalu batalkan.
+     */
+    public function bangunUlangPencapaian(
+        int $santriId, array $juzLulus, ?int $lastSurah = null, ?int $lastAyat = null,
+        ?string $pola = null, bool $simulasi = false
+    ): array {
+        $hafLama = HafalanSantri::where('santri_id', $santriId)->first();
+        $sebelum = [
+            'total_ayat' => (int) ($hafLama->total_ayat ?? 0),
+            'juz'        => HafalanJuz::where('santri_id', $santriId)->orderBy('juz')->pluck('juz')->all(),
+        ];
+
+        $juzLulus = collect($juzLulus)->map(fn($j) => (int) $j)
+            ->filter(fn($j) => $j >= 1 && $j <= 30)->unique()->values()->all();
+
+        $partialJuz = null;
+        if ($lastSurah && $lastAyat) {
+            if (!$this->quran->ayatValid($lastSurah, $lastAyat)) {
+                throw new \DomainException('Surah/ayat terakhir tidak valid.');
+            }
+            $partialJuz = $this->quran->juzDari($lastSurah, $lastAyat);
+            if ($pola) {
+                foreach (self::urutanJuz($pola) as $j) {
+                    if ($j === $partialJuz) break;
+                    $juzLulus[] = $j;
+                }
+                $juzLulus = array_values(array_unique($juzLulus));
+            }
+            // Juz berjalan tidak boleh ikut daftar lulus.
+            $juzLulus = array_values(array_diff($juzLulus, [$partialJuz]));
+        }
+
+        if (empty($juzLulus) && !$partialJuz) {
+            throw new \DomainException('Isi minimal satu juz lulus atau posisi terakhir (surah & ayat).');
+        }
+
+        DB::beginTransaction();
+        try {
+            HafalanJuz::where('santri_id', $santriId)->delete();
+
+            // ── 1. Baseline dari admin ────────────────────────────────────
+            foreach ($juzLulus as $juz) {
+                $full = $this->quran->jumlahAyatJuz($juz);
+                HafalanJuz::create(['santri_id' => $santriId, 'juz' => $juz,
+                    'ayat_terkumpul' => $full, 'jumlah_ayat_juz' => $full, 'status' => 'tasmi_lulus']);
+            }
+            if ($partialJuz) {
+                [$sM, $aM] = $this->quran->juzRange($partialJuz);
+                $full  = $this->quran->jumlahAyatJuz($partialJuz);
+                $count = min($this->quran->hitungAyat($sM, $aM, $lastSurah, $lastAyat), $full);
+                HafalanJuz::create(['santri_id' => $santriId, 'juz' => $partialJuz,
+                    'ayat_terkumpul' => $count, 'jumlah_ayat_juz' => $full,
+                    'status' => $count >= $full ? 'selesai' : 'berjalan']);
+            }
+
+            // ── 2. Putar ulang setoran ziyadah yang LULUS ─────────────────
+            $ziyadah = SetoranTahfidz::where('santri_id', $santriId)
+                ->where('jenis', 'ziyadah')->where('lulus', true)
+                ->orderBy('tanggal')->orderBy('id')->get();
+
+            foreach ($ziyadah as $z) {
+                foreach ($this->quran->pecahPerJuz(
+                    (int) $z->surah_mulai, (int) $z->ayat_mulai,
+                    (int) $z->surah_selesai, (int) $z->ayat_selesai
+                ) as $juz => $cnt) {
+                    $hj = HafalanJuz::firstOrCreate(
+                        ['santri_id' => $santriId, 'juz' => $juz],
+                        ['ayat_terkumpul' => 0, 'jumlah_ayat_juz' => $this->quran->jumlahAyatJuz($juz), 'status' => 'berjalan']
+                    );
+                    // Juz yang sudah penuh dari baseline tidak bertambah lagi —
+                    // inilah yang mencegah hitung ganda saat rentangnya beririsan.
+                    if ($hj->status === 'tasmi_lulus') continue;
+
+                    $hj->ayat_terkumpul = min($hj->jumlah_ayat_juz, $hj->ayat_terkumpul + $cnt);
+                    if ($hj->ayat_terkumpul >= $hj->jumlah_ayat_juz && $hj->status === 'berjalan') {
+                        $hj->status = 'selesai';
+                    }
+                    $hj->save();
+                }
+            }
+
+            // ── 3. Juz yang sudah lulus tasmi' tetap lulus ────────────────
+            $juzTasmi = SetoranTahfidz::where('santri_id', $santriId)
+                ->where('jenis', 'tasmi')->where('lulus', true)
+                ->pluck('juz_selesai')->filter()->unique();
+            foreach ($juzTasmi as $juz) {
+                $full = $this->quran->jumlahAyatJuz((int) $juz);
+                HafalanJuz::updateOrCreate(['santri_id' => $santriId, 'juz' => (int) $juz],
+                    ['ayat_terkumpul' => $full, 'jumlah_ayat_juz' => $full, 'status' => 'tasmi_lulus']);
+            }
+
+            // ── 4. Total & kursor ─────────────────────────────────────────
+            $totalAyat = (int) HafalanJuz::where('santri_id', $santriId)->sum('ayat_terkumpul');
+
+            $haf = HafalanSantri::firstOrCreate(['santri_id' => $santriId],
+                ['total_ayat' => 0, 'perlu_murojaah' => false]);
+
+            // Kursor "lanjut dari" mengikuti ziyadah TERAKHIR bila ada — bukan
+            // baseline — supaya gerbang murojaah & saran ayat berikutnya tetap
+            // menunjuk hafalan terbaru santri. Flag perlu_murojaah sengaja
+            // dibiarkan apa adanya: itu keadaan gerbang yang sedang berjalan,
+            // tidak ada hubungannya dengan baseline.
+            $akhir = $ziyadah->last();
+            if ($akhir) {
+                $haf->update(['total_ayat' => $totalAyat,
+                    'last_surah' => $akhir->surah_mulai, 'last_surah_selesai' => $akhir->surah_selesai,
+                    'last_ayat_mulai' => $akhir->ayat_mulai, 'last_ayat_selesai' => $akhir->ayat_selesai,
+                    'last_juz' => $akhir->juz_selesai]);
+            } elseif ($partialJuz) {
+                [$sM, $aM] = $this->quran->juzRange($partialJuz);
+                $haf->update(['total_ayat' => $totalAyat,
+                    'last_surah' => $lastSurah, 'last_surah_selesai' => $lastSurah,
+                    'last_ayat_mulai' => $aM, 'last_ayat_selesai' => $lastAyat, 'last_juz' => $partialJuz]);
+            } else {
+                [$sM, $aM, $sS, $aS] = $this->quran->juzRange(max($juzLulus));
+                $haf->update(['total_ayat' => $totalAyat,
+                    'last_surah' => $sS, 'last_surah_selesai' => $sS,
+                    'last_ayat_mulai' => $aM, 'last_ayat_selesai' => $aS, 'last_juz' => max($juzLulus)]);
+            }
+
+            $sesudah = [
+                'total_ayat' => $totalAyat,
+                'juz'        => HafalanJuz::where('santri_id', $santriId)->orderBy('juz')->pluck('juz')->all(),
+            ];
+
+            if ($simulasi) {
+                DB::rollBack();
+            } else {
+                DB::commit();
+            }
+
+            return [
+                'simulasi'        => $simulasi,
+                'sebelum'         => $sebelum,
+                'sesudah'         => $sesudah,
+                'juz_baseline'    => count($juzLulus),
+                'partial_juz'     => $partialJuz,
+                'setoran_diputar' => $ziyadah->count(),
+            ];
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     /** Urutan hafalan yang dipakai kelas — dasar penurunan juz dari posisi terakhir. */
     public const POLA = ['belakang', 'amma_maju', 'depan'];
 

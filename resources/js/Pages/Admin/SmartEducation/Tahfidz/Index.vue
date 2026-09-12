@@ -114,11 +114,16 @@
                     <label class="block text-xs font-medium text-gray-500 mb-1">Santri</label>
                     <select v-model.number="sync.santri_id" :class="fieldCls">
                         <option :value="null">Pilih santri...</option>
-                        <option v-for="s in santriSyncOpsi" :key="s.id" :value="s.id" :disabled="s.sudah_ada_data">
-                            {{ s.nama }}{{ s.sudah_ada_data ? ' — sudah ada data' : '' }}
+                        <option v-for="s in santriSyncOpsi" :key="s.id" :value="s.id">
+                            {{ s.nama }}{{ s.sudah_ada_data ? ` — ${s.persen}% (${s.juz.length} juz)` : '' }}
                         </option>
                     </select>
-                    <p v-if="santriSudahAda" class="text-xs text-amber-600 mt-1">Santri ini sudah punya data hafalan — tidak bisa disinkron.</p>
+                    <p v-if="santriTerpilih?.sudah_ada_data" class="text-xs mt-1"
+                        :class="modeKoreksi ? 'text-amber-600' : 'text-gray-500'">
+                        Sudah ada data: {{ santriTerpilih.total_ayat }} ayat ({{ santriTerpilih.persen }}%),
+                        juz {{ santriTerpilih.juz.join(', ') || '—' }}.
+                        <span v-if="santriTerpilih.ada_ziyadah"> Sudah ada setoran ziyadah lulus.</span>
+                    </p>
 
                     <label class="block text-xs font-medium text-gray-500 mb-1 mt-4">Posisi Terakhir <span class="text-gray-300">(opsional — juz yang masih berjalan)</span></label>
                     <div class="grid grid-cols-2 gap-2">
@@ -143,10 +148,45 @@
                 </div>
             </div>
 
-            <button @click="simpanSync" :disabled="!syncValid || syncing"
-                class="mt-4 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors">
-                {{ syncing ? 'Menyinkron...' : 'Sinkronkan Pencapaian' }}
-            </button>
+            <div class="mt-4 pt-4 border-t border-gray-100">
+                <label class="block text-xs font-medium text-gray-500 mb-1">Urutan hafalan (dipakai bila mengisi posisi terakhir)</label>
+                <select v-model="sync.pola" :class="fieldCls" class="max-w-sm">
+                    <option value="amma_maju">Juz 30 → 29 → lalu 1, 2, 3…</option>
+                    <option value="belakang">Juz 30 → 29 → 28…</option>
+                    <option value="depan">Juz 1 → 2 → 3…</option>
+                </select>
+                <p class="text-[11px] text-gray-400 mt-1">
+                    Juz sebelum posisi terakhir otomatis dihitung sudah hafal menurut urutan ini.
+                </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 mt-4">
+                <button @click="simpanSync" :disabled="!syncValid || syncing || modeKoreksi"
+                    class="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors">
+                    {{ syncing ? 'Menyinkron...' : 'Sinkronkan Pencapaian' }}
+                </button>
+
+                <template v-if="modeKoreksi">
+                    <button @click="koreksi(true)" :disabled="!koreksiValid || syncing"
+                        class="px-5 py-2.5 rounded-xl bg-white border border-amber-300 text-amber-700 text-sm font-semibold disabled:opacity-50">
+                        Pratinjau Koreksi
+                    </button>
+                    <button @click="koreksi(false)" :disabled="!koreksiValid || syncing"
+                        class="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-50">
+                        {{ syncing ? 'Memproses...' : 'Terapkan Koreksi' }}
+                    </button>
+                </template>
+            </div>
+
+            <div v-if="modeKoreksi" class="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                <p class="text-xs text-amber-800 leading-relaxed">
+                    <b>Mode koreksi.</b> Santri ini sudah punya data, jadi tombol sinkron biasa dimatikan.
+                    Koreksi menulis ulang pencapaian dari baseline di atas, lalu
+                    <b>memutar ulang seluruh setoran ziyadah yang lulus</b> di atasnya —
+                    riwayat setoran tidak dihapus dan tidak mungkin terhitung ganda.
+                    Jalankan <b>Pratinjau</b> dulu untuk melihat sebelum → sesudah.
+                </p>
+            </div>
         </div>
 
         <!-- Langkah setup -->
@@ -227,7 +267,7 @@ function generate() {
 }
 
 // ── Sinkronisasi pencapaian awal ──────────────────────────────────────────────
-const sync = reactive({ santri_id: null, juz_lulus: [], last_surah: null, last_ayat: null })
+const sync = reactive({ santri_id: null, juz_lulus: [], last_surah: null, last_ayat: null, pola: 'amma_maju' })
 const syncing = ref(false)
 function toggleJuz(j) {
     const i = sync.juz_lulus.indexOf(j)
@@ -235,10 +275,26 @@ function toggleJuz(j) {
 }
 const surahDipilih  = computed(() => props.surahOpsi.find(s => s.nomor === sync.last_surah) || null)
 const ayatMax       = computed(() => surahDipilih.value?.jumlah_ayat ?? 286)
-const santriSudahAda = computed(() => props.santriSyncOpsi.find(s => s.id === sync.santri_id)?.sudah_ada_data ?? false)
-const syncValid = computed(() =>
-    sync.santri_id && !santriSudahAda.value &&
-    (sync.juz_lulus.length > 0 || (sync.last_surah && sync.last_ayat)))
+const santriTerpilih = computed(() => props.santriSyncOpsi.find(s => s.id === sync.santri_id) || null)
+const santriSudahAda = computed(() => santriTerpilih.value?.sudah_ada_data ?? false)
+// Santri yang sudah punya data hanya bisa lewat Koreksi (bangun ulang), bukan seed biasa.
+const modeKoreksi = computed(() => !!santriTerpilih.value && santriSudahAda.value)
+const isiValid = computed(() => sync.juz_lulus.length > 0 || (sync.last_surah && sync.last_ayat))
+const syncValid = computed(() => sync.santri_id && !santriSudahAda.value && isiValid.value)
+const koreksiValid = computed(() => sync.santri_id && isiValid.value)
+
+function koreksi(simulasi) {
+    if (!koreksiValid.value) return
+    if (!simulasi && !confirm(
+        'Terapkan koreksi? Pencapaian santri ini akan ditulis ulang dari baseline di atas, '
+        + 'lalu seluruh setoran ziyadah yang lulus diputar ulang di atasnya. '
+        + 'Riwayat setoran tidak dihapus. Lanjutkan?'
+    )) return
+
+    syncing.value = true
+    router.post(route('admin.smart-education.tahfidz.koreksi-pencapaian'),
+        { ...sync, simulasi }, { preserveScroll: true, onFinish: () => syncing.value = false })
+}
 function simpanSync() {
     if (!syncValid.value) return
     syncing.value = true
