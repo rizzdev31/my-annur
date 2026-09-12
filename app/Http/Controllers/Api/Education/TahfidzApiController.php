@@ -392,18 +392,28 @@ class TahfidzApiController extends Controller
             ->where('jenis', 'ziyadah')->where('lulus', true)->distinct()->pluck('santri_id')->flip();
         $haf = HafalanSantri::whereIn('santri_id', $ids)->get()->keyBy('santri_id');
 
+        $juzPerSantri = HafalanJuz::whereIn('santri_id', $ids)->get()->groupBy('santri_id');
+        $totalQuran   = (int) Surah::sum('jumlah_ayat');
+
         $belum = collect();
         $sudah = collect();
         foreach ($santri as $s) {
-            $terkunci = $sudahJuz->has($s->id) || $sudahZiyadah->has($s->id)
-                || (bool) ($haf->get($s->id)?->last_surah);
+            $terisi = $sudahJuz->has($s->id) || (bool) ($haf->get($s->id)?->last_surah);
+            $ayat   = (int) ($haf->get($s->id)?->total_ayat ?? 0);
 
-            ($terkunci ? $sudah : $belum)->push([
-                'santri_id' => $s->id,
-                'nip'       => $s->nip,
-                'nama'      => $s->nama_lengkap,
-                'total_ayat'=> (int) ($haf->get($s->id)?->total_ayat ?? 0),
-            ]);
+            $baris = [
+                'santri_id'  => $s->id,
+                'nip'        => $s->nip,
+                'nama'       => $s->nama_lengkap,
+                'total_ayat' => $ayat,
+                'persen'     => $totalQuran > 0 ? round($ayat / $totalQuran * 100, 1) : 0,
+                'juz'        => $juzPerSantri->get($s->id)?->pluck('juz')->sort()->values() ?? [],
+                // Boleh dikoreksi selama isinya MURNI hasil seed: sekali ada
+                // ziyadah lulus, angkanya sudah ikut dipakai perhitungan lain.
+                'boleh_koreksi' => !$sudahZiyadah->has($s->id),
+            ];
+
+            ($terisi ? $sudah : $belum)->push($baris);
         }
 
         return response()->json(['success' => true, 'data' => [
@@ -411,7 +421,7 @@ class TahfidzApiController extends Controller
             'kelas'        => $jadwal->kelasRel?->nama ?? $jadwal->kelas ?? '—',
             'total_santri' => $santri->count(),
             'belum'        => $belum->values(),
-            'sudah'        => $sudah->values(),
+            'sudah'        => $sudah->sortByDesc('boleh_koreksi')->values(),
         ]]);
     }
 
@@ -433,6 +443,8 @@ class TahfidzApiController extends Controller
             'items.*.juz_lulus.*'    => 'integer|min:1|max:30',
             'items.*.last_surah'     => 'nullable|integer|min:1|max:114',
             'items.*.last_ayat'      => 'nullable|integer|min:1',
+            'items.*.ganti'          => 'nullable|boolean',
+            'pola'                   => 'nullable|in:' . implode(',', TahfidzService::POLA),
         ]);
 
         $tp = $request->user()->tenagaPendidik;
@@ -463,6 +475,8 @@ class TahfidzApiController extends Controller
                     $it['juz_lulus'] ?? [],
                     $it['last_surah'] ?? null,
                     $it['last_ayat'] ?? null,
+                    $d['pola'] ?? null,
+                    (bool) ($it['ganti'] ?? false),
                 );
                 $berhasil++;
             } catch (\Throwable $e) {

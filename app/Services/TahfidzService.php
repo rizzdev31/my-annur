@@ -254,6 +254,25 @@ class TahfidzService
         ];
     }
 
+    /** Urutan hafalan yang dipakai kelas — dasar penurunan juz dari posisi terakhir. */
+    public const POLA = ['belakang', 'amma_maju', 'depan'];
+
+    /**
+     * Daftar juz menurut urutan hafalan.
+     *  belakang  : 30, 29, 28 … 1
+     *  amma_maju : 30, 29, lalu 1, 2, 3 … 28   (paling umum di An-Nur)
+     *  depan     : 1, 2, 3 … 30
+     *
+     * @return int[]
+     */
+    public static function urutanJuz(string $pola): array
+    {
+        if ($pola === 'depan')     return range(1, 30);
+        if ($pola === 'amma_maju') return array_merge([30, 29], range(1, 28));
+
+        return range(30, 1);
+    }
+
     /**
      * Sinkronisasi pencapaian AWAL santri (seeding) — untuk migrasi data hafalan
      * yang sudah berjalan sebelum sistem dipakai.
@@ -262,9 +281,17 @@ class TahfidzService
      *    semua ayat sebelum posisi dianggap ACC (nilai lulus 8). Kursor di-set ke posisi ini.
      * Hanya untuk santri yang BELUM punya data hafalan (anti-timpa). Tanpa baris riwayat setoran.
      *
-     * @param int[] $juzLulus
+     * @param int[]       $juzLulus
+     * @param string|null $pola   Urutan hafalan kelas ini: 'belakang' (30,29,28…),
+     *                            'amma_maju' (30,29, lalu 1,2,3…) atau 'depan' (1,2,3…).
+     *                            Bila diisi bersama posisi terakhir, juz-juz SEBELUM posisi
+     *                            menurut pola ikut dihitung lulus — lihat catatan di bawah.
+     * @param bool        $ganti  Koreksi: buang hasil seed lama lalu tulis ulang.
      */
-    public function seedPencapaian(int $santriId, array $juzLulus, ?int $lastSurah = null, ?int $lastAyat = null): array
+    public function seedPencapaian(
+        int $santriId, array $juzLulus, ?int $lastSurah = null, ?int $lastAyat = null,
+        ?string $pola = null, bool $ganti = false
+    ): array
     {
         // Guard: cegah TIMPA / hitung ganda, bukan sekadar "pernah ada setoran".
         //
@@ -280,8 +307,23 @@ class TahfidzService
             ->where('jenis', 'ziyadah')->where('lulus', true)->exists();
         $haf = HafalanSantri::where('santri_id', $santriId)->first();
 
-        if ($adaJuz || $adaZiyadahLulus || ($haf && $haf->last_surah)) {
-            throw new \DomainException('Santri sudah punya pencapaian tercatat — sinkronisasi awal hanya sekali, sebelum ada setoran ziyadah yang lulus.');
+        if ($adaZiyadahLulus) {
+            throw new \DomainException('Santri sudah punya setoran ziyadah yang lulus — pencapaian awalnya tidak bisa ditulis ulang dari sini. Perbaiki lewat admin.');
+        }
+
+        if ($adaJuz || ($haf && $haf->last_surah)) {
+            if (!$ganti) {
+                throw new \DomainException('Santri sudah punya pencapaian tercatat — pilih "Koreksi" bila ingin memperbaikinya.');
+            }
+            // Koreksi: seluruh isi lama murni hasil seed (tidak ada ziyadah lulus),
+            // jadi aman dibuang lalu ditulis ulang. Tanpa ini guru terkunci pada
+            // angka yang salah dan harus menunggu admin.
+            HafalanJuz::where('santri_id', $santriId)->delete();
+            HafalanSantri::where('santri_id', $santriId)->update([
+                'total_ayat' => 0, 'perlu_murojaah' => false,
+                'last_surah' => null, 'last_surah_selesai' => null,
+                'last_ayat_mulai' => null, 'last_ayat_selesai' => null, 'last_juz' => null,
+            ]);
         }
 
         $juzLulus = collect($juzLulus)->map(fn($j) => (int) $j)
@@ -294,6 +336,20 @@ class TahfidzService
                 throw new \DomainException('Surah/ayat terakhir tidak valid.');
             }
             $partialJuz = $this->quran->juzDari($lastSurah, $lastAyat);
+
+            // Posisi terakhir berarti santri sudah MELEWATI juz-juz sebelumnya
+            // menurut urutan hafalan kelasnya. Tanpa ini, guru yang hanya mengisi
+            // posisi ("santri sampai sini") menghasilkan progres nyaris kosong:
+            // hanya ayat dari awal juz itu yang terhitung, sedangkan juz 30/29 dst
+            // yang sudah dihafal lebih dulu hilang.
+            if ($pola) {
+                foreach (self::urutanJuz($pola) as $j) {
+                    if ($j === $partialJuz) break;      // berhenti tepat di juz berjalan
+                    $juzLulus[] = $j;
+                }
+                $juzLulus = array_values(array_unique($juzLulus));
+            }
+
             if (in_array($partialJuz, $juzLulus, true)) {
                 throw new \DomainException("Juz {$partialJuz} sudah dicentang lulus; jangan isi posisi tengah di juz yang sama.");
             }
