@@ -7,6 +7,8 @@
             <div class="flex gap-2 mb-5">
                 <Link :href="route('admin.smart-education.laporan.index')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Jurnal Pembelajaran</Link>
+                <Link :href="route('admin.smart-education.laporan.kehadiran-santri')"
+                    class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Kehadiran Santri</Link>
                 <Link :href="route('admin.smart-education.laporan.tahfidz')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Tahfidz</Link>
                 <span class="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white shadow-sm shadow-violet-200">Tahsin</span>

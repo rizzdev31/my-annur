@@ -15,6 +15,8 @@
             <!-- Tab jenis laporan -->
             <div class="flex gap-2 mb-5">
                 <span class="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-200">Jurnal Pembelajaran</span>
+                <Link :href="route('admin.smart-education.laporan.kehadiran-santri')"
+                    class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">Kehadiran Santri</Link>
                 <Link :href="route('admin.smart-education.laporan.tahfidz')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">Tahfidz</Link>
                 <Link :href="route('admin.smart-education.laporan.tahsin')"

@@ -193,8 +193,13 @@
                     <SidebarSubItem :href="route('admin.smart-education.materi-tahsin.index')" label="Materi" />
                     <SidebarSubItem :href="route('admin.smart-education.tahsin-monitoring.index')" label="Monitoring" />
                 </SidebarGroup>
-                <SidebarItem v-if="boleh('se_laporan')" :href="route('admin.smart-education.laporan.index')" icon="chart" label="Laporan"
-                    :active="isActive('admin.smart-education.laporan')" :collapsed="!sidebarOpen" />
+                <SidebarGroup v-if="boleh('se_laporan')" icon="chart" label="Laporan"
+                    :active="isActive('admin.smart-education.laporan')" :collapsed="!sidebarOpen">
+                    <SidebarSubItem :href="route('admin.smart-education.laporan.index')" label="Jurnal Pembelajaran" />
+                    <SidebarSubItem :href="route('admin.smart-education.laporan.kehadiran-santri')" label="Kehadiran Santri" />
+                    <SidebarSubItem :href="route('admin.smart-education.laporan.tahfidz')" label="Tahfidz" />
+                    <SidebarSubItem :href="route('admin.smart-education.laporan.tahsin')" label="Tahsin" />
+                </SidebarGroup>
 
                 <!-- ══ KESISWAAN ═══════════════════════════════════════════ -->
                 <SidebarSection v-if="sidebarOpen && boleh('perizinan_santri','smart_health','smart_habbit','piket')" label="Kesiswaan" />
@@ -691,6 +696,7 @@ const menuLinks = computed(() => {
         { label: 'Jurnal Mengajar', href: r('admin.smart-education.jurnal.index'), icon: 'clipboard' },
         { label: 'Sinkron Hafalan Tahfidz', href: r('admin.smart-education.tahfidz.sinkron-hafalan'), icon: 'book' },
         { label: 'Laporan Pembelajaran', href: r('admin.smart-education.laporan.index'), icon: 'chart' },
+        { label: 'Laporan Kehadiran Santri', href: r('admin.smart-education.laporan.kehadiran-santri'), icon: 'chart' },
         { label: 'Smart Tahfidz', href: r('admin.smart-education.tahfidz.index'), icon: 'book' },
         { label: 'Monitoring Tahfidz', href: r('admin.smart-education.tahfidz-monitoring.index'), icon: 'trophy' },
         { label: 'Smart Tahsin', href: r('admin.smart-education.tahsin.index'), icon: 'book' },

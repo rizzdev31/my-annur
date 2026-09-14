@@ -14,6 +14,7 @@ use App\Models\SetoranTahfidz;
 use App\Models\SettingTahsinMateri;
 use App\Models\TahsinPenilaian;
 use App\Models\TahunAjaran;
+use App\Services\RekapKehadiranSantriService;
 use App\Services\TahfidzService;
 use App\Services\TahsinService;
 use Illuminate\Http\Request;
@@ -306,6 +307,107 @@ class LaporanController extends Controller
             'kelasOpsi'    => Kelas::aktif()->tahfidz()->orderBy('nama')->get(['id', 'nama']),
             'santriOpsi'   => $this->santriOpsi($kelasId),
             'tahunAjaranOpsi' => $this->tahunAjaranOpsi(),
+        ]));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // LAPORAN KEHADIRAN PEMBELAJARAN SANTRI — rekap bulanan absensi santri
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Berbeda dengan Laporan Jurnal (sisi guru: sesi, materi, JP), laporan ini
+     * menjawab pertanyaan wali & pimpinan: berapa kali santri ini benar-benar
+     * mengikuti pembelajaran bulan ini, dan berapa persennya.
+     *
+     * Tiga tingkat tampilan memakai satu sumber hitungan yang sama
+     * (RekapKehadiranSantriService), sehingga total di ringkasan selalu
+     * rekonsiliasi dengan rincian di bawahnya:
+     *   - tanpa filter      → peringkat seluruh kelas;
+     *   - kelas dipilih     → daftar santri kelas tersebut;
+     *   - santri dipilih    → rincian per kelas/mapel + daftar ketidakhadiran.
+     */
+    public function kehadiranSantri(Request $request, RekapKehadiranSantriService $svc)
+    {
+        $bulan    = (int) ($request->bulan ?: Carbon::today()->month);
+        $tahun    = (int) ($request->tahun ?: Carbon::today()->year);
+        $kelasId  = $request->kelas_id  ? (int) $request->kelas_id  : null;
+        $santriId = $request->santri_id ? (int) $request->santri_id : null;
+
+        $kelas  = $kelasId  ? Kelas::find($kelasId)   : null;
+        $santri = $santriId ? Santri::find($santriId) : null;
+        $mode   = $santri ? 'anak' : ($kelas ? 'kelas' : 'ringkas');
+
+        // Filter santri berlaku lintas kelas: seorang santri lazimnya mengikuti
+        // kelas reguler sekaligus kelas tahfidz/tahsin, dan laporannya harus
+        // memuat seluruh pembelajaran yang ia ikuti.
+        $baris = $svc->baris($tahun, $bulan, $santri ? null : $kelasId, $santriId);
+
+        $namaSantri = Santri::whereIn('id', $baris->pluck('santri_id')->unique())
+            ->get(['id', 'nip', 'nama_lengkap'])->keyBy('id');
+
+        $perKelas  = $mode === 'ringkas' ? $svc->perKelas($baris) : collect();
+        $perSantri = $mode === 'kelas'   ? $svc->perSantri($baris, $namaSantri) : collect();
+
+        $detail = null;
+        if ($mode === 'anak') {
+            $detail = [
+                'santri' => [
+                    'nama' => $santri->nama_lengkap,
+                    'nip'  => $santri->nip,
+                ],
+                'total'     => $svc->hitung($baris),
+                'sesi'      => $baris->pluck('sesi_id')->unique()->count(),
+                'per_kelas' => $baris->whereNotNull('kelas_id')->groupBy('kelas_id')
+                    ->map(fn($g, $kid) => array_merge([
+                        'kelas' => $g->first()->kelas_nama ?? ('Kelas ' . $kid),
+                        'mapel' => $g->pluck('mapel_nama')->filter()->unique()->values()->all(),
+                    ], $svc->hitung($g)))
+                    ->sortBy('persen_efektif')->values(),
+                // Hanya ketidakhadiran yang dirinci — itulah yang perlu ditindak;
+                // kehadiran sudah terwakili angka totalnya.
+                'ketidakhadiran' => $baris->whereIn('status', ['alpha', 'izin', 'sakit'])
+                    ->sortByDesc('tanggal')->values()
+                    ->map(fn($r) => [
+                        'tanggal' => Carbon::parse($r->tanggal)->locale('id')->isoFormat('dd, D MMM YYYY'),
+                        'kelas'   => $r->kelas_nama ?? '—',
+                        'mapel'   => $r->mapel_nama ?? '—',
+                        'guru'    => $r->guru_nama ?? '—',
+                        'status'  => $r->status,
+                    ]),
+            ];
+        }
+
+        $rekapTotal = $svc->hitung($baris);
+
+        return Inertia::render('Admin/SmartEducation/Laporan/KehadiranSantri', array_merge($this->kopPayload(), [
+            'mode'   => $mode,
+            'kelas'  => $kelas ? ['id' => $kelas->id, 'nama' => $kelas->nama] : null,
+            'filter' => [
+                'bulan'     => $bulan,
+                'tahun'     => $tahun,
+                'kelas_id'  => $kelasId,
+                'santri_id' => $santriId,
+            ],
+            'periodeLabel' => Carbon::create($tahun, $bulan, 1)->locale('id')->isoFormat('MMMM YYYY'),
+            'ringkasan'    => array_merge($rekapTotal, [
+                'sesi'   => $baris->pluck('sesi_id')->unique()->count(),
+                'santri' => $baris->pluck('santri_id')->unique()->count(),
+                'kelas'  => $baris->pluck('kelas_id')->filter()->unique()->count(),
+            ]),
+            'perKelas'   => $perKelas,
+            'perSantri'  => $perSantri,
+            'detail'     => $detail,
+            'bulanOpsi'  => collect(range(1, 12))->map(fn($b) => [
+                'value' => $b,
+                'label' => Carbon::create(2000, $b, 1)->locale('id')->isoFormat('MMMM'),
+            ]),
+            'tahunOpsi'  => collect(range(Carbon::today()->year - 2, Carbon::today()->year + 1)),
+            'kelasOpsi'  => Kelas::aktif()->orderBy('nama')->get(['id', 'nama', 'jenis']),
+            'santriOpsi' => $this->santriOpsi($kelasId),
+            'ambang'     => [
+                'rajin'     => RekapKehadiranSantriService::AMBANG_RAJIN,
+                'perhatian' => RekapKehadiranSantriService::AMBANG_PERHATIAN,
+            ],
         ]));
     }
 
