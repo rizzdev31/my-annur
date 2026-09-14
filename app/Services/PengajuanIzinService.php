@@ -54,6 +54,13 @@ class PengajuanIzinService
             $pengajuan = PengajuanIzin::create([
                 'tenaga_pendidik_id'          => $guru->id,
                 'setting_jenis_pengajuan_id'  => $jenis->id,
+                // Penanda diturunkan dari KODE jenisnya, bukan diserahkan ke
+                // pemanggil. Sebelumnya form izin umum tidak menyetelnya, sehingga
+                // guru yang memilih "Izin Datang Terlambat" dari daftar tersimpan
+                // sebagai izin SEHARI PENUH — lalu ikut hilang dari absensi
+                // kegiatan padahal ia tetap masuk kerja.
+                'is_datang_terlambat'         => $jenis->kode === 'DATANG_TERLAMBAT',
+                'is_sementara'                => $jenis->kode === 'IZIN_SEMENTARA',
                 'tanggal_mulai'               => $tanggalMulai,
                 'tanggal_selesai'             => $tanggalSelesai,
                 'jumlah_hari'                 => $hariKerjaEfektif,

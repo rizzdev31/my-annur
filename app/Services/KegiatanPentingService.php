@@ -56,7 +56,17 @@ class KegiatanPentingService
         $absen = AbsensiHarian::whereDate('tanggal', $tanggal)
             ->whereIn('tenaga_pendidik_id', $ids)->get()->keyBy('tenaga_pendidik_id');
 
+        // HANYA izin sehari penuh yang membebaskan guru dari kegiatan.
+        //  - "Datang terlambat": guru tetap masuk, cuma telat — jelas hadir saat
+        //    kegiatan siang seperti Sholat Dzuhur.
+        //  - "Izin sementara"  : berbasis JAM; dibebaskan hanya bila jam kegiatan
+        //    jatuh di dalam rentang izinnya (ditangani di pesertaHariIni).
+        // Aturan ini disamakan dengan AbsensiWindowService::deteksiIzinAktif;
+        // sebelumnya di sini dipakai query mentah sehingga guru yang sekadar
+        // telat ikut hilang dari daftar peserta.
         $izin = PengajuanIzin::where('status', 'disetujui')
+            ->where('is_sementara', false)
+            ->where('is_datang_terlambat', false)
             ->where('tanggal_mulai', '<=', $tanggal)->where('tanggal_selesai', '>=', $tanggal)
             ->whereIn('tenaga_pendidik_id', $ids)->pluck('tenaga_pendidik_id')->flip();
 
@@ -86,6 +96,13 @@ class KegiatanPentingService
     {
         [$wajib] = $this->pesertaDiharapkan($keg, $tanggal);
 
+        // Saringan yang sama dengan pesertaHariIni — kalau tidak, hitungan
+        // "belum ditandai" di daftar kegiatan tak akan pernah mencapai nol.
+        $bebas = $this->izinSementaraBentrok($wajib->pluck('id'), $tanggal, (string) $keg->jam);
+        if ($bebas->isNotEmpty()) {
+            $wajib = $wajib->reject(fn($g) => $bebas->has($g->id))->values();
+        }
+
         $rec = AbsensiKegiatanPenting::where('kegiatan_penting_id', $keg->id)
             ->whereDate('tanggal', $tanggal)
             ->whereIn('tenaga_pendidik_id', $wajib->pluck('id'))->get();
@@ -102,6 +119,15 @@ class KegiatanPentingService
     public function pesertaHariIni(KegiatanPenting $keg, string $tanggal): Collection
     {
         [$guru, $absen] = $this->pesertaDiharapkan($keg, $tanggal);
+
+        // Izin sementara berbasis jam: hanya membebaskan bila jam kegiatannya
+        // memang jatuh di dalam rentang izin. Disaring di sini (bukan di
+        // pesertaDiharapkan) karena bergantung jam kegiatan, sedangkan daftar
+        // peserta di-memo per sasaran+tanggal.
+        $bebas = $this->izinSementaraBentrok($guru->pluck('id'), $tanggal, (string) $keg->jam);
+        if ($bebas->isNotEmpty()) {
+            $guru = $guru->reject(fn($g) => $bebas->has($g->id))->values();
+        }
 
         $records = AbsensiKegiatanPenting::where('kegiatan_penting_id', $keg->id)
             ->whereDate('tanggal', $tanggal)->get()->keyBy('tenaga_pendidik_id');
@@ -123,6 +149,27 @@ class KegiatanPentingService
         }
 
         return $peserta->sortBy('nama')->values();
+    }
+
+    /**
+     * Guru yang izin sementaranya menutupi jam kegiatan ini.
+     * Izin tanpa jam (data lama) dianggap TIDAK menutupi — lebih baik guru
+     * tetap muncul lalu ditandai piket daripada hilang diam-diam.
+     *
+     * @return Collection himpunan tenaga_pendidik_id
+     */
+    private function izinSementaraBentrok(Collection $ids, string $tanggal, string $jamKegiatan): Collection
+    {
+        if ($ids->isEmpty() || $jamKegiatan === '') return collect();
+
+        return PengajuanIzin::where('status', 'disetujui')
+            ->where('is_sementara', true)
+            ->whereIn('tenaga_pendidik_id', $ids)
+            ->where('tanggal_mulai', '<=', $tanggal)->where('tanggal_selesai', '>=', $tanggal)
+            ->whereNotNull('jam_mulai')->whereNotNull('jam_selesai')
+            ->where('jam_mulai', '<=', $jamKegiatan)
+            ->where('jam_selesai', '>=', $jamKegiatan)
+            ->pluck('tenaga_pendidik_id')->flip();
     }
 
     /**
