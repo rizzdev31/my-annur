@@ -130,6 +130,14 @@ class PengajuanIzinController extends Controller
                 'is_pending'       => $pengajuanIzin->isPending(),
                 'absensi_diupdate' => $pengajuanIzin->absensi_sudah_diupdate,
                 'created_at'       => $pengajuanIzin->created_at->format('d M Y H:i'),
+                // Sifat izin — menentukan apakah guru tetap dianggap masuk kerja.
+                // Tanpa ini halaman detail tak bisa membedakan izin sehari penuh
+                // dari "datang terlambat" / izin berbasis jam.
+                'is_sementara'        => (bool) $pengajuanIzin->is_sementara,
+                'is_datang_terlambat' => (bool) $pengajuanIzin->is_datang_terlambat,
+                'jam_mulai'           => $pengajuanIzin->jam_mulai ? substr((string) $pengajuanIzin->jam_mulai, 0, 5) : null,
+                'jam_selesai'         => $pengajuanIzin->jam_selesai ? substr((string) $pengajuanIzin->jam_selesai, 0, 5) : null,
+                'kategori'            => $pengajuanIzin->jenisPengajuan->kategori,
             ],
         ]);
     }
