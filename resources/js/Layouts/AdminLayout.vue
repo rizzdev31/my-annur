@@ -183,6 +183,7 @@
                     :active="isActive('admin.smart-education.tahfidz') || isActive('admin.smart-education.tahfidz-monitoring')"
                     :collapsed="!sidebarOpen">
                     <SidebarSubItem :href="route('admin.smart-education.tahfidz.index')" label="Pengaturan" />
+                    <SidebarSubItem :href="route('admin.smart-education.tahfidz.sinkron-hafalan')" label="Sinkron Hafalan" />
                     <SidebarSubItem :href="route('admin.smart-education.tahfidz-monitoring.index')" label="Monitoring" />
                 </SidebarGroup>
                 <SidebarGroup v-if="boleh('se_tahsin')" icon="monitor" label="Tahsin"
@@ -688,6 +689,7 @@ const menuLinks = computed(() => {
         { label: 'Kelas', href: r('admin.smart-education.kelas.index'), icon: 'book' },
         { label: 'Ekstrakurikuler', href: r('admin.smart-education.ekstrakurikuler.index'), icon: 'academic-cap' },
         { label: 'Jurnal Mengajar', href: r('admin.smart-education.jurnal.index'), icon: 'clipboard' },
+        { label: 'Sinkron Hafalan Tahfidz', href: r('admin.smart-education.tahfidz.sinkron-hafalan'), icon: 'book' },
         { label: 'Laporan Pembelajaran', href: r('admin.smart-education.laporan.index'), icon: 'chart' },
         { label: 'Smart Tahfidz', href: r('admin.smart-education.tahfidz.index'), icon: 'book' },
         { label: 'Monitoring Tahfidz', href: r('admin.smart-education.tahfidz-monitoring.index'), icon: 'trophy' },

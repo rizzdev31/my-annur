@@ -36,9 +36,6 @@ class TahfidzController extends Controller
                 ->map(fn($g) => ['id' => $g->id, 'nama' => $g->user?->name ?? '—'])->values(),
             'kelasTahfidzOpsi' => Kelas::aktif()->tahfidz()->orderBy('nama')->get(['id', 'nama']),
             'tahunAjaranAktif' => TahunAjaran::aktif()?->nama,
-            // Sinkronisasi pencapaian awal: opsi santri (tandai yg sudah ada data) + daftar surah.
-            'santriSyncOpsi'   => $this->santriSyncOpsi(),
-            'surahOpsi'        => Surah::orderBy('nomor')->get(['nomor', 'nama', 'jumlah_ayat']),
             'stat' => [
                 'mapel_tahfidz'  => $mapelTahfidz->where('tipe', 'tahfidz')->count(),
                 'mapel_tahsin'   => $mapelTahfidz->where('tipe', 'tahsin')->count(),
@@ -74,6 +71,18 @@ class TahfidzController extends Controller
         SettingTahfidz::get()->update($data);
 
         return back()->with('success', 'Setting tahfidz & pola jadwal diperbarui.');
+    }
+
+    /**
+     * Halaman Sinkron Hafalan — dipisah dari halaman Pengaturan agar mudah
+     * ditemukan lewat sidebar; isinya sinkronisasi awal, koreksi, dan reset.
+     */
+    public function sinkronisasiIndex()
+    {
+        return Inertia::render('Admin/SmartEducation/Tahfidz/Sinkronisasi', [
+            'santriSyncOpsi' => $this->santriSyncOpsi(),
+            'surahOpsi'      => Surah::orderBy('nomor')->get(['nomor', 'nama', 'jumlah_ayat']),
+        ]);
     }
 
     /**
