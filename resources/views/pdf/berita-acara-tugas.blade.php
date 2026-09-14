@@ -25,10 +25,11 @@
 
         .kop { width: 100%; border-collapse: collapse; }
         .kop td { vertical-align: middle; }
-        .kop .logo { width: 62px; }
-        .kop .logo img { width: 58px; height: auto; }
-        .nama-lembaga { font-size: 15px; font-weight: bold; color: {{ $navy }}; letter-spacing: .3px; }
-        .sub-lembaga { font-size: 9.5px; color: {{ $abu }}; }
+        .kop .sisi { width: 100px; }
+        .kop .tengah-kop { text-align: center; padding: 0 8px; }
+        .kop img { height: auto; }
+        .nama-lembaga { font-size: 14px; font-weight: bold; color: {{ $navy }}; letter-spacing: .4px; text-transform: uppercase; }
+        .sub-lembaga { font-size: 8.5px; color: {{ $abu }}; }
         .rule { height: 3px; background: {{ $navy }}; margin: 8px 0 0 0; }
         .rule-tipis { height: 1px; background: {{ $emas }}; margin-top: 2px; }
 
@@ -82,16 +83,31 @@
 </head>
 <body>
 
-{{-- ── KOP ─────────────────────────────────────────────────────────── --}}
+{{-- ── KOP ─────────────────────────────────────────────────────────────
+     Tiga logo: unit sekolah mengapit di kiri–kanan, identitas pondok di
+     tengah. Lebar kolom sisi dipatok sama (100px) agar blok tengah benar-benar
+     di poros halaman meski rasio kedua logo berbeda jauh (MUBOSTA 3.1,
+     MA eMAS 4.8) — tiap logo dibatasi LEBARnya, tingginya mengikuti sendiri.
+     Slot yang logonya belum ada tetap dirender kosong supaya tak bergeser. --}}
 <table class="kop">
     <tr>
-        @if ($logo)
-            <td class="logo"><img src="{{ $logo }}" alt=""></td>
-        @endif
-        <td>
+        <td class="sisi">
+            @if ($logoKiri)
+                <img src="{{ $logoKiri }}" alt="" style="width:88px;">
+            @endif
+        </td>
+        <td class="tengah-kop">
+            @if ($logo)
+                <img src="{{ $logo }}" alt="" style="width:40px; margin-bottom:2px;">
+            @endif
             <div class="nama-lembaga">{{ $lembaga['nama'] }}</div>
             <div class="sub-lembaga">{{ $lembaga['alamat'] }}</div>
             <div class="sub-lembaga">Telp. {{ $lembaga['telp'] }}</div>
+        </td>
+        <td class="sisi" style="text-align:right;">
+            @if ($logoKanan)
+                <img src="{{ $logoKanan }}" alt="" style="width:94px;">
+            @endif
         </td>
     </tr>
 </table>

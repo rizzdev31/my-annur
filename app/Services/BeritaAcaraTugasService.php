@@ -16,7 +16,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 class BeritaAcaraTugasService
 {
     private const LEMBAGA = [
-        'nama'   => 'Pondok Pesantren Modern An-Nur',
+        'nama'   => 'Pondok Pesantren Muhammadiyah An-Nur Sidoarjo',
         'alamat' => 'Jl. H. Ahmad Dahlan No.1, Desa Penatarsewu, Kec. Tanggulangin, Kab. Sidoarjo',
         'telp'   => '(031) 8052928',
         'kota'   => 'Sidoarjo',
@@ -57,7 +57,9 @@ class BeritaAcaraTugasService
             'penugasan'     => $penugasan,
             'kegiatan'      => $kegiatan,
             'lembaga'       => self::LEMBAGA,
-            'logo'          => $this->logo(),
+            'logo'          => $this->logo('logo.png'),
+            'logoKiri'      => $this->logo('img/kop/mubosta.png'),
+            'logoKanan'     => $this->logo('img/kop/maemas.png'),
             'nomor'         => $this->nomor($tugas),
             'periode'       => $this->periode($tugas),
             'dicetak'       => TimezoneHelper::now()->translatedFormat('d F Y'),
@@ -87,10 +89,12 @@ class BeritaAcaraTugasService
     /**
      * Logo di-embed sebagai data URI: dompdf tidak selalu bisa mengambil berkas
      * lewat URL (mis. saat berjalan di container tanpa akses ke dirinya sendiri).
+     * Mengembalikan null bila berkas belum ada, sehingga slot logo aman kosong
+     * dan tata letak kop tidak rusak.
      */
-    private function logo(): ?string
+    private function logo(string $relatif): ?string
     {
-        $path = public_path('logo.png');
+        $path = public_path($relatif);
         if (!is_file($path)) return null;
 
         return 'data:image/png;base64,' . base64_encode((string) file_get_contents($path));
