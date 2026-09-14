@@ -218,16 +218,10 @@ class TahfidzService
         $totalQuran = $this->quran->totalAyatQuran();
         $juz = HafalanJuz::where('santri_id', $santriId)->orderBy('juz')->get();
 
-        // Posisi "lanjut dari" untuk hafalan baru berikutnya (setelah hafalan terakhir).
-        $lanjut = null;
-        if ($hafalan->last_surah) {
-            $batasSurah = (int) ($hafalan->last_surah_selesai ?? $hafalan->last_surah);
-            $batasPos   = $this->quran->posisiAbsolut($batasSurah, (int) ($hafalan->last_ayat_selesai ?? 0));
-            if ($batasPos < $totalQuran) {
-                [$ns, $na] = $this->quran->posisiKeSurahAyat($batasPos + 1);
-                $lanjut = ['surah' => $ns, 'ayat' => $na];
-            }
-        }
+        // Posisi "lanjut dari" — melewati juz yang sudah dihafal & menambal
+        // lubang lebih dulu. Lihat saranLanjut(); versi linear lama mengarahkan
+        // santri kembali ke juz yang sudah lulus tasmi'.
+        $lanjut = $this->saranLanjut($santriId);
 
         return [
             'total_ayat'        => $hafalan->total_ayat,
@@ -245,12 +239,22 @@ class TahfidzService
             'selesai_semua'     => $hafalan->total_ayat >= $totalQuran, // benar2 30 juz (independen urutan)
             'juz_perlu_tasmi'   => $juz->where('status', 'selesai')->pluck('juz')->values(),
             'juz_selesai_total' => $juz->whereIn('status', ['selesai', 'tasmi_lulus'])->count(),
-            'juz'               => $juz->map(fn($j) => [
-                'juz'             => $j->juz,
-                'ayat_terkumpul'  => $j->ayat_terkumpul,
-                'jumlah_ayat_juz' => $j->jumlah_ayat_juz,
-                'status'          => $j->status,
-            ])->values(),
+            'juz'               => $juz->map(function ($j) use ($santriId) {
+                // Lubang hanya dihitung untuk juz yang belum penuh — inilah yang
+                // menjelaskan kenapa tasmi' tak kunjung muncul padahal setoran
+                // terakhir sudah sampai akhir juz.
+                $lubang = $j->ayat_terkumpul < $j->jumlah_ayat_juz
+                    ? $this->lubangJuz($santriId, (int) $j->juz) : [];
+
+                return [
+                    'juz'             => $j->juz,
+                    'ayat_terkumpul'  => $j->ayat_terkumpul,
+                    'jumlah_ayat_juz' => $j->jumlah_ayat_juz,
+                    'status'          => $j->status,
+                    'kurang_ayat'     => max(0, $j->jumlah_ayat_juz - $j->ayat_terkumpul),
+                    'lubang'          => $lubang,
+                ];
+            })->values(),
         ];
     }
 
@@ -412,6 +416,146 @@ class TahfidzService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * Ayat yang BELUM tercatat di dalam satu juz ("lubang" hafalan).
+     *
+     * Perlu karena juz hanya berstatus 'selesai' (wajib tasmi') bila ayatnya
+     * genap penuh. Bila ada ayat terlewat di tengah, juz tetap 'berjalan'
+     * selamanya dan tasmi' TIDAK PERNAH muncul — sementara guru melihat setoran
+     * terakhir sudah sampai akhir juz dan mengira sudah beres. Lubang seperti
+     * ini lahir saat setoran berikutnya dimulai tidak persis dari batas
+     * sinkronisasi awal (mis. seed berhenti di 76:18, setoran mulai 76:26).
+     *
+     * Cakupan direkonstruksi dari dua sumber:
+     *   - rentang setoran ziyadah yang LULUS (punya surah/ayat eksplisit), dan
+     *   - sisa ayat_terkumpul yang tak terjelaskan oleh setoran = hasil
+     *     sinkronisasi awal, yang selalu mengisi dari AWAL juz.
+     *
+     * @return array<array{dari:array{0:int,1:int}, sampai:array{0:int,1:int}, jumlah:int}>
+     */
+    public function lubangJuz(int $santriId, int $juz): array
+    {
+        $hj = HafalanJuz::where('santri_id', $santriId)->where('juz', $juz)->first();
+        if (!$hj || $hj->ayat_terkumpul >= $hj->jumlah_ayat_juz) return [];
+
+        [$sM, $aM, $sS, $aS] = $this->quran->juzRange($juz);
+        $awal  = $this->quran->posisiAbsolut($sM, $aM);
+        $akhir = $this->quran->posisiAbsolut($sS, $aS);
+
+        // Segmen dari setoran ziyadah lulus, dipotong pada batas juz ini.
+        $segmen = [];
+        $dariSetoran = 0;
+        foreach (SetoranTahfidz::where('santri_id', $santriId)
+            ->where('jenis', 'ziyadah')->where('lulus', true)->get() as $t) {
+            $a = max($awal,  $this->quran->posisiAbsolut((int) $t->surah_mulai, (int) $t->ayat_mulai));
+            $b = min($akhir, $this->quran->posisiAbsolut((int) $t->surah_selesai, (int) $t->ayat_selesai));
+            if ($a > $b) continue;               // setoran ini di luar juz tsb
+            $segmen[]     = [$a, $b];
+            $dariSetoran += ($b - $a + 1);
+        }
+
+        // Sisa yang tak dijelaskan setoran = hasil sinkronisasi awal, yang
+        // selalu terhitung dari awal juz.
+        $dariSeed = max(0, $hj->ayat_terkumpul - $dariSetoran);
+        if ($dariSeed > 0) $segmen[] = [$awal, min($akhir, $awal + $dariSeed - 1)];
+
+        if (empty($segmen)) {
+            return [[
+                'dari'   => [$sM, $aM],
+                'sampai' => [$sS, $aS],
+                'jumlah' => $akhir - $awal + 1,
+            ]];
+        }
+
+        // Gabungkan segmen yang bertumpuk/bersambung, lalu ambil celahnya.
+        usort($segmen, fn($x, $y) => $x[0] <=> $y[0]);
+        $gabung = [];
+        foreach ($segmen as $s) {
+            $n = count($gabung);
+            if ($n && $s[0] <= $gabung[$n - 1][1] + 1) {
+                $gabung[$n - 1][1] = max($gabung[$n - 1][1], $s[1]);
+            } else {
+                $gabung[] = $s;
+            }
+        }
+
+        $lubang = [];
+        $cursor = $awal;
+        foreach ($gabung as [$a, $b]) {
+            if ($a > $cursor) $lubang[] = [$cursor, $a - 1];
+            $cursor = max($cursor, $b + 1);
+        }
+        if ($cursor <= $akhir) $lubang[] = [$cursor, $akhir];
+
+        return array_map(function ($l) {
+            [$s1, $a1] = $this->quran->posisiKeSurahAyat($l[0]);
+            [$s2, $a2] = $this->quran->posisiKeSurahAyat($l[1]);
+
+            return ['dari' => [$s1, $a1], 'sampai' => [$s2, $a2], 'jumlah' => $l[1] - $l[0] + 1];
+        }, $lubang);
+    }
+
+    /**
+     * Saran "lanjut dari" yang MELEWATI wilayah yang sudah dihafal.
+     *
+     * Versi lama murni linear (posisi terakhir + 1), sehingga santri yang
+     * menghafal juz 30 lebih dulu — pola paling umum di sini — begitu selesai
+     * juz 29 langsung diarahkan ke An-Naba, padahal juz 30 sudah lulus tasmi'.
+     *
+     * Urutan saran:
+     *   1. LUBANG pada juz yang sedang berjalan (harus ditambal dulu, kalau
+     *      tidak juz itu tak pernah 'selesai' dan tasmi' tak pernah muncul);
+     *   2. posisi setelah hafalan terakhir, dilompati melewati juz yang sudah
+     *      penuh (selesai / tasmi_lulus).
+     *
+     * @return array{surah:int, ayat:int, alasan:string}|null
+     */
+    public function saranLanjut(int $santriId): ?array
+    {
+        $juzList = HafalanJuz::where('santri_id', $santriId)->get()->keyBy('juz');
+
+        // 1. Tambal lubang lebih dulu — diurut dari juz terkecil agar stabil.
+        foreach ($juzList->sortBy('juz') as $hj) {
+            if ($hj->ayat_terkumpul >= $hj->jumlah_ayat_juz) continue;
+            $lubang = $this->lubangJuz($santriId, (int) $hj->juz);
+            if (!empty($lubang)) {
+                return [
+                    'surah'  => $lubang[0]['dari'][0],
+                    'ayat'   => $lubang[0]['dari'][1],
+                    'alasan' => 'Melengkapi juz ' . $hj->juz . ' (kurang ' . $lubang[0]['jumlah'] . ' ayat)',
+                ];
+            }
+        }
+
+        // 2. Lanjut setelah hafalan terakhir, lompati juz yang sudah penuh.
+        $haf = HafalanSantri::where('santri_id', $santriId)->first();
+        if (!$haf || !$haf->last_surah) return null;
+
+        $pos   = $this->quran->posisiAbsolut(
+            (int) ($haf->last_surah_selesai ?? $haf->last_surah),
+            (int) ($haf->last_ayat_selesai ?? 0)
+        ) + 1;
+        $total = $this->quran->totalAyatQuran();
+
+        while ($pos <= $total) {
+            [$s, $a] = $this->quran->posisiKeSurahAyat($pos);
+            $juz = $this->quran->juzDari($s, $a);
+            $hj  = $juzList->get($juz);
+
+            // Juz sudah penuh → lompat ke awal juz berikutnya, jangan suruh
+            // santri mengulang hafalan yang sudah dikuasai.
+            if ($hj && $hj->ayat_terkumpul >= $hj->jumlah_ayat_juz) {
+                [, , $sS, $aS] = $this->quran->juzRange($juz);
+                $pos = $this->quran->posisiAbsolut($sS, $aS) + 1;
+                continue;
+            }
+
+            return ['surah' => $s, 'ayat' => $a, 'alasan' => 'Hafalan baru'];
+        }
+
+        return null; // seluruh mushaf sudah dihafal
     }
 
     /** Urutan hafalan yang dipakai kelas — dasar penurunan juz dari posisi terakhir. */
