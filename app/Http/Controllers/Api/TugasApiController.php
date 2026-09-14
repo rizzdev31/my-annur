@@ -806,4 +806,32 @@ class TugasApiController extends Controller
     {
         return response()->json(['success' => false, 'message' => 'Data tidak ditemukan.'], 404);
     }
+    /**
+     * GET /tugas/{penugasan}/berita-acara
+     * Guru mengunduh berita acara TUGASNYA SENDIRI — isinya hanya dirinya,
+     * termasuk kehadirannya pada sesi kegiatan; data rekan lain tidak ikut.
+     * Memakai id PENUGASAN (yang sudah dipegang halaman detail), sehingga
+     * kepemilikan terjaga tanpa pemeriksaan tambahan.
+     */
+    public function beritaAcara(Request $request, $penugasanId)
+    {
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) {
+            return response()->json(['success' => false, 'message' => 'Data tenaga pendidik tidak ditemukan.'], 404);
+        }
+
+        $penugasan = \App\Models\PenugasanTambahan::with('tugasTambahan')->findOrFail($penugasanId);
+        if ((int) $penugasan->tenaga_pendidik_id !== (int) $tp->id) {
+            return response()->json(['success' => false, 'message' => 'Tugas ini bukan milik Anda.'], 403);
+        }
+        if (!$penugasan->tugasTambahan) {
+            return response()->json(['success' => false, 'message' => 'Data tugas tidak ditemukan.'], 404);
+        }
+
+        $svc = app(\App\Services\BeritaAcaraTugasService::class);
+
+        return $svc->pdf($penugasan->tugasTambahan, $request->user()->name ?? 'Guru', $tp->id)
+            ->download($svc->namaBerkas($penugasan->tugasTambahan, 'saya'));
+    }
+
 }

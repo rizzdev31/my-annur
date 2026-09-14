@@ -110,6 +110,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{penugasan}',                        [TugasApiController::class, 'show']);
                 Route::post('/{penugasan}/mulai',                 [TugasApiController::class, 'mulai']);
                 Route::post('/{penugasan}/laporan',               [TugasApiController::class, 'kirimLaporan']);
+                Route::get('/{penugasan}/berita-acara',           [TugasApiController::class, 'beritaAcara']);
 
                 // Tugas Jabatan
                 Route::get('/jabatan/list',                       [TugasApiController::class, 'tugasJabatan']);

@@ -23,6 +23,16 @@
                 </div>
                 <p class="text-sm text-gray-400 mt-0.5">{{ tugas.deskripsi ?? 'Tidak ada deskripsi.' }}</p>
             </div>
+            <!-- Berita acara: dokumen resmi untuk pelaporan (unduh PDF) -->
+            <a :href="route('admin.smart-payroll.tugas-tambahan.berita-acara', tugas.id)"
+                class="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-[#2E3160] text-white text-sm font-semibold rounded-xl hover:bg-[#252850] transition">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h5l2 2h5a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+                Berita Acara
+            </a>
+
             <!-- Tombol untuk tipe absen_kegiatan -->
             <div v-if="tugas.tipe_pengerjaan === 'absen_kegiatan'" class="flex gap-2">
                 <Link :href="route('admin.smart-payroll.absensi-kegiatan.index')"

@@ -24,6 +24,24 @@ async function load() {
     catch (e) { toast.error(e.response?.data?.message || 'Gagal memuat detail.') }
     finally { loading.value = false }
 }
+// Unduh berita acara. Token Sanctum dikirim lewat header, jadi tautan biasa
+// tidak bisa dipakai — berkas diambil sebagai blob lalu disimpan.
+const unduh = ref(false)
+async function unduhBeritaAcara() {
+    unduh.value = true
+    try {
+        const res = await api.get(`/tugas/${route.params.id}/berita-acara`, { responseType: 'blob' })
+        const nama = (res.headers['content-disposition'] || '').match(/filename="?([^"]+)"?/)?.[1]
+            || 'berita-acara.pdf'
+        const url = URL.createObjectURL(res.data)
+        const a = document.createElement('a')
+        a.href = url; a.download = nama; document.body.appendChild(a); a.click()
+        a.remove(); URL.revokeObjectURL(url)
+    } catch (e) {
+        alert('Gagal mengunduh berita acara. Coba lagi.')
+    } finally { unduh.value = false }
+}
+
 onMounted(load)
 
 const statusMeta = computed(() => {
@@ -126,6 +144,23 @@ async function buatKegiatan() {
                 <p v-if="p.catatan_verifikasi" class="text-[12px] text-gray-600 mt-1">{{ p.catatan_verifikasi }}</p>
                 <p v-if="p.dilaporkan_pada" class="text-[11px] text-gray-400 mt-1">Dilaporkan {{ p.dilaporkan_pada }}</p>
             </div>
+
+            <!-- Berita acara: dokumen resmi untuk pelaporan -->
+            <button v-if="p.status_pengerjaan === 'selesai'" @click="unduhBeritaAcara" :disabled="unduh"
+                class="w-full flex items-center gap-2.5 rounded-2xl bg-white border border-gray-100 p-3.5 mb-4 text-left disabled:opacity-60">
+                <span class="w-9 h-9 rounded-xl bg-[#2E3160]/10 grid place-items-center shrink-0">
+                    <svg class="w-4 h-4 text-[#2E3160]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-width="2"
+                            d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h5l2 2h5a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                    </svg>
+                </span>
+                <span class="flex-1 min-w-0">
+                    <span class="block text-[13px] font-bold text-gray-800">
+                        {{ unduh ? 'Menyiapkan…' : 'Unduh Berita Acara' }}
+                    </span>
+                    <span class="block text-[11px] text-gray-400">PDF resmi berisi tugas &amp; kehadiran Anda</span>
+                </span>
+            </button>
 
             <!-- Bukti tersimpan -->
             <div v-if="p.status_pengerjaan === 'selesai' && !isKegiatan && (p.teks_bukti || p.link_bukti || p.file_laporan_url)" class="rounded-2xl bg-white border border-gray-100 p-4 mb-4">

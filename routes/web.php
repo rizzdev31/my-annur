@@ -335,6 +335,8 @@ Route::prefix('admin')
             });
 
             // Tugas Tambahan — route spesifik HARUS sebelum resource
+            Route::get('tugas-tambahan/{tugasTambahan}/berita-acara',
+                [TugasTambahanController::class, 'beritaAcara'])->name('tugas-tambahan.berita-acara');
             Route::post('tugas-tambahan/{tugasTambahan}/assign',
                 [TugasTambahanController::class, 'assign'])->name('tugas-tambahan.assign');
             Route::patch('penugasan/{penugasan}/verifikasi',

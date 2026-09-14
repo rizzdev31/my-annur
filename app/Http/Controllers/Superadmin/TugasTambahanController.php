@@ -316,6 +316,18 @@ class TugasTambahanController extends Controller
     /**
      * Assign guru tambahan ke tugas yang sudah berjalan.
      */
+    /**
+     * Unduh Berita Acara (PDF) satu tugas tambahan — lengkap dengan penerima,
+     * penyelesaian, dan absensi kegiatannya. Dipakai untuk pelaporan.
+     */
+    public function beritaAcara(Request $request, TugasTambahan $tugasTambahan)
+    {
+        $svc = app(\App\Services\BeritaAcaraTugasService::class);
+
+        return $svc->pdf($tugasTambahan, $request->user()->name ?? 'Administrator')
+            ->download($svc->namaBerkas($tugasTambahan));
+    }
+
     public function assign(TugasTambahan $tugasTambahan, Request $request)
     {
         $data = $request->validate([

@@ -96,6 +96,24 @@ class PenugasanTambahan extends Model
         ];
     }
 
+    /**
+     * Ringkasan bukti untuk satu sel tabel berita acara.
+     * Foto/berkas tidak ikut dicetak, cukup disebut keberadaannya — dokumen
+     * ini pengantar pelaporan, bukan pengganti lampirannya.
+     */
+    public function getRingkasBuktiAttribute(): string
+    {
+        $bagian = [];
+
+        if ($teks = trim((string) ($this->teks_bukti ?? $this->laporan))) {
+            $bagian[] = \Illuminate\Support\Str::limit($teks, 120);
+        }
+        if ($this->link_bukti)  $bagian[] = 'Tautan: ' . $this->link_bukti;
+        if ($this->file_laporan) $bagian[] = '(foto/berkas terlampir di sistem)';
+
+        return implode(' · ', $bagian);
+    }
+
     /** Apakah sudah ada bukti dalam bentuk apapun */
     public function hasBukti(): bool
     {
