@@ -186,7 +186,20 @@ class TahfidzController extends Controller
         $ta = TahunAjaran::aktif();
         if (!$ta) return back()->with('error', 'Belum ada tahun ajaran aktif.');
 
-        $kelas   = Kelas::findOrFail($data['kelas_id']);
+        $kelas = Kelas::findOrFail($data['kelas_id']);
+        $mapel = MataPelajaran::findOrFail($data['mata_pelajaran_id']);
+
+        // Jenis kelas dan tipe mapel WAJIB cocok. Tanpa penjagaan ini, memilih
+        // mapel keliru membuat seluruh slot jadwal salah tipe secara diam-diam —
+        // kelas tahfidz lalu muncul di menu Tahsin dan santrinya dinilai tahsin,
+        // bukan disetor hafalannya. (Terjadi pada "Tahfidz Putra 4": 8 slot
+        // terlanjur dibuat dengan mapel Tahsin.)
+        if (in_array($kelas->jenis, ['tahfidz', 'tahsin'], true) && $mapel->tipe !== $kelas->jenis) {
+            return back()->with('error',
+                "Mapel \"{$mapel->nama}\" bertipe {$mapel->tipe}, sedangkan kelas \"{$kelas->nama}\" "
+                . "berjenis {$kelas->jenis}. Pilih mata pelajaran bertipe {$kelas->jenis}.");
+        }
+
         $setting = SettingTahfidz::get();
         $pola    = $setting->pola_jadwal ?: SettingTahfidz::POLA_DEFAULT;
 
