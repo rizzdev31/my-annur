@@ -552,7 +552,20 @@ class TahfidzService
             return ['surah' => $s, 'ayat' => $a, 'alasan' => 'Hafalan baru'];
         }
 
-        return null; // seluruh mushaf sudah dihafal
+        // Sudah mentok di akhir mushaf tetapi belum 30 juz — lazim pada santri
+        // yang menghafal dari belakang (juz 30, 29, …). Putar kembali ke depan
+        // dan tunjuk juz pertama yang belum dihafal; tanpa ini santri terlihat
+        // "selesai" padahal baru beberapa juz.
+        for ($j = 1; $j <= 30; $j++) {
+            $hj = $juzList->get($j);
+            if ($hj && $hj->ayat_terkumpul >= $hj->jumlah_ayat_juz) continue;
+
+            [$s, $a] = $this->quran->juzRange($j);
+
+            return ['surah' => $s, 'ayat' => $a, 'alasan' => 'Mulai juz ' . $j];
+        }
+
+        return null; // benar-benar 30 juz
     }
 
     /** Urutan hafalan yang dipakai kelas — dasar penurunan juz dari posisi terakhir. */
