@@ -461,15 +461,9 @@ class TahfidzService
         $dariSeed = max(0, $hj->ayat_terkumpul - $dariSetoran);
         if ($dariSeed > 0) $segmen[] = [$awal, min($akhir, $awal + $dariSeed - 1)];
 
-        if (empty($segmen)) {
-            return [[
-                'dari'   => [$sM, $aM],
-                'sampai' => [$sS, $aS],
-                'jumlah' => $akhir - $awal + 1,
-            ]];
-        }
+        if (empty($segmen)) return [];
 
-        // Gabungkan segmen yang bertumpuk/bersambung, lalu ambil celahnya.
+        // Gabungkan segmen yang bertumpuk/bersambung.
         usort($segmen, fn($x, $y) => $x[0] <=> $y[0]);
         $gabung = [];
         foreach ($segmen as $s) {
@@ -481,13 +475,16 @@ class TahfidzService
             }
         }
 
+        // HANYA celah DI ANTARA dua bagian yang sudah dihafal yang dianggap
+        // lubang. Sisa di awal/akhir juz bukan lubang — itu sekadar bagian yang
+        // memang belum dihafal, dan santri sedang berjalan ke sana. Tanpa batas
+        // ini, santri yang maju normal akan disuruh mundur ke awal juz.
         $lubang = [];
-        $cursor = $awal;
-        foreach ($gabung as [$a, $b]) {
-            if ($a > $cursor) $lubang[] = [$cursor, $a - 1];
-            $cursor = max($cursor, $b + 1);
+        for ($i = 1; $i < count($gabung); $i++) {
+            $mulai = $gabung[$i - 1][1] + 1;
+            $henti = $gabung[$i][0] - 1;
+            if ($mulai <= $henti) $lubang[] = [$mulai, $henti];
         }
-        if ($cursor <= $akhir) $lubang[] = [$cursor, $akhir];
 
         return array_map(function ($l) {
             [$s1, $a1] = $this->quran->posisiKeSurahAyat($l[0]);
