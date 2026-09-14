@@ -178,6 +178,60 @@
                 </template>
             </div>
 
+            <!-- Reset massal: jalan cepat agar santri bisa disinkron ulang -->
+            <div class="mt-6 pt-5 border-t border-gray-100">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-900">Reset Pencapaian (massal)</h4>
+                        <p class="text-xs text-gray-400 mt-0.5 max-w-2xl leading-relaxed">
+                            Mengosongkan hasil hitungan hafalan supaya santri muncul lagi di daftar sinkronisasi.
+                            <b class="text-gray-600">Jurnal setoran &amp; absensi tidak dihapus</b> — setelah disinkronkan ulang,
+                            setoran yang lulus otomatis dihitung kembali di atas data baru.
+                        </p>
+                    </div>
+                    <button @click="bukaReset = !bukaReset" type="button"
+                        class="shrink-0 px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                        {{ bukaReset ? 'Tutup' : 'Pilih Santri' }}
+                    </button>
+                </div>
+
+                <div v-if="bukaReset" class="mt-3">
+                    <div class="flex flex-wrap items-center gap-2 mb-2">
+                        <input v-model="cariReset" type="text" placeholder="Cari nama santri…"
+                            class="px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-indigo-500 w-64" />
+                        <button @click="pilihSemuaReset" type="button"
+                            class="px-3 py-2 rounded-xl bg-gray-100 text-gray-600 text-xs font-semibold">
+                            Pilih semua yang tampil ({{ santriReset.length }})
+                        </button>
+                        <button @click="resetPilihan = []" type="button"
+                            class="px-3 py-2 rounded-xl bg-gray-100 text-gray-600 text-xs font-semibold">Bersihkan</button>
+                        <span class="text-xs text-gray-400 ml-auto">{{ resetPilihan.length }} dipilih</span>
+                    </div>
+
+                    <div class="max-h-64 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-50">
+                        <label v-for="s in santriReset" :key="s.id"
+                            class="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" :value="s.id" v-model="resetPilihan" class="w-4 h-4 accent-red-600" />
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-sm text-gray-800 truncate">{{ s.nama }}</span>
+                                <span class="block text-[11px]" :class="s.persen >= 50 ? 'text-red-500' : 'text-gray-400'">
+                                    {{ s.juz.length }} juz · {{ s.total_ayat }} ayat · {{ s.persen }}%
+                                    <span v-if="s.ada_ziyadah" class="text-emerald-600"> · ada setoran (akan dihitung ulang)</span>
+                                </span>
+                            </span>
+                        </label>
+                        <p v-if="!santriReset.length" class="px-3 py-6 text-center text-sm text-gray-400">
+                            Tidak ada santri yang cocok.
+                        </p>
+                    </div>
+
+                    <button @click="jalankanReset" :disabled="!resetPilihan.length || syncing"
+                        class="mt-3 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold disabled:opacity-50">
+                        {{ syncing ? 'Memproses…' : `Reset ${resetPilihan.length} Santri` }}
+                    </button>
+                </div>
+            </div>
+
             <div v-if="modeKoreksi" class="mt-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
                 <p class="text-xs text-amber-800 leading-relaxed">
                     <b>Mode koreksi.</b> Santri ini sudah punya data, jadi tombol sinkron biasa dimatikan.
@@ -282,6 +336,37 @@ const modeKoreksi = computed(() => !!santriTerpilih.value && santriSudahAda.valu
 const isiValid = computed(() => sync.juz_lulus.length > 0 || (sync.last_surah && sync.last_ayat))
 const syncValid = computed(() => sync.santri_id && !santriSudahAda.value && isiValid.value)
 const koreksiValid = computed(() => sync.santri_id && isiValid.value)
+
+// ── Reset pencapaian (massal) ────────────────────────────────────────────
+const bukaReset    = ref(false)
+const cariReset    = ref('')
+const resetPilihan = ref([])
+
+// Hanya santri yang PUNYA data yang perlu direset; yang kosong tak ada gunanya.
+const santriReset = computed(() => {
+    const q = cariReset.value.trim().toLowerCase()
+    return props.santriSyncOpsi
+        .filter(s => s.sudah_ada_data)
+        .filter(s => !q || s.nama.toLowerCase().includes(q))
+})
+
+const pilihSemuaReset = () => { resetPilihan.value = santriReset.value.map(s => s.id) }
+
+function jalankanReset() {
+    if (!resetPilihan.value.length) return
+    if (!confirm(
+        `Reset pencapaian ${resetPilihan.value.length} santri? `
+        + 'Jurnal setoran dan absensi TIDAK dihapus. Yang dikosongkan hanya hasil '
+        + 'hitungan hafalan, supaya santri bisa disinkronkan ulang. Setelah disinkron, '
+        + 'setoran yang lulus dihitung kembali otomatis. Lanjutkan?'
+    )) return
+
+    syncing.value = true
+    router.post(route('admin.smart-education.tahfidz.reset-pencapaian'),
+        { santri_ids: resetPilihan.value },
+        { preserveScroll: true, onSuccess: () => { resetPilihan.value = []; bukaReset.value = false },
+          onFinish: () => syncing.value = false })
+}
 
 function koreksi(simulasi) {
     if (!koreksiValid.value) return

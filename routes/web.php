@@ -607,6 +607,8 @@ Route::prefix('admin')
             Route::post('tahfidz/sinkronisasi', [EducationTahfidzController::class, 'sinkronisasi'])->name('tahfidz.sinkronisasi');
             // Koreksi pencapaian walau santri sudah setoran (bangun ulang dari riwayat).
             Route::post('tahfidz/koreksi-pencapaian', [EducationTahfidzController::class, 'koreksiPencapaian'])->name('tahfidz.koreksi-pencapaian');
+            // Reset pencapaian (massal) — jurnal setoran tetap utuh.
+            Route::post('tahfidz/reset-pencapaian', [EducationTahfidzController::class, 'resetPencapaian'])->name('tahfidz.reset-pencapaian');
 
             // ── Monitoring Tahfidz (progres hafalan santri) ───────────────
             Route::get('tahfidz-monitoring', [MonitoringTahfidzController::class, 'index'])->name('tahfidz-monitoring.index');

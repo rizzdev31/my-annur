@@ -76,15 +76,42 @@ class TahfidzController extends Controller
         return back()->with('success', 'Setting tahfidz & pola jadwal diperbarui.');
     }
 
+    /**
+     * RESET pencapaian hafalan (bisa banyak santri sekaligus).
+     *
+     * Hanya mengosongkan hasil hitungan (hafalan_juz + kursor hafalan_santri).
+     * Jurnal setoran & absensi mengajar TIDAK disentuh — setelah disinkronkan
+     * ulang, setoran ziyadah yang lulus otomatis diputar ulang di atas baseline
+     * baru sehingga angkanya kembali utuh.
+     */
+    public function resetPencapaian(Request $request)
+    {
+        $d = $request->validate([
+            'santri_ids'   => 'required|array|min:1',
+            'santri_ids.*' => 'integer|exists:santri,id',
+        ]);
+
+        try {
+            $res = app(TahfidzService::class)->resetPencapaian($d['santri_ids']);
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success',
+            "Pencapaian {$res['santri']} santri direset ({$res['juz_dihapus']} baris juz dihapus). "
+            . "{$res['setoran_dipertahankan']} setoran/jurnal tetap tersimpan — "
+            . 'sinkronkan ulang, setoran akan dihitung otomatis.');
+    }
+
     /** Opsi santri untuk sinkronisasi + kondisi pencapaiannya saat ini. */
     private function santriSyncOpsi()
     {
         $adaData = SetoranTahfidz::distinct()->pluck('santri_id')
             ->merge(HafalanJuz::distinct()->pluck('santri_id'))->unique()->flip();
 
-        // Santri yang sudah punya ziyadah lulus TIDAK bisa disinkron ulang lewat
-        // jalur biasa (anti hitung ganda) — untuk mereka dipakai Koreksi Admin
-        // yang membangun ulang dari baseline + riwayat setoran.
+        // Keterangan saja: santri ini sudah punya setoran ziyadah lulus, jadi
+        // saat disinkronkan ulang setorannya akan diputar ulang di atas baseline
+        // baru (tidak hilang, tidak terhitung ganda).
         $adaZiyadah = SetoranTahfidz::where('jenis', 'ziyadah')->where('lulus', true)
             ->distinct()->pluck('santri_id')->flip();
 
