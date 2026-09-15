@@ -2,6 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\JadwalMengajar;
+use App\Models\Kelas;
+use App\Models\Pengawas;
+use App\Models\PiketJadwal;
+use App\Models\PushSubscription;
 use App\Models\TenagaPendidik;
 use App\Models\RiwayatStatusKepegawaian;
 use App\Models\LogAktivitas;
@@ -59,6 +64,27 @@ class StatusKepegawaianService
                 'status' => $isAktif ? 'aktif' : 'nonaktif',
             ]);
 
+            // Memblokir login saja tidak cukup: guru yang sudah terpasang di PWA
+            // membawa token Sanctum yang tetap sah sampai kedaluwarsa, sehingga
+            // ia masih bisa membuka aplikasi dan menerima notifikasi meski sudah
+            // keluar. Token & langganan push karena itu dicabut saat nonaktif.
+            $dampak = ['token' => 0, 'push' => 0, 'jadwal' => 0];
+            if (!$isAktif) {
+                $dampak['token'] = $guru->user->tokens()->delete();
+                $dampak['push']  = PushSubscription::where('user_id', $guru->user_id)->delete();
+            }
+
+            // Jadwal mengajar hanya dilepas untuk status PERMANEN. Pada cuti atau
+            // nonaktif sementara jadwalnya sengaja dibiarkan utuh karena sesi yang
+            // ditinggalkan ditangani mekanisme guru pengganti dan gurunya kembali.
+            // Untuk yang keluar permanen, membiarkannya aktif membuat kelas yatim:
+            // setiap hari tetap memunculkan sesi yang tidak mungkin terlaksana,
+            // lalu tercatat tidak_terlaksana dan mengeskalasi ke pimpinan.
+            if (RiwayatStatusKepegawaian::isPermanent($statusBaru)) {
+                $dampak['jadwal'] = JadwalMengajar::where('tenaga_pendidik_id', $guru->id)
+                    ->where('is_aktif', true)->update(['is_aktif' => false, 'updated_at' => now()]);
+            }
+
             // Catat riwayat
             $riwayat = RiwayatStatusKepegawaian::create([
                 'tenaga_pendidik_id' => $guru->id,
@@ -79,9 +105,15 @@ class StatusKepegawaianService
                 'model_id'   => $guru->id,
                 'data_lama'  => ['status_kepegawaian' => $statusLama, 'is_aktif' => !$isAktif],
                 'data_baru'  => ['status_kepegawaian' => $statusBaru, 'is_aktif' => $isAktif],
-                'keterangan' => "Status {$guru->user->name}: {$statusLama} → {$statusBaru}. Alasan: " . ($data['alasan'] ?? '-'),
+                'keterangan' => "Status {$guru->user->name}: {$statusLama} → {$statusBaru}. Alasan: " . ($data['alasan'] ?? '-')
+                    . ($dampak['jadwal'] ? " [{$dampak['jadwal']} jadwal mengajar dilepas]" : '')
+                    . ($dampak['token']  ? " [{$dampak['token']} sesi PWA dicabut]" : ''),
                 'ip_address' => request()->ip(),
             ]);
+
+            // Dilekatkan agar pemanggil bisa memberi tahu admin apa saja yang ikut
+            // berubah — perubahan ini tidak boleh terjadi diam-diam.
+            $riwayat->dampak = $dampak;
 
             return $riwayat;
         });
@@ -136,6 +168,30 @@ class StatusKepegawaianService
             throw new \InvalidArgumentException('Tanggal kembali wajib diisi untuk cuti.');
         }
         return $this->ubahStatus($guru, 'cuti', $data);
+    }
+
+    /**
+     * Apa saja yang masih melekat pada guru ini.
+     *
+     * Ditampilkan SEBELUM admin menekan konfirmasi. Menonaktifkan guru yang
+     * masih memegang kelas, menjadi wali kelas, atau terjadwal piket akan
+     * meninggalkan lubang di operasional pesantren — dan lubang itu paling
+     * murah ditutup saat keputusannya diambil, bukan setelah ada yang mengeluh.
+     */
+    public function dampak(TenagaPendidik $guru): array
+    {
+        $jadwal = JadwalMengajar::with('kelasRel:id,nama', 'mataPelajaran:id,nama')
+            ->where('tenaga_pendidik_id', $guru->id)->where('is_aktif', true)->get();
+
+        return [
+            'jadwal_jumlah' => $jadwal->count(),
+            'jadwal_kelas'  => $jadwal->map(fn ($j) => $j->kelasRel?->nama)->filter()->unique()->values()->all(),
+            'jadwal_mapel'  => $jadwal->map(fn ($j) => $j->mataPelajaran?->nama)->filter()->unique()->values()->all(),
+            'wali_kelas'    => Kelas::where('wali_kelas_id', $guru->id)->where('is_aktif', true)->pluck('nama')->all(),
+            'piket'         => PiketJadwal::where('tenaga_pendidik_id', $guru->id)->count(),
+            'pengawas'      => Pengawas::where('tenaga_pendidik_id', $guru->id)->count(),
+            'sesi_pwa'      => $guru->user?->tokens()->count() ?? 0,
+        ];
     }
 
     /**

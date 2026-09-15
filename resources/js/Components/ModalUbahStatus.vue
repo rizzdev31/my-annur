@@ -62,11 +62,35 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
-                            <p class="text-xs text-red-600">
-                                <strong>Perhatian:</strong> Status ini <strong>permanen</strong> dan tidak bisa diubah
-                                kembali ke aktif.
-                                Pastikan data sudah benar sebelum menyimpan.
-                            </p>
+                            <div class="text-xs text-red-600 space-y-1">
+                                <p>
+                                    <strong>Perhatian:</strong> Status ini <strong>permanen</strong> dan tidak bisa
+                                    diubah kembali ke aktif. Pastikan data sudah benar sebelum menyimpan.
+                                </p>
+                                <ul v-if="dampak" class="list-disc list-inside space-y-0.5 pt-1">
+                                    <li v-if="dampak.jadwal_jumlah">
+                                        <strong>{{ dampak.jadwal_jumlah }} jadwal mengajar akan dilepas</strong>
+                                        <span v-if="dampak.jadwal_kelas.length"> — kelas {{ dampak.jadwal_kelas.join(', ') }}</span>.
+                                        Alihkan ke guru lain agar kelasnya tidak kosong.
+                                    </li>
+                                    <li v-if="dampak.wali_kelas.length">
+                                        Masih wali kelas <strong>{{ dampak.wali_kelas.join(', ') }}</strong> — tunjuk penggantinya.
+                                    </li>
+                                    <li v-if="dampak.piket">Masih terdaftar di {{ dampak.piket }} jadwal piket.</li>
+                                    <li v-if="dampak.pengawas">Masih terdaftar sebagai pengawas/pimpinan.</li>
+                                    <li v-if="dampak.sesi_pwa">
+                                        {{ dampak.sesi_pwa }} sesi PWA aktif akan dicabut (tidak bisa buka aplikasi lagi).
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Untuk status sementara jadwal sengaja dipertahankan. -->
+                        <div v-else-if="isStatusSementara && dampak?.jadwal_jumlah"
+                            class="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700">
+                            {{ dampak.jadwal_jumlah }} jadwal mengajar <strong>tetap aktif</strong> karena statusnya
+                            sementara — sesi yang ditinggalkan ditangani mekanisme guru pengganti.
+                            Akses PWA dicabut selama nonaktif.
                         </div>
                     </div>
 
@@ -180,8 +204,12 @@ const form = ref({
     dokumen_file: null,
 })
 
+// Apa yang masih melekat pada guru — diambil saat modal dibuka agar admin
+// melihat konsekuensinya sebelum memutuskan, bukan sesudahnya.
+const dampak = ref(null)
+
 // Reset form saat modal dibuka
-watch(() => props.show, (val) => {
+watch(() => props.show, async (val) => {
     if (val) {
         form.value = {
             status_baru: '',
@@ -192,6 +220,16 @@ watch(() => props.show, (val) => {
         }
         errors.value = {}
         dokumenNama.value = ''
+        dampak.value = null
+
+        try {
+            const res = await fetch(route('admin.master.tenaga-pendidik.dampak-status', props.guru.id),
+                { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+            if (res.ok) dampak.value = await res.json()
+        } catch (e) {
+            // Gagal memuat pratinjau tidak boleh menghalangi admin mengubah status.
+            dampak.value = null
+        }
     }
 })
 

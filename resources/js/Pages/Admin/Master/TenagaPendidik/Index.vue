@@ -206,6 +206,18 @@
                             <td class="px-5 py-3.5">
                                 <div class="flex items-center justify-end gap-1">
 
+                                    <!-- Ubah Status (resign / cuti / pensiun). Badge status juga
+                                         bisa diklik, tetapi terbaca sebagai label sehingga jarang
+                                         ditemukan — tombol ini yang membuat fiturnya terlihat. -->
+                                    <button v-if="!guru.is_permanen" @click="bukaModalStatus(guru)"
+                                        class="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                        title="Ubah Status Kepegawaian (resign, cuti, pensiun)">
+                                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                        </svg>
+                                    </button>
+
                                     <!-- Aktifkan Kembali (hanya jika sementara & bukan aktif) -->
                                     <button v-if="guru.bisa_aktif_kembali && guru.status_kepegawaian !== 'aktif'"
                                         @click="bukaModalAktifkan(guru)"

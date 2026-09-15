@@ -90,6 +90,8 @@ class TenagaPendidikController extends Controller
                 'status_badge'         => $g->status_badge,
                 'bisa_aktif_kembali'   => $g->bisaAktifKembali(),
                 'alasan_nonaktif'      => $g->alasan_nonaktif,
+                'tanggal_keluar'       => $g->tanggal_keluar?->format('d M Y'),
+                'is_permanen'          => \App\Models\RiwayatStatusKepegawaian::isPermanent($g->status_kepegawaian ?? 'aktif'),
             ];
         });
 
@@ -481,6 +483,15 @@ class TenagaPendidikController extends Controller
      * Ubah status kepegawaian (cuti, resign, nonaktif, dll).
      * Endpoint: POST /admin/master/tenaga-pendidik/{id}/ubah-status
      */
+    /**
+     * Pratinjau apa saja yang masih melekat pada guru, dibaca modal sebelum
+     * admin menekan konfirmasi. Endpoint: GET .../{id}/dampak-status
+     */
+    public function dampakStatus(TenagaPendidik $tenagaPendidik)
+    {
+        return response()->json($this->statusService->dampak($tenagaPendidik));
+    }
+
     public function ubahStatus(Request $request, TenagaPendidik $tenagaPendidik)
     {
         $request->validate([
@@ -501,9 +512,18 @@ class TenagaPendidikController extends Controller
             );
 
             $statusLabel = \App\Models\RiwayatStatusKepegawaian::labelStatus($request->status_baru);
+            $d = $riwayat->dampak ?? [];
+
+            // Efek samping disebutkan eksplisit: admin harus tahu kelas mana yang
+            // kini tanpa guru, bukan menemukannya sendiri beberapa hari kemudian.
+            $imbuhan = collect([
+                ($d['jadwal'] ?? 0) ? "{$d['jadwal']} jadwal mengajar dilepas — segera alihkan ke guru lain" : null,
+                ($d['token']  ?? 0) ? "akses PWA dicabut" : null,
+            ])->filter()->implode('; ');
 
             return back()->with('success',
                 "Status {$tenagaPendidik->user->name} berhasil diubah menjadi {$statusLabel}."
+                . ($imbuhan ? " ({$imbuhan})" : '')
             );
 
         } catch (\InvalidArgumentException $e) {

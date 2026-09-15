@@ -166,6 +166,21 @@ Route::prefix('admin')
                 [TenagaPendidikController::class, 'rekapAbsensi'])->name('tenaga-pendidik.rekap-absensi');
             Route::patch('tenaga-pendidik/{tenagaPendidik}/toggle-status',
                 [TenagaPendidikController::class, 'toggleStatus'])->name('tenaga-pendidik.toggle-status');
+
+            // ── Status Kepegawaian (resign/cuti/pensiun + aktif kembali) ──
+            // Harus satu grup dengan halamannya (admin.master.*): sebelumnya
+            // terdaftar di grup smart-payroll, sehingga route() yang dipanggil
+            // Index.vue tidak ditemukan Ziggy dan seluruh tombol status diam
+            // tanpa pesan — fiturnya tampak "belum ada" padahal sudah lengkap.
+            Route::post('tenaga-pendidik/{tenagaPendidik}/ubah-status',
+                [TenagaPendidikController::class, 'ubahStatus'])->name('tenaga-pendidik.ubah-status');
+            Route::patch('tenaga-pendidik/{tenagaPendidik}/aktifkan',
+                [TenagaPendidikController::class, 'aktifkanKembali'])->name('tenaga-pendidik.aktifkan');
+            Route::get('tenaga-pendidik/{tenagaPendidik}/riwayat-status',
+                [TenagaPendidikController::class, 'riwayatStatus'])->name('tenaga-pendidik.riwayat-status');
+            // Pratinjau beban yang masih melekat, dibaca sebelum konfirmasi.
+            Route::get('tenaga-pendidik/{tenagaPendidik}/dampak-status',
+                [TenagaPendidikController::class, 'dampakStatus'])->name('tenaga-pendidik.dampak-status');
             Route::post('tenaga-pendidik/{tenagaPendidik}/libur/setujui',
                 [TenagaPendidikController::class, 'setujuiLibur'])->name('tenaga-pendidik.libur.setujui');
             Route::post('tenaga-pendidik/{tenagaPendidik}/libur/tolak',
@@ -550,13 +565,6 @@ Route::prefix('admin')
                 [SettingJenisPengajuanController::class, 'toggleAktif'])->name('setting-pengajuan.toggle-aktif');
             Route::resource('setting-pengajuan', SettingJenisPengajuanController::class);
 
-            // ── Status Kepegawaian ────────────────────────────────────────
-            Route::post('tenaga-pendidik/{tenagaPendidik}/ubah-status',
-                [TenagaPendidikController::class, 'ubahStatus'])->name('tenaga-pendidik.ubah-status');
-            Route::patch('tenaga-pendidik/{tenagaPendidik}/aktifkan',
-                [TenagaPendidikController::class, 'aktifkanKembali'])->name('tenaga-pendidik.aktifkan');
-            Route::get('tenaga-pendidik/{tenagaPendidik}/riwayat-status',
-                [TenagaPendidikController::class, 'riwayatStatus'])->name('tenaga-pendidik.riwayat-status');
         });
 
         // ╔══════════════════════════════════════════════════════════════════╗
