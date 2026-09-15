@@ -128,7 +128,8 @@
             <Card title="Tren Kehadiran (7 Hari)" icon="trend">
                 <div class="flex items-end justify-between gap-2 h-36 pt-2">
                     <div v-for="(t, i) in trenKehadiran" :key="i"
-                        class="flex-1 flex flex-col items-center gap-1.5 group" :title="`${t.label}: ${t.hadir} hadir`">
+                        class="flex-1 flex flex-col items-center gap-1.5 group"
+                        :title="`${t.tanggal || t.label}: ${t.hadir} hadir dari ${stats.total_guru} guru (${t.persen}%)`">
                         <span class="text-[10px] font-bold text-gray-400 group-hover:text-indigo-600 transition-colors">{{ t.hadir }}</span>
                         <div class="w-full bg-gray-100 rounded-lg overflow-hidden flex items-end" style="height:100px">
                             <div class="w-full rounded-lg transition-all duration-700 ease-out"

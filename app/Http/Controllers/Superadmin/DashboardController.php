@@ -55,18 +55,29 @@ class DashboardController extends Controller
         ];
 
         // ── Tren kehadiran 7 hari terakhir ───────────────────────────────────
+        // Pengelompokan dikerjakan SQL, bukan memfilter koleksi di PHP: kolom
+        // `tanggal` di-cast ke Carbon, sehingga membandingkannya dengan string
+        // tanggal ('2026-09-15') tidak pernah cocok dan seluruh batang grafik
+        // jatuh ke nol meskipun datanya ada.
         $mulai7 = $today->copy()->subDays(6);
-        $absen7 = AbsensiHarian::whereBetween('tanggal', [$mulai7->toDateString(), $today->toDateString()])
-            ->get(['tanggal', 'status']);
+        $hadirPerHari = AbsensiHarian::query()
+            ->whereBetween('tanggal', [$mulai7->toDateString(), $today->toDateString()])
+            ->whereIn('status', ['hadir', 'terlambat', 'dinas_luar'])
+            ->selectRaw('DATE(tanggal) as tgl, COUNT(*) as jml')
+            ->groupBy('tgl')->pluck('jml', 'tgl');
+
         $trenKehadiran = [];
         for ($d = $mulai7->copy(); $d->lte($today); $d->addDay()) {
             $tgl = $d->toDateString();
-            $h = $absen7->where('tanggal', $tgl)
-                ->whereIn('status', ['hadir', 'terlambat', 'dinas_luar'])->count();
+            $h   = (int) ($hadirPerHari[$tgl] ?? 0);
             $trenKehadiran[] = [
-                'label'  => $d->locale('id')->isoFormat('dd'),
-                'hadir'  => $h,
-                'persen' => $totalGuru > 0 ? round($h / $totalGuru * 100) : 0,
+                'label'   => $d->locale('id')->isoFormat('dd'),
+                'tanggal' => $d->locale('id')->isoFormat('D MMM'),
+                'hadir'   => $h,
+                // Penyebut disamakan dengan donut di sebelahnya (seluruh guru
+                // aktif) agar kedua kartu tidak menyebut persentase berbeda
+                // untuk hari yang sama.
+                'persen'  => $totalGuru > 0 ? min(100, (int) round($h / $totalGuru * 100)) : 0,
             ];
         }
 
