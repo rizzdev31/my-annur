@@ -79,10 +79,15 @@ class TandaiSesiTidakTerlaksana extends Command
     {
         if ($sesi->isEmpty()) return;
 
-        $baris = $sesi->map(function ($am) {
+        // Untuk sesi inval yang tidak datang, yang bertanggung jawab adalah penggantinya.
+        $penanggungJawab = fn ($am) => $am->digantikan_oleh
+            ? \App\Models\TenagaPendidik::with('user:id,name')->find($am->digantikan_oleh)?->user
+            : $am->jadwalMengajar->tenagaPendidik?->user;
+
+        $baris = $sesi->map(function ($am) use ($penanggungJawab) {
             $j = $am->jadwalMengajar;
             return ($j->mataPelajaran?->nama ?? 'KBM') . ' ' . ($j->kelasRel?->nama ?? $j->kelas)
-                . ' — ' . ($j->tenagaPendidik?->user?->name ?? 'Guru')
+                . ' — ' . ($penanggungJawab($am)?->name ?? 'Guru') . ($am->digantikan_oleh ? ' (inval)' : '')
                 . ' (' . substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5) . ')';
         });
 
@@ -105,16 +110,17 @@ class TandaiSesiTidakTerlaksana extends Command
 
         foreach ($sesi as $am) {
             $j = $am->jadwalMengajar;
-            $user = $j->tenagaPendidik?->user;
+            $user = $penanggungJawab($am);
             if (!$user) continue;
 
             NotifikasiService::event('mengajar.tidak_terlaksana', [
-                'judul' => 'Sesi tercatat tidak terlaksana',
+                'judul' => $am->digantikan_oleh ? 'Kelas inval tercatat tidak terlaksana' : 'Sesi tercatat tidak terlaksana',
                 'pesan' => ($j->mataPelajaran?->nama ?? 'Sesi') . ' ' . ($j->kelasRel?->nama ?? $j->kelas)
                     . ' tidak diabsen sampai ' . $svc->batasJam($tanggal, (string) $j->jam_selesai)
-                    . '. JP sesi ini tidak diberikan dan tercatat di kinerja. Absensi santri masih bisa diisi.',
+                    . '. JP sesi ini tidak diberikan dan tercatat di kinerja Anda.'
+                    . ($am->digantikan_oleh ? '' : ' Absensi santri masih bisa diisi.'),
                 'tipe'  => 'tugas_update',
-                'data'  => ['route' => '/mengajar'],
+                'data'  => ['route' => $am->digantikan_oleh ? '/kelas-pengganti' : '/mengajar'],
                 'dedup' => 'tt-guru-' . $am->id,
             ], [$user]);
         }

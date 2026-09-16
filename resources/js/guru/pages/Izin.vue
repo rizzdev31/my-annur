@@ -90,8 +90,17 @@ const semSaving = ref(false)
 const izinSemDone = ref(false)
 const izinSemId = ref(null)
 const semBatal = ref(false)
-const sesiTerdampak = ref([])      // {jadwal_mengajar_id, mapel, kelas, jam_*, pengganti_id, pengganti_nama, assigning}
-const penggantiOpsi = ref([])
+const sesiTerdampak = ref([])      // {jadwal_mengajar_id, tipe, mapel, kelas, jam_*, pengganti_id, pengganti_nama, assigning, opsi}
+
+// Calon pengganti dimuat PER SESI — hanya guru yang kosong di jam itu.
+async function loadOpsi(s) {
+    try {
+        const o = await api.get('/absensi/mengajar/pengganti-opsi', {
+            params: { jadwal_mengajar_id: s.jadwal_mengajar_id, tanggal: tanggalLokal() },
+        })
+        s.opsi = o.data.data ?? []
+    } catch (_) { s.opsi = [] }
+}
 
 function resetSem() {
     showSem.value = false; izinSemDone.value = false; sesiTerdampak.value = []
@@ -111,12 +120,10 @@ async function ajukanSementara() {
         })
         const d = res.data.data ?? {}
         izinSemId.value = d.izin_id ?? null
-        sesiTerdampak.value = (d.sesi_terdampak ?? []).map(s => ({ ...s, pengganti_id: '', pengganti_nama: null, assigning: false }))
+        sesiTerdampak.value = (d.sesi_terdampak ?? []).map(s => ({ ...s, pengganti_id: '', pengganti_nama: null, assigning: false, opsi: null }))
         izinSemDone.value = true
         msg.value = { ok: true, text: res.data.message }
-        if (!penggantiOpsi.value.length) {
-            try { const o = await api.get('/absensi/mengajar/pengganti-opsi'); penggantiOpsi.value = o.data.data ?? [] } catch (_) {}
-        }
+        sesiTerdampak.value.forEach(loadOpsi)
         await load()
     } catch (e) {
         const errs = e.response?.data?.errors
@@ -147,7 +154,7 @@ async function tunjukPengganti(sesi) {
             tanggal: tanggalLokal(),
             keterangan: `Izin sementara ${semForm.value.jam_mulai}–${semForm.value.jam_selesai}`,
         })
-        sesi.pengganti_nama = penggantiOpsi.value.find(o => o.id == sesi.pengganti_id)?.nama || 'Pengganti'
+        sesi.pengganti_nama = (sesi.opsi || []).find(o => o.id == sesi.pengganti_id)?.nama || 'Pengganti'
     } catch (e) {
         msg.value = { ok: false, text: e.response?.data?.message || 'Gagal menunjuk pengganti.' }
     } finally { sesi.assigning = false }
@@ -294,16 +301,20 @@ async function tunjukPengganti(sesi) {
                         <p class="text-xs text-gray-500">{{ sesiTerdampak.length }} sesi mengajar beririsan — tunjuk pengganti (opsional; jika tidak, kelas kosong & JP hangus).</p>
                         <div v-for="s in sesiTerdampak" :key="s.jadwal_mengajar_id" class="rounded-xl border border-gray-100 p-3">
                             <div class="flex items-center justify-between">
-                                <p class="text-sm font-semibold text-gray-800">{{ s.mapel }} <span class="text-gray-400 font-normal">· {{ s.kelas }}</span></p>
+                                <p class="text-sm font-semibold text-gray-800">{{ s.mapel }} <span class="text-gray-400 font-normal">· {{ s.kelas }}</span>
+                                    <span v-if="s.tipe && s.tipe !== 'reguler'" class="ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded capitalize"
+                                        :class="s.tipe === 'tahfidz' ? 'bg-emerald-50 text-emerald-600' : 'bg-violet-50 text-violet-600'">{{ s.tipe }}</span>
+                                </p>
                                 <span class="text-[11px] text-gray-400 tabular-nums">{{ s.jam_mulai }}–{{ s.jam_selesai }}</span>
                             </div>
                             <div v-if="s.pengganti_nama" class="mt-2 text-xs text-emerald-600 font-semibold flex items-center gap-1">
                                 ✓ Pengganti: {{ s.pengganti_nama }}
                             </div>
+                            <p v-else-if="s.opsi && !s.opsi.length" class="mt-2 text-xs text-red-600">Tidak ada guru yang kosong di jam ini.</p>
                             <div v-else class="mt-2 flex gap-2">
-                                <select v-model="s.pengganti_id" class="flex-1 px-2.5 py-2 rounded-lg border border-gray-200 text-xs outline-none focus:border-amber-500">
-                                    <option value="">— pilih pengganti —</option>
-                                    <option v-for="o in penggantiOpsi" :key="o.id" :value="o.id">{{ o.nama }}</option>
+                                <select v-model="s.pengganti_id" :disabled="!s.opsi" class="flex-1 px-2.5 py-2 rounded-lg border border-gray-200 text-xs outline-none focus:border-amber-500">
+                                    <option value="">{{ s.opsi ? '— pilih pengganti —' : 'Memuat…' }}</option>
+                                    <option v-for="o in (s.opsi || [])" :key="o.id" :value="o.id">{{ o.nama }}</option>
                                 </select>
                                 <button @click="tunjukPengganti(s)" :disabled="!s.pengganti_id || s.assigning"
                                     class="px-3 py-2 rounded-lg bg-[#0C78FF] text-white text-xs font-bold disabled:opacity-50">

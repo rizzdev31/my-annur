@@ -23,11 +23,16 @@ const foto = ref(null)
 const fotoPreview = ref(null)
 const saving = ref(false)
 
-// Guru pengganti (saat izin)
-const penggantiOpsi = ref([])
-async function loadPengganti() {
-    if (penggantiOpsi.value.length) return
-    try { const o = await api.get('/absensi/mengajar/pengganti-opsi'); penggantiOpsi.value = o.data.data ?? [] } catch (_) {}
+// Guru pengganti (saat izin) — calon dimuat PER SESI: hanya guru yang benar-benar
+// kosong di jam itu. Untuk tahfidz/tahsin semua sesama pengampu sedang mengajar,
+// jadi daftar umum hanya akan berisi pilihan yang pasti ditolak.
+async function loadPengganti(j) {
+    try {
+        const o = await api.get('/absensi/mengajar/pengganti-opsi', {
+            params: { jadwal_mengajar_id: j.jadwal_id, tanggal: tanggalLokal() },
+        })
+        j.opsi = o.data.data ?? []
+    } catch (_) { j.opsi = [] }
 }
 async function tunjukPengganti(j) {
     if (!j.pengganti_id) { msg.value = { ok: false, text: 'Pilih guru pengganti dulu.' }; return }
@@ -68,9 +73,9 @@ async function load() {
     try {
         const res = await api.get('/absensi/mengajar/hari-ini')
         info.value = res.data.data ?? res.data
-        jadwal.value = (info.value.jadwal ?? []).map(j => ({ ...j, pengganti_id: '', assigning: false }))
-        // Muat opsi pengganti bila ada sesi saat izin yang bisa ditunjuk pengganti.
-        if (jadwal.value.some(j => j.boleh_tunjuk_pengganti)) loadPengganti()
+        jadwal.value = (info.value.jadwal ?? []).map(j => ({ ...j, pengganti_id: '', assigning: false, opsi: null }))
+        // Muat calon pengganti untuk sesi yang masih bisa ditunjuk.
+        jadwal.value.filter(j => j.boleh_tunjuk_pengganti).forEach(loadPengganti)
     } catch (e) {
         error.value = e.response?.data?.message || 'Gagal memuat jadwal mengajar.'
     } finally { loading.value = false }
@@ -152,7 +157,7 @@ async function kirim() {
                             <p class="text-[11px] text-gray-400">{{ j.kelas }} · {{ j.jumlah_jp }} JP<span v-if="j.ruangan && j.ruangan !== '—'"> · {{ j.ruangan }}</span></p>
 
                             <!-- Pengganti sudah ditunjuk (belum mengajar) -->
-                            <div v-if="j.digantikan_oleh && (j.jp_terlaksana ?? 0) === 0"
+                            <div v-if="j.digantikan_oleh && j.status === 'pengganti' && (j.jp_terlaksana ?? 0) === 0"
                                 class="mt-2 rounded-xl bg-sky-50 border border-sky-100 p-2.5">
                                 <div class="flex items-center justify-between gap-2">
                                     <p class="text-[11px] text-sky-700 min-w-0 truncate">👤 Pengganti: <b>{{ j.pengganti_nama || 'Ditunjuk' }}</b></p>
@@ -161,6 +166,21 @@ async function kirim() {
                                 </div>
                                 <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
                                     class="mt-2 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">Batalkan &amp; ajar sendiri</button>
+                            </div>
+
+                            <!-- Tidak terlaksana: jangan tampil seperti sukses -->
+                            <div v-else-if="j.status === 'tidak_terlaksana'" class="mt-2">
+                                <span class="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                                    ✕ Tidak terlaksana{{ j.pengganti_nama ? ` · inval ${j.pengganti_nama} tidak mengisi` : '' }}
+                                </span>
+                                <p class="text-[10px] text-gray-400 mt-1">JP tidak diberikan · tercatat di kinerja</p>
+                            </div>
+
+                            <!-- Pengganti sudah mengajar -->
+                            <div v-else-if="j.status === 'pengganti'" class="mt-2">
+                                <span class="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
+                                    ✓ Diinval {{ j.pengganti_nama || '' }}
+                                </span>
                             </div>
 
                             <!-- Sudah benar-benar diabsen/diajar -->
@@ -187,11 +207,20 @@ async function kirim() {
                                 <p class="text-[11px] font-bold text-amber-700 mb-1.5 leading-snug">
                                     Anda izin ({{ j.info_izin }}){{ j.is_dinas_luar ? ' — dinas luar' : '' }} · kelas ini kosong
                                 </p>
+                                <p v-if="j.tipe === 'tahfidz'" class="text-[10px] text-amber-600 mb-1.5 leading-snug">
+                                    Inval tahfidz mengisi absen, jurnal, dan murojaah selama jam kelas. Hafalan baru & tasmi' tetap oleh Anda.
+                                </p>
+                                <p v-else-if="j.tipe === 'tahsin'" class="text-[10px] text-amber-600 mb-1.5 leading-snug">
+                                    Inval tahsin mengisi absen, jurnal, dan catatan materi selama jam kelas. Penilaian kelulusan tetap oleh Anda.
+                                </p>
+                                <p v-if="j.opsi && !j.opsi.length" class="text-[11px] text-red-600 mb-1.5">
+                                    Tidak ada guru yang kosong di jam ini.
+                                </p>
                                 <div class="flex gap-1.5">
-                                    <select v-model="j.pengganti_id"
+                                    <select v-model="j.pengganti_id" :disabled="!j.opsi"
                                         class="flex-1 min-w-0 px-2 py-2 rounded-lg border border-gray-200 text-[12px] outline-none bg-white truncate">
-                                        <option value="">Pilih guru pengganti…</option>
-                                        <option v-for="o in penggantiOpsi" :key="o.id" :value="o.id">{{ o.nama }}</option>
+                                        <option value="">{{ j.opsi ? `Pilih guru pengganti… (${j.opsi.length} kosong)` : 'Memuat…' }}</option>
+                                        <option v-for="o in (j.opsi || [])" :key="o.id" :value="o.id">{{ o.nama }}</option>
                                     </select>
                                     <button @click="tunjukPengganti(j)" :disabled="!j.pengganti_id || j.assigning"
                                         class="shrink-0 whitespace-nowrap px-3.5 py-2 rounded-lg bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-50 active:scale-[0.98] transition">

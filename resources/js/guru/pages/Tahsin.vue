@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader.vue'
 
 const tanggal = ref('')
 const jadwal = ref([])
+const inval = ref([])   // kelas tahsin yang Anda gantikan hari ini
 const loading = ref(true)
 const error = ref('')
 
@@ -16,6 +17,7 @@ async function load() {
         const d = res.data.data ?? res.data
         tanggal.value = d.tanggal
         jadwal.value = d.jadwal ?? []
+        inval.value = d.inval ?? []
     } catch (e) {
         error.value = e.response?.data?.message || 'Gagal memuat kelas tahsin.'
     } finally { loading.value = false }
@@ -48,6 +50,7 @@ const groups = computed(() => {
             totalSesi: list.length,
             adaHariIni: list.some((j) => j.is_today),
             sudahAbsenHariIni: list.some((j) => j.is_today && j.sudah_absen),
+            diinvalOleh: list.find((j) => j.is_today && j.diinval_oleh)?.diinval_oleh ?? null,
             wajibAbsen: list.some((j) => j.is_today && j.wajib_absen),
             dalamJam: list.some((j) => j.dalam_jam),
         })
@@ -72,7 +75,23 @@ const groups = computed(() => {
             <p class="text-xs text-gray-400 mb-1">{{ tanggal }}</p>
             <p class="text-[11px] text-gray-400 mb-3">Penilaian/jurnal bisa kapan saja · absen saat jam mengajar.</p>
 
-            <div v-if="!groups.length" class="pt-16 text-center text-sm text-gray-400">Anda belum memegang kelas tahsin.</div>
+            <!-- Kelas yang Anda INVAL hari ini -->
+            <template v-if="inval.length">
+                <h2 class="text-sm font-bold text-gray-800 mb-2">Kelas Inval Hari Ini</h2>
+                <ul class="space-y-2 mb-5">
+                    <RouterLink v-for="k in inval" :key="k.absensi_mengajar_id" :to="{ name: 'tahsin-roster', params: { jadwalId: k.jadwal_id } }"
+                        class="block rounded-2xl bg-sky-50 border border-sky-100 p-3.5">
+                        <p class="text-sm font-bold text-gray-800">{{ k.kelas }} <span class="font-normal text-gray-500">· {{ k.jam }}</span></p>
+                        <p class="text-[11px] text-sky-700">Gantikan {{ k.guru_asli }}</p>
+                        <span v-if="k.status === 'tidak_terlaksana'" class="inline-block mt-1.5 text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">✕ Tidak terlaksana</span>
+                        <span v-else-if="k.sudah_diisi" class="inline-block mt-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">✓ Sudah diabsen</span>
+                        <span v-else-if="k.dalam_jam" class="inline-block mt-1.5 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Berlangsung — isi sekarang</span>
+                        <span v-else class="inline-block mt-1.5 text-[10px] font-bold text-gray-500 bg-white px-2 py-0.5 rounded-full">Hanya bisa diisi saat jam kelas</span>
+                    </RouterLink>
+                </ul>
+            </template>
+
+            <div v-if="!groups.length && !inval.length" class="pt-16 text-center text-sm text-gray-400">Anda belum memegang kelas tahsin.</div>
 
             <ul v-else class="space-y-3">
                 <RouterLink v-for="g in groups" :key="g.kelasId" :to="{ name: 'tahsin-roster', params: { jadwalId: g.jadwalId } }"
@@ -87,6 +106,7 @@ const groups = computed(() => {
                             <p class="text-[11px] text-gray-400">{{ g.mapel }}<span v-if="g.level"> · Level {{ g.level }}</span> · {{ g.jumlahSantri }} santri · {{ g.totalSesi }} sesi/minggu</p>
                             <div class="flex items-center gap-1.5 mt-2">
                                 <span v-if="!g.adaHariIni" class="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Tak ada sesi hari ini</span>
+                                <span v-else-if="g.diinvalOleh" class="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">Diinval {{ g.diinvalOleh }}</span>
                                 <span v-else-if="g.sudahAbsenHariIni" class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">✓ Sudah absen</span>
                                 <span v-else-if="g.wajibAbsen" class="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Perlu absen</span>
                                 <span v-else-if="g.dalamJam" class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Berlangsung</span>

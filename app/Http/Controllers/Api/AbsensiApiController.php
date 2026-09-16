@@ -1057,6 +1057,62 @@ class AbsensiApiController extends Controller
             ];
         });
 
+        // Saat izin, sesi TAHFIDZ & TAHSIN ikut ditampilkan — HANYA untuk menunjuk
+        // pengganti. Absen, konfirmasi izin, dan "ajar sendiri" tetap lewat menu
+        // Tahfidz/Tahsin, jadi semua aksi itu dimatikan di sini.
+        if ($isIzinGuru && !$isHariLibur) {
+            $lain = \App\Models\JadwalMengajar::with(['mataPelajaran', 'kelasRel'])
+                ->where('tenaga_pendidik_id', $tp->id)->where('hari', $namaHari)->where('is_aktif', true)
+                ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+                ->whereHas('mataPelajaran', fn($q) => $q->whereIn('tipe', ['tahfidz', 'tahsin']))
+                ->orderBy('jam_mulai')->get();
+
+            $data = $data->concat($lain->map(function ($jadwal) use ($absensiAda, $today, $sekarang, $izinAktif) {
+                $absensi   = $absensiAda->get($jadwal->id);
+                $selesai   = Carbon::parse($today->toDateString().' '.$jadwal->jam_selesai, TimezoneHelper::TZ);
+                $belumDiajar = $absensi === null || $absensi->status === 'izin'
+                    || ($absensi->status === 'pengganti' && is_null($absensi->jam_selesai_aktual));
+                $tipe = $jadwal->mataPelajaran?->tipe;
+
+                return [
+                    'jadwal_id'      => $jadwal->id,
+                    'mata_pelajaran' => $jadwal->mataPelajaran?->nama ?? '—',
+                    'tipe'           => $tipe,
+                    'kelas'          => $jadwal->kelasRel?->nama ?? $jadwal->kelas,
+                    'ruangan'        => $jadwal->ruangan ?? '—',
+                    'jam_mulai'      => $jadwal->jam_mulai,
+                    'jam_selesai'    => $jadwal->jam_selesai,
+                    'batas_absen'    => substr((string) $jadwal->jam_selesai, 0, 5),
+                    'jumlah_jp'      => $jadwal->jumlah_jp,
+                    'durasi_menit'   => $jadwal->jumlah_jp * 45,
+                    'is_hari_libur'  => false,
+                    'nama_libur'     => null,
+                    'is_izin_guru'   => true,
+                    'info_izin'      => $izinAktif->jenisPengajuan?->nama ?? 'Izin',
+                    'boleh_absen'           => false,
+                    'boleh_konfirmasi_izin' => false,
+                    // Inval hanya bisa mengisi di jam mengajar → penunjukan ditutup saat jam selesai.
+                    'boleh_tunjuk_pengganti'=> $belumDiajar && $sekarang->lte($selesai),
+                    'boleh_override_izin'   => false,
+                    'is_dinas_luar'         => false,
+                    'pesan_blokir'   => $sekarang->gt($selesai)
+                        ? 'Jam kelas sudah berakhir — pengganti tidak bisa ditunjuk lagi.'
+                        : 'Kelas ' . $tipe . ' — tunjuk pengganti di sini.',
+                    'sudah_absen'       => $absensi !== null,
+                    'absensi_id'        => $absensi?->id,
+                    'status'            => $absensi?->status,
+                    'jp_terlaksana'     => $absensi?->jp_terlaksana,
+                    'jam_mulai_aktual'  => null,
+                    'materi'            => $absensi?->materi,
+                    'keterangan'        => $absensi?->keterangan,
+                    'foto_url'          => null,
+                    'sudah_buka_jurnal' => (bool) ($absensi?->sudah_buka_jurnal ?? false),
+                    'digantikan_oleh'   => $absensi?->digantikan_oleh,
+                    'pengganti_nama'    => $absensi?->digantikanOleh?->user?->name,
+                ];
+            }))->sortBy('jam_mulai')->values();
+        }
+
         return response()->json([
             'success' => true,
             'data'    => [
@@ -1179,6 +1235,19 @@ class AbsensiApiController extends Controller
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return response()->json(['success' => false, 'message' => 'Data tidak ditemukan.'], 404);
 
+        // Dengan jadwal → hanya guru yang benar-benar kosong di jam itu (tidak izin,
+        // tidak mengajar, tidak sedang menginval kelas lain). Tanpa filter ini
+        // daftar berisi semua guru dan penolakan baru muncul setelah dipilih —
+        // untuk tahfidz/tahsin, seluruh sesama pengampu pasti bentrok.
+        if ($request->filled('jadwal_mengajar_id')) {
+            $jadwal = \App\Models\JadwalMengajar::find((int) $request->jadwal_mengajar_id);
+            if ($jadwal && $jadwal->tenaga_pendidik_id === $tp->id) {
+                $tgl = $request->filled('tanggal') ? Carbon::parse($request->tanggal) : TimezoneHelper::today();
+                return response()->json(['success' => true, 'data' =>
+                    (new \App\Services\PenggantiMengajarService())->calonPengganti($jadwal, $tgl, $tp->id)]);
+            }
+        }
+
         $guru = \App\Models\TenagaPendidik::aktif()->where('id', '!=', $tp->id)
             ->with('user:id,name')->get()
             ->map(fn($g) => ['id' => $g->id, 'nama' => $g->user?->name ?? '—'])->values();
@@ -1222,45 +1291,48 @@ class AbsensiApiController extends Controller
         $today    = TimezoneHelper::tanggalDariRequest($request->device_date);
         $sekarang = TimezoneHelper::now();
 
-        $list = (new \App\Services\PenggantiMengajarService())->penggantiSaya($tp->id, $today)
+        $svc  = new \App\Services\PenggantiMengajarService();
+        $list = $svc->penggantiSaya($tp->id, $today)
             ->map(function ($a) use ($today, $sekarang) {
-                $jamSelesai = (string) $a->jadwalMengajar?->jam_selesai;
-                $tglSesi    = $a->tanggal?->toDateString();
-                $hariIni    = $tglSesi === $today->toDateString();
+                $j       = $a->jadwalMengajar;
+                $tglSesi = $a->tanggal?->toDateString();
+                $hariIni = $tglSesi === $today->toDateString();
+                $tipe    = $j?->mataPelajaran?->tipe ?? 'reguler';
 
-                // Batas absen = jam_selesai + tenggang. Lewat itu JP hangus, jadi
-                // klien HARUS tahu agar bisa memperingatkan SEBELUM guru mengirim.
-                $batas    = $jamSelesai ? \App\Services\KebijakanMengajar::batasAbsenSesi($tglSesi, $jamSelesai) : null;
-                $lewatJam = $hariIni && $batas && $sekarang->gt($batas);
-                $jpJadwal = $a->jadwalMengajar?->jumlah_jp ?? 0;
+                // Inval hanya bisa mengisi SELAMA jam mengajar (keputusan 17 Sep 2026).
+                $mulai   = $j ? Carbon::parse($tglSesi.' '.$j->jam_mulai, TimezoneHelper::TZ) : null;
+                $selesai = $j ? Carbon::parse($tglSesi.' '.$j->jam_selesai, TimezoneHelper::TZ) : null;
+                $dalamJam   = $hariIni && $mulai && $sekarang->betweenIncluded($mulai, $selesai);
+                $belumMulai = !$hariIni || ($mulai && $sekarang->lt($mulai));
 
                 return [
                     'absensi_id'     => $a->id,
                     'jadwal_id'      => $a->jadwal_mengajar_id,
-                    'mata_pelajaran' => $a->jadwalMengajar?->mataPelajaran?->nama ?? '—',
-                    'kelas'          => $a->jadwalMengajar?->kelas ?? '—',
-                    'jam_mulai'      => $a->jadwalMengajar?->jam_mulai,
-                    'jam_selesai'    => $jamSelesai,
-                    'jumlah_jp'      => $jpJadwal,
+                    'tipe'           => $tipe, // reguler|tahfidz|tahsin
+                    'mata_pelajaran' => $j?->mataPelajaran?->nama ?? '—',
+                    'kelas'          => $j?->kelasRel?->nama ?? $j?->kelas ?? '—',
+                    'jam_mulai'      => $j?->jam_mulai,
+                    'jam_selesai'    => $j?->jam_selesai,
+                    'jumlah_jp'      => $j?->jumlah_jp ?? 0,
                     'guru_asli'      => $a->tenagaPendidik?->user?->name ?? '—',
                     'keterangan'     => $a->keterangan,
                     'tanggal'        => $tglSesi,
                     'is_hari_ini'    => $hariIni,
-                    // "sudah diajar" = sudah absen (jam_selesai_aktual terisi), bukan jp>0
-                    // (kasus telat: jp=0 tapi sesi sudah diabsen).
-                    'sudah_diajar'   => !is_null($a->jam_selesai_aktual),
-                    'jp_terlaksana'  => (int) $a->jp_terlaksana,   // JP yang BENAR-BENAR didapat
-                    'batas_absen'    => $batas?->format('H:i'),
-                    'lewat_jam'      => $lewatJam,
-                    'jp_bila_absen_sekarang' => $lewatJam ? 0 : $jpJadwal,
+                    'status'         => $a->status, // pengganti | tidak_terlaksana
+                    'sudah_diajar'   => $a->status === 'pengganti' && !is_null($a->jam_selesai_aktual),
+                    'jp_terlaksana'  => (int) $a->jp_terlaksana,
+                    'dalam_jam'      => $dalamJam,
+                    'belum_mulai'    => $belumMulai,
+                    'boleh_isi'      => $a->status === 'pengganti' && is_null($a->jam_selesai_aktual) && $dalamJam,
+                    // Tahfidz & tahsin dikerjakan di menunya masing-masing (roster, setoran, penilaian).
+                    'route'          => $tipe === 'reguler' ? null : "/{$tipe}/{$a->jadwal_mengajar_id}",
                 ];
             })->values();
 
         return response()->json(['success' => true, 'data' => [
-            'tanggal'     => $today->toDateString(),
-            'grace_menit' => \App\Services\KebijakanMengajar::GRACE_MENIT,
-            'kelas'       => $list,
-            'total'       => $list->count(),
+            'tanggal' => $today->toDateString(),
+            'kelas'   => $list,
+            'total'   => $list->count(),
         ]]);
     }
 
@@ -1284,16 +1356,35 @@ class AbsensiApiController extends Controller
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return response()->json(['success' => false, 'message' => 'Data tidak ditemukan.'], 404);
 
+        // Tahfidz & tahsin diisi di menunya sendiri (roster + setoran/penilaian).
+        $am = \App\Models\AbsensiMengajar::with('jadwalMengajar.mataPelajaran')->find($request->absensi_mengajar_id);
+        $tipeKelas = $am?->jadwalMengajar?->mataPelajaran?->tipe;
+        if (in_array($tipeKelas, ['tahfidz', 'tahsin'], true)) {
+            return response()->json(['success' => false,
+                'message' => 'Kelas inval ' . $tipeKelas . ' diisi lewat menu ' . ucfirst($tipeKelas) . '.',
+                'code' => 'TIPE_KELAS'], 422);
+        }
+
         // Decode kehadiran santri (opsional) — disaring agar hanya status valid.
+        // Izin & sakit ikut diterima, sama dengan pengampu (dulu hanya H/T/A).
         $santri = [];
         if ($request->filled('absensi_json')) {
             $decoded = json_decode($request->absensi_json, true);
             if (is_array($decoded)) {
                 foreach ($decoded as $row) {
                     if (!isset($row['santri_id'], $row['status'])) continue;
-                    if (!in_array($row['status'], ['hadir', 'telat', 'alpha'], true)) continue;
+                    if (!in_array($row['status'], \App\Services\KehadiranSantriService::STATUS, true)) continue;
                     $santri[] = ['santri_id' => (int) $row['santri_id'], 'status' => $row['status']];
                 }
+            }
+        }
+
+        // Tolak di luar jam SEBELUM menyimpan foto, agar tidak menumpuk berkas yatim.
+        if ($am && (int) $am->digantikan_oleh === $tp->id && $am->status === 'pengganti') {
+            try {
+                (new \App\Services\PenggantiMengajarService())->pastikanJamInval($am);
+            } catch (\DomainException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage(), 'code' => 'DILUAR_JAM'], 422);
             }
         }
 
@@ -1313,11 +1404,7 @@ class AbsensiApiController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $jpDapat > 0
-                ? "Absen pengganti tersimpan. {$jpDapat} JP masuk ke Anda."
-                : 'Absen pengganti tersimpan, TAPI melewati batas waktu ('
-                    . \App\Services\KebijakanMengajar::GRACE_MENIT . ' menit setelah jam selesai) '
-                    . 'sehingga JP tidak dihitung. Jurnal & absensi santri tetap tercatat.',
+            'message' => "Absen pengganti tersimpan. {$jpDapat} JP masuk ke Anda. Lanjutkan absen santri.",
             'jp_terlaksana' => $jpDapat,
             'data'    => ['absensi_id' => $absensi->id, 'jp_terlaksana' => $jpDapat],
         ]);
@@ -1387,6 +1474,18 @@ class AbsensiApiController extends Controller
                 'success' => false,
                 'message' => 'Jadwal ini tidak berlangsung hari ini.',
                 'code'    => 'WRONG_DAY',
+            ], 422);
+        }
+
+        // Tahfidz & tahsin punya alur absen sendiri (roster + setoran/penilaian).
+        // Kini sesi keduanya bisa tampil di halaman ini saat guru izin, jadi pintu
+        // ini wajib menolak — jangan sampai tercatat tanpa absensi santri.
+        if (in_array($jadwal->mataPelajaran?->tipe, ['tahfidz', 'tahsin'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Absen kelas ' . $jadwal->mataPelajaran->tipe . ' lewat menu '
+                    . ucfirst($jadwal->mataPelajaran->tipe) . '.',
+                'code'    => 'TIPE_KELAS',
             ], 422);
         }
 
@@ -1661,9 +1760,31 @@ class AbsensiApiController extends Controller
             return response()->json(['success' => false, 'message' => 'Data tenaga pendidik tidak ditemukan.'], 404);
         }
 
-        $absensi = \App\Models\AbsensiMengajar::findOrFail($request->absensi_mengajar_id);
-        if ($absensi->tenaga_pendidik_id !== $tp->id) {
+        $absensi = \App\Models\AbsensiMengajar::with('jadwalMengajar.mataPelajaran')->findOrFail($request->absensi_mengajar_id);
+
+        // Guru inval boleh mengabsen santri sesi yang ia gantikan. Dulu pintu ini
+        // hanya menerima guru asli, sehingga SELURUH sesi inval tidak pernah punya
+        // absensi santri (September 2026: 24 sesi diajar pengganti, 0 ber-roster).
+        $pengganti = new \App\Services\PenggantiMengajarService();
+        $sebagaiInval = $pengganti->milikInval($absensi, $tp->id);
+        if ($absensi->tenaga_pendidik_id !== $tp->id && !$sebagaiInval) {
             return response()->json(['success' => false, 'message' => 'Sesi mengajar ini bukan milik Anda.'], 403);
+        }
+        // Guru asli tidak boleh mendahului inval — roster hanya bisa disimpan sekali.
+        if (!$sebagaiInval && $absensi->status === 'pengganti') {
+            return response()->json(['success' => false,
+                'message' => 'Sesi ini sedang diinval — absensi santri diisi oleh guru pengganti.'], 422);
+        }
+        if ($sebagaiInval) {
+            if (!$pengganti->sudahDiisiInval($absensi)) {
+                return response()->json(['success' => false,
+                    'message' => 'Isi absen pengganti (foto & jurnal) dulu, baru absensi santri.'], 422);
+            }
+            try {
+                $pengganti->pastikanJamInval($absensi);
+            } catch (\DomainException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage(), 'code' => 'DILUAR_JAM'], 422);
+            }
         }
 
         // Kunci: absensi santri hanya boleh disimpan SEKALI. Setelah tersimpan,

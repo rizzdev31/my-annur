@@ -188,9 +188,36 @@ class SesiMengajarService
                 && $now->gt(KebijakanMengajar::batasAbsenSesi($tanggal, (string) $j->jam_selesai)));
         if ($jadwal->isEmpty()) return $dibuat;
 
-        $sudahAda = AbsensiMengajar::whereDate('tanggal', $tanggal)
+        $catatan = AbsensiMengajar::whereDate('tanggal', $tanggal)
             ->whereIn('jadwal_mengajar_id', $jadwal->pluck('id'))
-            ->pluck('jadwal_mengajar_id')->flip();
+            ->get()->keyBy('jadwal_mengajar_id');
+        $sudahAda = $catatan->map(fn () => true);
+
+        // Inval yang ditunjuk tapi tidak mengisi sampai batas → tidak terlaksana.
+        // digantikan_oleh dibiarkan terisi: itulah yang membuat sesinya dihitung
+        // ke kinerja PENGGANTI (keputusan 17 Sep 2026), sementara guru asli yang
+        // izin tetap netral. Status 'pengganti' saja tidak cukup untuk memicu
+        // kinerja, karena belum-diisi dan belum-waktunya tampak sama.
+        foreach ($jadwal as $j) {
+            $am = $catatan->get($j->id);
+            if (!$am || $am->status !== 'pengganti' || !is_null($am->jam_selesai_aktual)) continue;
+
+            if ($simulasi) {
+                $dibuat->push((clone $am)->forceFill(['status' => 'tidak_terlaksana'])->setRelation('jadwalMengajar', $j));
+                continue;
+            }
+
+            $n = AbsensiMengajar::whereKey($am->id)->where('status', 'pengganti')->whereNull('jam_selesai_aktual')
+                ->update([
+                    'status'        => 'tidak_terlaksana',
+                    'jp_terlaksana' => 0,
+                    'keterangan'    => trim(($am->keterangan ? $am->keterangan . ' | ' : '')
+                        . 'Otomatis: pengganti tidak mengisi absen & jurnal sampai batas '
+                        . $this->batasJam($tanggal, (string) $j->jam_selesai) . '.'),
+                    'updated_at'    => now(),
+                ]);
+            if ($n) $dibuat->push($am->fresh()->setRelation('jadwalMengajar', $j));
+        }
 
         $izin = PengajuanIzin::where('status', 'disetujui')
             ->where('tanggal_mulai', '<=', $tanggal)->where('tanggal_selesai', '>=', $tanggal)

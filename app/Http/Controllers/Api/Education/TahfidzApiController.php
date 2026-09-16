@@ -56,12 +56,15 @@ class TahfidzApiController extends Controller
             ->orderBy('jam_mulai')->get();
 
         $absensi = AbsensiMengajar::whereDate('tanggal', $today)
-            ->where('tenaga_pendidik_id', $tp->id)->get()->keyBy('jadwal_mengajar_id');
+            ->where('tenaga_pendidik_id', $tp->id)->with('digantikanOleh.user:id,name')
+            ->get()->keyBy('jadwal_mengajar_id');
 
         $now = TimezoneHelper::now();
         $data = $jadwal->map(function ($j) use ($absensi, $today, $now, $namaHari) {
             $isToday = strtolower($j->hari) === $namaHari;
             $am      = $isToday ? $absensi->get($j->id) : null;
+            // Sesi yang dialihkan ke inval: guru asli tidak mengabsen — jangan tampil "sudah absen".
+            $diinval = $am && $am->digantikan_oleh ? ($am->digantikanOleh?->user?->name ?? 'Guru pengganti') : null;
             $jumlahSantri = $j->kelas_id
                 ? Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $j->kelas_id))->count() : 0;
 
@@ -84,7 +87,8 @@ class TahfidzApiController extends Controller
                 'jam_selesai'         => $j->jam_selesai,
                 'jumlah_jp'           => $j->jumlah_jp,
                 'jumlah_santri'       => $jumlahSantri,
-                'sudah_absen'         => $am !== null,
+                'sudah_absen'         => $am !== null && !$diinval,
+                'diinval_oleh'        => $diinval,
                 'absensi_mengajar_id' => $am?->id,
                 'materi'              => $am?->materi,
                 'catatan'             => $am?->keterangan,
@@ -99,6 +103,7 @@ class TahfidzApiController extends Controller
             'data'    => [
                 'tanggal' => $today->locale('id')->isoFormat('dddd, D MMMM YYYY'),
                 'jadwal'  => $data->values(),
+                'inval'   => (new \App\Services\PenggantiMengajarService())->kelasInvalHariIni($tp->id, 'tahfidz'),
             ],
         ]);
     }
@@ -125,11 +130,36 @@ class TahfidzApiController extends Controller
         }
 
         $jadwal = JadwalMengajar::with('mataPelajaran')->findOrFail($request->jadwal_id);
-        if ($jadwal->tenaga_pendidik_id !== $tp->id) {
-            return response()->json(['success' => false, 'message' => 'Jadwal ini bukan milik Anda.'], 403);
-        }
         if (($jadwal->mataPelajaran?->tipe) !== 'tahfidz') {
             return response()->json(['success' => false, 'message' => 'Jadwal ini bukan kelas tahfidz.'], 422);
+        }
+
+        // ── Guru INVAL: aturan & penyimpanan lewat PenggantiMengajarService ─────
+        if ($jadwal->tenaga_pendidik_id !== $tp->id) {
+            $svc   = new \App\Services\PenggantiMengajarService();
+            $inval = $svc->tugasInvalHariIni($jadwal->id, $tp->id);
+            if (!$inval) {
+                return response()->json(['success' => false, 'message' => 'Jadwal ini bukan milik Anda.'], 403);
+            }
+            if ($svc->sudahDiisiInval($inval)) {
+                return response()->json(['success' => false, 'message' => 'Absen kelas inval sudah terkunci.',
+                    'code' => 'SUDAH_ABSEN', 'data' => ['absensi_mengajar_id' => $inval->id]], 422);
+            }
+            try {
+                $am = $svc->catatInval($inval->id, $tp->id, [
+                    'materi'         => $request->deskripsi,
+                    'keterangan'     => $request->catatan,
+                    'absensi_santri' => $request->absensi,
+                    'actor'          => "{$request->user()->name} (NIP {$tp->nip})",
+                ]);
+            } catch (\DomainException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage(), 'code' => 'DILUAR_JAM'], 422);
+            }
+            return response()->json([
+                'success' => true,
+                'message' => 'Absen kelas inval tersimpan. ' . $am->jp_terlaksana . ' JP masuk ke Anda. Lanjutkan murojaah santri.',
+                'data'    => ['absensi_mengajar_id' => $am->id, 'jp' => (int) $am->jp_terlaksana, 'status' => $am->status],
+            ]);
         }
 
         $today = TimezoneHelper::today();
@@ -139,6 +169,13 @@ class TahfidzApiController extends Controller
 
         // Sudah absen hari ini → terkunci; kembalikan id agar lanjut setoran.
         $exist = AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->whereDate('tanggal', $today)->first();
+        if ($exist && $exist->digantikan_oleh) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sesi ini dialihkan ke guru pengganti — absen & jurnal diisi oleh pengganti.',
+                'code'    => 'DIINVAL',
+            ], 422);
+        }
         if ($exist) {
             return response()->json([
                 'success' => false,
@@ -222,7 +259,8 @@ class TahfidzApiController extends Controller
 
         $am = AbsensiMengajar::with(['jadwalMengajar.kelasRel', 'jadwalMengajar.mataPelajaran'])
             ->findOrFail($absensiMengajarId);
-        if ($am->tenaga_pendidik_id !== $tp->id) {
+        if ($am->tenaga_pendidik_id !== $tp->id
+            && !(new \App\Services\PenggantiMengajarService())->milikInval($am, $tp->id)) {
             return response()->json(['success' => false, 'message' => 'Sesi ini bukan milik Anda.'], 403);
         }
         $kelasId = $am->jadwalMengajar?->kelas_id;
@@ -261,9 +299,6 @@ class TahfidzApiController extends Controller
         }
 
         $jadwal = JadwalMengajar::with(['mataPelajaran', 'kelasRel'])->findOrFail($jadwalId);
-        if ($jadwal->tenaga_pendidik_id !== $tp->id) {
-            return response()->json(['success' => false, 'message' => 'Jadwal ini bukan milik Anda.'], 403);
-        }
         if (($jadwal->mataPelajaran?->tipe) !== 'tahfidz') {
             return response()->json(['success' => false, 'message' => 'Jadwal ini bukan kelas tahfidz.'], 422);
         }
@@ -274,33 +309,69 @@ class TahfidzApiController extends Controller
         $today   = TimezoneHelper::today();
         $now     = TimezoneHelper::now();
         $isToday = strtolower($jadwal->hari) === TimezoneHelper::namaHariDB($today);
-        // Absen sesi hanya relevan bila jadwal berlangsung hari ini (Senin–Jumat).
-        $am = $isToday
-            ? AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->whereDate('tanggal', $today)->first()
-            : null;
 
         $jamMulai   = Carbon::parse($today->toDateString().' '.$jadwal->jam_mulai, TimezoneHelper::TZ);
         $jamSelesai = Carbon::parse($today->toDateString().' '.$jadwal->jam_selesai, TimezoneHelper::TZ);
         $dalamJam   = $isToday && $now->betweenIncluded($jamMulai, $jamSelesai);
 
+        $dasar = [
+            'jadwal_id'   => $jadwal->id,
+            'kelas'       => $jadwal->kelasRel?->nama ?? $jadwal->kelas ?? '—',
+            'mapel'       => $jadwal->mataPelajaran?->nama ?? '—',
+            'hari'        => $jadwal->hari,
+            'is_today'    => $isToday,
+            'jam_mulai'   => $jadwal->jam_mulai,
+            'jam_selesai' => $jadwal->jam_selesai,
+            'jumlah_jp'   => $jadwal->jumlah_jp,
+            'dalam_jam'   => $dalamJam,
+        ];
+
+        // ── Mode INVAL: hanya dalam jam, hanya murojaah, tanpa tasmi'/sinkron ────
+        if ($jadwal->tenaga_pendidik_id !== $tp->id) {
+            $svc   = new \App\Services\PenggantiMengajarService();
+            $inval = $svc->tugasInvalHariIni($jadwal->id, $tp->id);
+            if (!$inval) {
+                return response()->json(['success' => false, 'message' => 'Jadwal ini bukan milik Anda.'], 403);
+            }
+            $sudah = $svc->sudahDiisiInval($inval);
+            $tersimpan = $sudah
+                ? AbsensiSantri::where('absensi_mengajar_id', $inval->id)->pluck('status', 'santri_id')->all() : [];
+
+            return response()->json(['success' => true, 'data' => array_merge($dasar, [
+                'inval'               => true,
+                'guru_asli'           => $inval->tenagaPendidik?->user?->name ?? '—',
+                // Setoran inval wajib menempel ke sesi yang sudah diabsen.
+                'absensi_mengajar_id' => $sudah ? $inval->id : null,
+                'sudah_absen'         => $sudah,
+                'wajib_absen'         => $dalamJam && !$sudah,
+                'boleh_isi'           => $dalamJam,
+                'jenis_diizinkan'     => \App\Services\PenggantiMengajarService::JENIS_SETORAN_INVAL,
+                'boleh_tasmi'         => false,
+                'boleh_sinkron'       => false,
+            ], $this->rosterPayload($jadwal->kelas_id, null, $tersimpan))]);
+        }
+
+        // Absen sesi hanya relevan bila jadwal berlangsung hari ini.
+        $am = $isToday
+            ? AbsensiMengajar::with('digantikanOleh.user:id,name')
+                ->where('jadwal_mengajar_id', $jadwal->id)->whereDate('tanggal', $today)->first()
+            : null;
+        $diinval = $am && $am->digantikan_oleh ? ($am->digantikanOleh?->user?->name ?? 'Guru pengganti') : null;
+
         return response()->json([
             'success' => true,
-            'data'    => array_merge([
-                'absensi_mengajar_id' => $am?->id,            // null bila belum absen / hari non-jadwal → setoran tanpa sesi
-                'jadwal_id'           => $jadwal->id,
-                'kelas'               => $jadwal->kelasRel?->nama ?? $jadwal->kelas ?? '—',
-                'mapel'               => $jadwal->mataPelajaran?->nama ?? '—',
-                'hari'                => $jadwal->hari,
-                'is_today'            => $isToday,
-                'jam_mulai'           => $jadwal->jam_mulai,
-                'jam_selesai'         => $jadwal->jam_selesai,
-                'jumlah_jp'           => $jadwal->jumlah_jp,
-                'sudah_absen'         => $am !== null,
-                'dalam_jam'           => $dalamJam,
+            'data'    => array_merge($dasar, [
+                'inval'               => false,
+                // Sesi yang dialihkan: bukan sesi guru asli — setoran tanpa sesi.
+                'absensi_mengajar_id' => $diinval ? null : $am?->id,
+                'sudah_absen'         => $am !== null && !$diinval,
+                'diinval_oleh'        => $diinval,
                 // GERBANG absen: WAJIB hanya saat dalam jam mengajar sesi ini & belum absen.
-                // Di luar jam (mis. sesi sore saat masih pagi) → tidak dipaksa absen,
-                // setoran/jurnal tetap bisa kapan saja. Konsisten dgn jadwalHariIni.
                 'wajib_absen'         => $dalamJam && $am === null,
+                'boleh_isi'           => true,
+                'jenis_diizinkan'     => ['ziyadah', 'murojaah_wajib', 'murojaah_tambahan'],
+                'boleh_tasmi'         => true,
+                'boleh_sinkron'       => true,
             ], $this->rosterPayload($jadwal->kelas_id)),
         ]);
     }
@@ -520,12 +591,37 @@ class TahfidzApiController extends Controller
             return response()->json(['success' => false, 'message' => 'Data tenaga pendidik tidak ditemukan.'], 404);
         }
 
-        // Validasi sesi milik guru (jika dikirim)
-        if ($request->absensi_mengajar_id) {
-            $am = AbsensiMengajar::find($request->absensi_mengajar_id);
-            if ($am && $am->tenaga_pendidik_id !== $tp->id) {
+        // Kewenangan: pengampu (dengan/tanpa sesi) atau inval (hanya di sesinya).
+        $svc = new \App\Services\PenggantiMengajarService();
+        $am  = $request->absensi_mengajar_id
+            ? AbsensiMengajar::with('jadwalMengajar')->find($request->absensi_mengajar_id) : null;
+
+        if ($am && $am->tenaga_pendidik_id !== $tp->id) {
+            if (!$svc->milikInval($am, $tp->id)) {
                 return response()->json(['success' => false, 'message' => 'Sesi ini bukan milik Anda.'], 403);
             }
+            // Inval (keputusan 17 Sep 2026): hanya murojaah. Hafalan baru memajukan
+            // batas hafalan santri secara permanen, dan tasmi' menentukan kelulusan
+            // juz — keduanya tetap di tangan pengampu yang mengenal santrinya.
+            if (!in_array($request->jenis, \App\Services\PenggantiMengajarService::JENIS_SETORAN_INVAL, true)) {
+                return response()->json(['success' => false,
+                    'message' => 'Guru inval hanya bisa mencatat murojaah. Hafalan baru & tasmi\' dicatat oleh pengampu.',
+                    'code' => 'KEWENANGAN'], 403);
+            }
+            if (!$svc->sudahDiisiInval($am)) {
+                return response()->json(['success' => false, 'message' => 'Isi absen kelas inval dulu.'], 422);
+            }
+            try {
+                $svc->pastikanJamInval($am);
+            } catch (\DomainException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage(), 'code' => 'DILUAR_JAM'], 422);
+            }
+        } elseif (!$am && !$svc->pengampuSantri($tp->id, (int) $request->santri_id, 'tahfidz')) {
+            // Setoran tanpa sesi dulu tidak dicek sama sekali — guru mana pun bisa
+            // mencatat hafalan santri mana pun, termasuk inval di luar jam.
+            return response()->json(['success' => false,
+                'message' => 'Setoran di luar sesi hanya bisa dicatat oleh guru pengampu santri ini.',
+                'code' => 'KEWENANGAN'], 403);
         }
 
         try {
@@ -594,6 +690,12 @@ class TahfidzApiController extends Controller
         ]);
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return response()->json(['success' => false, 'message' => 'Tenaga pendidik tidak ditemukan.'], 404);
+
+        // Tasmi' menentukan kelulusan juz → hanya pengampu (bukan guru inval).
+        if (!(new \App\Services\PenggantiMengajarService())->pengampuSantri($tp->id, (int) $request->santri_id, 'tahfidz')) {
+            return response()->json(['success' => false,
+                'message' => "Penguji tasmi' hanya bisa ditunjuk oleh guru pengampu santri ini.", 'code' => 'KEWENANGAN'], 403);
+        }
 
         try {
             (new TasmiService())->tunjukPenguji(

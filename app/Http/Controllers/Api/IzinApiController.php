@@ -347,6 +347,7 @@ class IzinApiController extends Controller
     {
         return [
             'jadwal_mengajar_id' => $j->id,
+            'tipe'               => $j->mataPelajaran?->tipe ?? 'reguler',
             'mapel'              => $j->mataPelajaran?->nama ?? '—',
             'kelas'              => $j->kelasRel?->nama ?? $j->kelas ?? '—',
             'jam_mulai'          => substr((string) $j->jam_mulai, 0, 5),

@@ -69,7 +69,9 @@ const saving = ref(false)
 
 function bukaSetoran(s) {
     aktif.value = s
-    jenis.value = s.perlu_murojaah ? 'murojaah_wajib' : 'ziyadah'
+    const boleh = info.value?.jenis_diizinkan ?? ['ziyadah', 'murojaah_wajib', 'murojaah_tambahan']
+    const saran = s.perlu_murojaah ? 'murojaah_wajib' : 'ziyadah'
+    jenis.value = boleh.includes(saran) ? saran : boleh[0]
     Object.assign(f, {
         surah_mulai: s.lanjut_surah || '', ayat_mulai: s.lanjut_ayat || '',
         surah_selesai: s.lanjut_surah || '', ayat_selesai: '', nilai: '', catatan: '',
@@ -150,12 +152,34 @@ async function kirimTunjuk() {
     } finally { tSaving.value = false }
 }
 
-const jenisTabs = [['ziyadah', 'Hafalan Baru'], ['murojaah_wajib', 'Murojaah'], ['murojaah_tambahan', 'Murojaah+']]
+// Guru inval hanya melihat jenis yang boleh ia catat (murojaah).
+const jenisTabs = computed(() => {
+    const semua = [['ziyadah', 'Hafalan Baru'], ['murojaah_wajib', 'Murojaah'], ['murojaah_tambahan', 'Murojaah+']]
+    const boleh = info.value?.jenis_diizinkan
+    return boleh ? semua.filter(([k]) => boleh.includes(k)) : semua
+})
+
+// Daftar setoran terbuka: pengampu setelah gerbang absen; inval hanya setelah
+// absen DAN selama jam kelas.
+const bolehSetoran = computed(() => {
+    const i = info.value
+    if (!i || i.wajib_absen) return false
+    return !i.inval || (i.sudah_absen && i.boleh_isi)
+})
+
+const jamKelas = computed(() => info.value ? `${(info.value.jam_mulai || '').slice(0, 5)}–${(info.value.jam_selesai || '').slice(0, 5)}` : '')
 
 // Banner konteks alur: wajib absen → sudah absen → hari jadwal di luar jam → di luar hari jadwal.
 const bannerInfo = computed(() => {
     const i = info.value
     if (!i) return null
+    if (i.inval) {
+        if (i.wajib_absen) return { c: 'amber', t: `Kelas inval — menggantikan ${i.guru_asli}. Absen kehadiran santri dulu, lalu catat murojaah. Hafalan baru & tasmi' tetap dicatat pengampu.` }
+        if (i.sudah_absen && i.boleh_isi) return { c: 'emerald', t: `Sudah absen inval. Murojaah bisa dicatat sampai jam kelas berakhir (${jamKelas.value}).` }
+        if (i.sudah_absen) return { c: 'sky', t: 'Jam kelas inval sudah berakhir — pencatatan ditutup.' }
+        return { c: 'amber', t: `Kelas inval (gantikan ${i.guru_asli}) hanya bisa diisi selama jam kelas ${jamKelas.value}. Bila tidak diisi, sesi tercatat tidak terlaksana.` }
+    }
+    if (i.diinval_oleh) return { c: 'sky', t: `Sesi hari ini diinval oleh ${i.diinval_oleh}. Setoran di luar sesi tetap bisa Anda catat.` }
     if (i.wajib_absen) return { c: 'amber', t: `Hari ini terjadwal${i.hari ? ` (${i.hari})` : ''}. Absen kehadiran santri dulu sebagai bukti mengajar — baru jurnal setoran terbuka.` }
     if (i.sudah_absen) return { c: 'emerald', t: 'Sudah absen mengajar hari ini. Setoran tersimpan bertanggal hari ini.' }
     if (i.is_today) return { c: 'sky', t: 'Hari jadwal tetapi di luar jam kelas — kehadiran dilimpahkan ke guru piket. Jurnal setoran tetap bisa diisi.' }
@@ -169,7 +193,7 @@ const bannerClass = { amber: 'bg-amber-50 border-amber-200 text-amber-700', emer
         <PageHeader :title="info?.kelas || 'Kelas Tahfidz'" />
 
         <!-- Pencatatan hafalan awal santri (sekali per santri, oleh pengampu). -->
-        <button v-if="!loading && !error" @click="router.push(`/tahfidz/${route.params.jadwalId}/sinkron`)"
+        <button v-if="!loading && !error && info?.boleh_sinkron !== false" @click="router.push(`/tahfidz/${route.params.jadwalId}/sinkron`)"
             class="w-full flex items-center gap-2 rounded-2xl bg-sky-50 border border-sky-100 px-3 py-2.5 mb-3 text-left">
             <span class="shrink-0 text-base">📖</span>
             <span class="flex-1 min-w-0">
@@ -216,7 +240,7 @@ const bannerClass = { amber: 'bg-amber-50 border-amber-200 text-amber-700', emer
             </div>
 
             <!-- Daftar santri (setoran) — hanya setelah gerbang absen lewat -->
-            <ul v-if="!info.wajib_absen" class="space-y-2.5">
+            <ul v-if="bolehSetoran" class="space-y-2.5">
                 <li v-for="s in santri" :key="s.santri_id"
                     class="rounded-2xl bg-white border border-gray-100 p-3 active:scale-[0.99] transition"
                     @click="bukaSetoran(s)">
@@ -233,7 +257,7 @@ const bannerClass = { amber: 'bg-amber-50 border-amber-200 text-amber-700', emer
                                 <div class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600" :style="{ width: Math.min(100, s.persen) + '%' }"></div>
                             </div>
                         </div>
-                        <button v-if="s.juz_perlu_tasmi && s.juz_perlu_tasmi.length" @click.stop="bukaTunjuk(s)"
+                        <button v-if="info.boleh_tasmi !== false && s.juz_perlu_tasmi && s.juz_perlu_tasmi.length" @click.stop="bukaTunjuk(s)"
                             class="text-[10px] font-bold text-white bg-emerald-600 px-2.5 py-1.5 rounded-lg shrink-0 active:scale-95 transition">Tasmi'</button>
                         <span v-else-if="s.perlu_murojaah" class="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded shrink-0">Murojaah</span>
                     </div>

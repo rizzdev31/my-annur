@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import PageHeader from '../components/PageHeader.vue'
@@ -159,6 +159,29 @@ async function kirimTasnif() {
     } finally { tSaving.value = false }
 }
 
+// ── Mode inval ──────────────────────────────────────────────────────────────
+// Inval hanya absen, jurnal, dan catatan materi tambahan — selama jam kelas.
+// Penilaian kelulusan materi, tasnif, dan naik level tetap di tangan pengampu.
+const bolehNilai = computed(() => info.value?.boleh_nilai !== false)
+const bolehBuka = computed(() => {
+    const i = info.value
+    if (!i || i.wajib_absen) return false
+    return !i.inval || (i.sudah_absen && i.boleh_isi)
+})
+const jamKelas = computed(() => info.value ? `${(info.value.jam_mulai || '').slice(0, 5)}–${(info.value.jam_selesai || '').slice(0, 5)}` : '')
+const bannerInval = computed(() => {
+    const i = info.value
+    if (!i) return null
+    if (i.inval) {
+        if (i.wajib_absen) return `Kelas inval — menggantikan ${i.guru_asli}. Absen kehadiran santri dulu. Penilaian kelulusan materi tetap oleh pengampu; Anda bisa mencatat materi tambahan.`
+        if (i.sudah_absen && i.boleh_isi) return `Sudah absen inval. Catatan materi tambahan bisa diisi sampai jam kelas berakhir (${jamKelas.value}).`
+        if (i.sudah_absen) return 'Jam kelas inval sudah berakhir — pencatatan ditutup.'
+        return `Kelas inval (gantikan ${i.guru_asli}) hanya bisa diisi selama jam kelas ${jamKelas.value}. Bila tidak diisi, sesi tercatat tidak terlaksana.`
+    }
+    if (i.diinval_oleh) return `Sesi hari ini diinval oleh ${i.diinval_oleh}. Penilaian di luar sesi tetap bisa Anda lakukan.`
+    return null
+})
+
 // Urutan ketuk: Hadir → Telat → Izin → Sakit → Alpha. Izin & sakit umumnya
 // sudah terisi otomatis dari Perizinan Santri / Smart Health, jadi guru jarang
 // perlu memutar sampai ke sana.
@@ -194,6 +217,11 @@ const absenColor = (s) => ({
 
             <p class="text-xs text-gray-400 mb-3">Level {{ info.level || '—' }} · {{ info.total_santri }} santri</p>
 
+            <p v-if="bannerInval" class="rounded-xl border px-3 py-2.5 mb-3 text-[11.5px] font-medium leading-snug"
+                :class="info.inval && !info.boleh_isi ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-sky-50 border-sky-100 text-sky-700'">
+                {{ bannerInval }}
+            </p>
+
             <!-- GERBANG ABSEN -->
             <div v-if="info.wajib_absen" class="rounded-2xl bg-amber-50 border border-amber-200 p-4 mb-4">
                 <p class="text-sm font-bold text-amber-800 mb-1">Absen Kehadiran Dulu</p>
@@ -219,18 +247,18 @@ const absenColor = (s) => ({
             <ul class="space-y-2.5">
                 <li v-for="s in santri" :key="s.santri_id"
                     class="rounded-2xl bg-white border border-gray-100 p-3.5"
-                    :class="info.wajib_absen ? 'opacity-50 pointer-events-none' : ''">
+                    :class="bolehBuka ? '' : 'opacity-50 pointer-events-none'">
                     <div class="flex items-center gap-3">
-                        <div class="flex-1 min-w-0" @click="!info.wajib_absen && bukaNilai(s)">
+                        <div class="flex-1 min-w-0" @click="bolehBuka && bukaNilai(s)">
                             <p class="text-sm font-bold text-gray-800 truncate">{{ s.nama }}</p>
                             <p class="text-[11px] text-gray-400">
                                 Level {{ s.level || '—' }} · {{ s.materi_lulus }}/{{ s.materi_total }} materi lulus
                                 <span v-if="s.level_selesai" class="text-emerald-600 font-bold"> · Lengkap</span>
                             </p>
                         </div>
-                        <button v-if="s.level_selesai" @click.stop="bukaTasnif(s)"
+                        <button v-if="info.boleh_tasnif !== false && s.level_selesai" @click.stop="bukaTasnif(s)"
                             class="text-[10px] font-bold text-white bg-violet-600 px-2.5 py-1 rounded-lg active:scale-95 transition">Ujian Tasnif</button>
-                        <button @click="!info.wajib_absen && bukaNilai(s)" class="text-[10px] font-bold text-[#0C78FF] bg-[#0C78FF]/10 px-2.5 py-1 rounded-lg">Nilai</button>
+                        <button @click="bolehBuka && bukaNilai(s)" class="text-[10px] font-bold text-[#0C78FF] bg-[#0C78FF]/10 px-2.5 py-1 rounded-lg">{{ bolehNilai ? 'Nilai' : 'Catatan' }}</button>
                     </div>
                 </li>
             </ul>
@@ -246,6 +274,10 @@ const absenColor = (s) => ({
 
                     <div v-if="loadingMateri" class="py-6 flex justify-center"><div class="w-6 h-6 border-2 border-[#0C78FF] border-t-transparent rounded-full animate-spin"></div></div>
                     <template v-else>
+                        <p v-if="!bolehNilai" class="rounded-xl bg-sky-50 border border-sky-100 px-3 py-2 mb-3 text-[11px] text-sky-700">
+                            Sebagai guru inval, penilaian kelulusan materi dilakukan pengampu. Catat materi yang Anda berikan di bawah.
+                        </p>
+                        <template v-if="bolehNilai">
                         <label class="block text-[11px] font-medium text-gray-600 mb-1">Materi</label>
                         <select v-model="f.materi_id" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3">
                             <option value="">— pilih materi —</option>
@@ -266,6 +298,8 @@ const absenColor = (s) => ({
                                 {{ saving ? 'Menyimpan…' : 'Simpan Nilai' }}
                             </button>
                         </div>
+                        </template>
+                        <button v-else @click="aktif = null" class="w-full py-2.5 rounded-xl bg-gray-100 text-gray-600 font-semibold text-sm">Tutup</button>
 
                         <!-- Materi Tambahan (pelengkap jurnal — TIDAK untuk naik level) -->
                         <div class="mt-5 pt-4 border-t border-gray-100">
