@@ -56,7 +56,7 @@ class SettingPotongan extends Model
             'per_keterlambatan'       => 'Per Kejadian Terlambat',
             'per_menit_keterlambatan' => 'Per Menit Keterlambatan',
             'per_alfa'                => 'Per Hari Alfa',
-            'per_sesi_tidak_mengajar' => 'Per Sesi Tidak Mengajar',
+            'per_sesi_tidak_mengajar' => 'Per Sesi Tidak Mengajar (tidak berlaku)',
             'per_bulan'               => 'Flat Per Bulan',
             'persen_gaji'             => 'Persen dari Gaji Pokok',
             'manual'                  => 'Input Manual',

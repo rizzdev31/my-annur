@@ -16,15 +16,18 @@ use Illuminate\Support\Facades\DB;
  *
  * ── Dua keputusan akurasi yang menentukan angka ───────────────────────────
  *
- * 1. HANYA SESI TERLAKSANA yang dihitung.
- *    Di database, sesi berstatus `tidak_terlaksana` tetap bisa memiliki baris
- *    absensi santri: roster ikut terbentuk saat sesi dibuka, lalu jurnal guru
- *    tidak pernah dikonfirmasi dan status sesi jatuh otomatis. Baris-baris itu
- *    nyaris seluruhnya bernilai default 'hadir' padahal kelasnya tidak pernah
- *    berlangsung (September 2026: 599 baris dari 33 sesi, hanya 1 sesi yang
- *    jurnalnya dibuka). Memasukkannya berarti mengarang kehadiran. Sesi
- *    `pengganti` dan `izin` juga dilewati — kehadiran nyatanya tercatat di
- *    sesi penggantinya yang berstatus terlaksana.
+ * 1. SEMUA SESI YANG ABSENSI SANTRINYA DIISI dihitung, apa pun status guru.
+ *    Status sesi (terlaksana / tidak terlaksana / pengganti) adalah urusan
+ *    GURU; laporan ini menanyakan apakah SANTRI hadir. Sesi tidak terlaksana
+ *    yang rosternya diisi piket atau diisi guru terlambat tetap mencatat
+ *    kehadiran santri yang nyata.
+ *
+ *    Koreksi (17 Sep 2026): versi pertama laporan ini hanya menghitung sesi
+ *    'terlaksana' dengan anggapan roster di sesi tidak terlaksana adalah default
+ *    palsu. Diperiksa ulang, anggapan itu keliru — dari 44 sesi tersebut, 14
+ *    diisi piket, 29 diisi guru setelah sesinya ditandai otomatis, dan 21 memuat
+ *    status selain 'hadir' (jelas isian manusia). Sesi izin/libur tidak pernah
+ *    punya roster, jadi tidak perlu disaring.
  *
  * 2. PENYEBUT = baris absensi milik santri itu sendiri, bukan seluruh sesi
  *    kelasnya. Keduanya terbukti identik — pada tiap sesi yang terisi, jumlah
@@ -37,9 +40,6 @@ use Illuminate\Support\Facades\DB;
  */
 class RekapKehadiranSantriService
 {
-    /** Hanya sesi terlaksana yang boleh masuk hitungan. Lihat catatan di atas. */
-    public const STATUS_SESI = 'terlaksana';
-
     /** Batas persen kehadiran kotor untuk disebut rajin. */
     public const AMBANG_RAJIN = 90;
 
@@ -60,7 +60,6 @@ class RekapKehadiranSantriService
             ->leftJoin('kelas as k', 'k.id', '=', 'j.kelas_id')
             ->leftJoin('tenaga_pendidik as tp', 'tp.id', '=', 'm.tenaga_pendidik_id')
             ->leftJoin('users as u', 'u.id', '=', 'tp.user_id')
-            ->where('m.status', self::STATUS_SESI)
             ->whereYear('m.tanggal', $tahun)
             ->whereMonth('m.tanggal', $bulan)
             ->when($kelasId, fn ($q) => $q->where('j.kelas_id', $kelasId))

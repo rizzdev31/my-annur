@@ -41,7 +41,7 @@ class KebijakanMengajar
     }
 
     /**
-     * Apakah sesi sudah lewat tenggang (JP hangus / boleh ditandai terlewat)?
+     * Apakah sesi sudah lewat tenggang (JP hangus / tercatat tidak terlaksana)?
      * $sekarang default = waktu sekarang WIB.
      */
     public static function lewatTenggang(string $tanggal, string $jamSelesai, ?Carbon $sekarang = null): bool

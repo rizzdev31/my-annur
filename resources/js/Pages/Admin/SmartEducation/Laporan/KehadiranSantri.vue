@@ -77,9 +77,9 @@
             <div class="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 mb-5 text-xs text-indigo-900/80 leading-relaxed">
                 <p class="font-semibold text-indigo-900 mb-1">Cara hitung</p>
                 <p>
-                    Dasar laporan adalah <b>sesi pembelajaran yang benar-benar terlaksana</b> dan absensinya diisi guru.
-                    Sesi yang batal, digantikan, atau jurnalnya tidak pernah dikonfirmasi tidak ikut dihitung sehingga
-                    tidak membebani santri.
+                    Dasar laporan adalah <b>setiap sesi yang absensi santrinya diisi</b> — oleh guru, guru inval, atau
+                    guru piket. Status sesi bagi guru (terlaksana / tidak terlaksana) tidak memengaruhi angka santri.
+                    Sesi yang absensinya tidak pernah diisi siapa pun tidak ikut dihitung sehingga tidak membebani santri.
                 </p>
                 <p class="mt-1">
                     <b>Kehadiran</b> = (hadir + telat) ÷ seluruh sesi yang tercatat untuk santri tersebut.
@@ -109,7 +109,7 @@
             <!-- Ringkasan -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 text-center">
                 <div class="border border-gray-300 rounded-lg py-2.5">
-                    <p class="text-[11px] text-gray-500">Sesi Terlaksana</p>
+                    <p class="text-[11px] text-gray-500">Sesi Tercatat</p>
                     <p class="text-lg font-bold text-gray-900 mt-0.5">{{ ringkasan.sesi }}</p>
                 </div>
                 <div class="border border-gray-300 rounded-lg py-2.5">
@@ -171,7 +171,7 @@
                                 <span class="text-gray-400"> / {{ r.jumlah_santri }}</span>
                             </td>
                         </tr>
-                        <tr v-if="!perKelas.length"><td colspan="12" class="border border-gray-200 py-10 text-center text-gray-400">Belum ada sesi pembelajaran terlaksana pada periode ini.</td></tr>
+                        <tr v-if="!perKelas.length"><td colspan="12" class="border border-gray-200 py-10 text-center text-gray-400">Belum ada absensi santri yang tercatat pada periode ini.</td></tr>
                     </tbody>
                 </table>
             </div>

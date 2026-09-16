@@ -926,50 +926,15 @@ class AbsensiApiController extends Controller
                         'keterangan'     => 'Libur '.ucfirst($hariLibur->sumber ?: $hariLibur->tipe ?: 'pesantren').': '.($hariLibur->nama ?? 'Libur'),
                     ]
                 );
-            } elseif ($sekarang->gt(\App\Services\KebijakanMengajar::batasAbsen($jamSelesaiC))) {
-                // Jam mengajar selesai DAN tenggang jurnal habis — auto-mark
-                // berdasarkan kondisi guru. WAJIB memakai tenggang yang sama dengan
-                // absenMengajar(): kalau auto-mark jalan lebih dulu, barisnya sudah
-                // terbuat dan guru yang mengisi di dalam tenggang akan ditolak
-                // ALREADY_ABSEN — tenggangnya jadi tidak pernah berlaku.
-                if ($isIzinGuru) {
-                    // Guru izin resmi + jam sudah selesai → auto-mark izin, jp_full
-                    // (guru seharusnya mengkonfirmasi tugas sebelum jam selesai,
-                    //  tapi jika belum, tetap jp_full karena izin sudah disetujui admin)
-                    // Kebijakan: izin TANPA pengganti → JP hangus (jp=0, tidak dibayar).
-                    // Guru semestinya menunjuk pengganti agar JP mengalir ke pengganti.
-                    \App\Models\AbsensiMengajar::firstOrCreate(
-                        [
-                            'jadwal_mengajar_id' => $jdwl->id,
-                            'tenaga_pendidik_id' => $tp->id,
-                            'tanggal'            => $today->toDateString(),
-                        ],
-                        [
-                            'jp_terlaksana'  => 0, // izin tanpa pengganti → JP hangus
-                            'status'         => 'izin',
-                            'sudah_buka_jurnal' => false,
-                            'keterangan'     => 'Otomatis: guru izin ('
-                                .($izinAktif->jenisPengajuan?->nama ?? 'Izin')
-                                .') tanpa pengganti — JP tidak dibayar.',
-                        ]
-                    );
-                } else {
-                    // Tidak ada alasan resmi → tidak terlaksana, jp=0
-                    \App\Models\AbsensiMengajar::firstOrCreate(
-                        [
-                            'jadwal_mengajar_id' => $jdwl->id,
-                            'tenaga_pendidik_id' => $tp->id,
-                            'tanggal'            => $today->toDateString(),
-                        ],
-                        [
-                            'jp_terlaksana'  => 0,
-                            'status'         => 'tidak_terlaksana',
-                            'sudah_buka_jurnal' => false,
-                            'keterangan'     => 'Otomatis: tidak hadir tanpa keterangan.',
-                        ]
-                    );
-                }
             }
+        }
+
+        // Sesi yang lewat batas (jam selesai + tenggang) dicatat lewat aturan tunggal
+        // SesiMengajarService — jalur yang sama dengan scheduler, sehingga hasilnya
+        // tidak bergantung pada apakah guru kebetulan membuka halaman ini.
+        if (!$isHariLibur) {
+            app(\App\Services\SesiMengajarService::class)
+                ->tandaiLewatBatas($today->toDateString(), $tp->id, $sekarang);
         }
 
         // ── 4. Load absensi setelah auto-mark ────────────────────────────────

@@ -707,15 +707,11 @@ class LaporanController extends Controller
         if ($guruId) {
             $guru = TenagaPendidik::with(['user', 'jabatan'])->find($guruId);
             if ($guru && $guru->user) {
-                // KEBIJAKAN BARU: mengajar jadwal sendiri = 0 vakasi (masuk gaji pokok).
+                // KEBIJAKAN: mengajar jadwal sendiri = 0 vakasi (masuk gaji pokok).
                 // Vakasi mengajar HANYA untuk sesi yang diampu sebagai guru pengganti.
-                // Guru yang tidak mengajar (digantikan / tidak terlaksana) kena potongan per sesi.
+                // Sesi digantikan / tidak terlaksana TIDAK dipotong gaji (dihapus
+                // 16 Sep 2026) — JP-nya saja yang tidak diberikan, dan tercatat di kinerja.
                 $tarif = app(PayrollCalculationService::class)->tarifPerJpMengajar($guru);
-
-                $potSetting = \App\Models\SettingPotongan::aktif()
-                    ->where('tipe_pemicu', 'per_sesi_tidak_mengajar')->get()
-                    ->first(fn($s) => $s->berlakuUntukGuru($guru));
-                $potonganPerSesi = $potSetting ? (float) $potSetting->hitungNominal(0, 1) : 0.0;
 
                 $mulai   = $p['mulai']->toDateString();
                 $selesai = $p['selesai']->toDateString();
@@ -755,7 +751,7 @@ class LaporanController extends Controller
                 $rows = collect();
                 $jpSendiri = 0; $sesiSendiri = 0;
                 $jpPengganti = 0; $sesiPengganti = 0; $vakasiPengganti = 0.0;
-                $sesiDipotong = 0; $potonganTotal = 0.0;
+                $sesiTidakMengajar = 0;
 
                 foreach ($sendiri as $a) {
                     switch ($a->status) {
@@ -777,16 +773,16 @@ class LaporanController extends Controller
                             $r['subtotal'] = 0;
                             break;
                         case 'pengganti':
-                            $r = $buildRow($a, 'dipotong');
-                            $r['status_label'] = 'Digantikan (dipotong)';
-                            $r['subtotal'] = -$potonganPerSesi;
-                            $sesiDipotong++; $potonganTotal += $potonganPerSesi;
+                            $r = $buildRow($a, 'digantikan');
+                            $r['status_label'] = 'Digantikan (JP ke pengganti)';
+                            $r['subtotal'] = 0;
+                            $sesiTidakMengajar++;
                             break;
                         case 'tidak_terlaksana':
-                            $r = $buildRow($a, 'dipotong');
-                            $r['status_label'] = 'Tidak terlaksana (dipotong)';
-                            $r['subtotal'] = -$potonganPerSesi;
-                            $sesiDipotong++; $potonganTotal += $potonganPerSesi;
+                            $r = $buildRow($a, 'tidak_terlaksana');
+                            $r['status_label'] = 'Tidak terlaksana (JP tidak diberikan)';
+                            $r['subtotal'] = 0;
+                            $sesiTidakMengajar++;
                             break;
                         default:
                             $r = $buildRow($a, 'lain');
@@ -812,7 +808,6 @@ class LaporanController extends Controller
                     'guru'              => $this->guruHeader($guru),
                     'periode'           => ['mode' => $p['mode'], 'label' => $p['label']],
                     'tarif_per_jp'      => $tarif,
-                    'potongan_per_sesi' => $potonganPerSesi,
                     'rows'              => $rows->values(),
                     'ringkasan'         => [
                         'total_pertemuan'       => $rows->count(),
@@ -821,11 +816,8 @@ class LaporanController extends Controller
                         'sesi_pengganti'        => $sesiPengganti,
                         'jp_pengganti'          => $jpPengganti,
                         'vakasi_pengganti'      => $vakasiPengganti,
-                        'sesi_dipotong'         => $sesiDipotong,
-                        'potongan_total'        => $potonganTotal,
-                        'net_mengajar'          => $vakasiPengganti - $potonganTotal,
+                        'sesi_tidak_mengajar'   => $sesiTidakMengajar,
                         'tarif_per_jp'          => $tarif,
-                        'potongan_per_sesi'     => $potonganPerSesi,
                     ],
                 ];
             }

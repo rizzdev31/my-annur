@@ -20,6 +20,11 @@ Schedule::command('absensi:auto-alfa')->everyFifteenMinutes()->withoutOverlappin
 // sudah buka). Jam pulang diisi sesuai jadwal, bukan waktu perintah berjalan.
 Schedule::command('absensi:auto-checkout')->everyThirtyMinutes()->withoutOverlapping();
 
+// Sesi mengajar yang lewat batas (jam selesai + tenggang) tanpa absen & jurnal
+// dicatat TIDAK TERLAKSANA, lalu guru piket bertugas & guru ybs dikabari.
+// Tiap 5 menit agar piket masih sempat bertindak di hari yang sama.
+Schedule::command('mengajar:tandai-tidak-terlaksana')->everyFiveMinutes()->withoutOverlapping();
+
 // Pengingat & eskalasi notifikasi wajib (absensi + mengajar) tiap 15 menit.
 Schedule::command('notifikasi:reminder')->everyFifteenMinutes()->withoutOverlapping();
 

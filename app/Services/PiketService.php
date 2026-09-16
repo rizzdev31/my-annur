@@ -23,6 +23,14 @@ class PiketService
     /** Batas maksimal pengajuan sanggah per penilaian (1 awal + 1 ulang). */
     private const MAX_SANGGAH = 2;
 
+    /**
+     * Menit sejak kelas mulai sebelum sesi tanpa absen tampil di papan piket.
+     * Data September 2026: separuh guru absen ≤13 menit setelah mulai, tiga
+     * perempat ≤22 menit. Di bawah 20 menit papan penuh guru yang sebenarnya
+     * baru akan absen; di atasnya piket terlambat mengecek kelas kosong.
+     */
+    private const MENIT_CEK = 20;
+
     /** Status piket hari ini untuk seorang user (+ kondisi window). */
     public function status(User $user): array
     {
@@ -191,41 +199,94 @@ class PiketService
 
     // ── Handoff absensi santri (guru tidak konfirmasi → piket) ──────────────────
 
-    /** Daftar jadwal hari ini yang gurunya BELUM konfirmasi (window lewat, tanpa absensi). */
+    /**
+     * Papan pantau sesi mengajar hari ini untuk guru piket.
+     *
+     *   sesi         : TIDAK TERLAKSANA & absensi santrinya belum diisi → piket isi
+     *   berlangsung  : kelas sudah jalan ≥ MENIT_CEK tapi guru belum absen → cek ke kelas
+     *   ringkasan    : hitungan per kategori
+     *
+     * Status diambil dari SesiMengajarService agar piket, monitoring pimpinan,
+     * dan scheduler selalu menyebut kondisi yang sama untuk sesi yang sama.
+     * Piket baru boleh mengisi SETELAH batas (jam selesai + tenggang); sebelumnya
+     * guru masih berhak mengisi sendiri, dan isian piket akan menguncinya keluar.
+     */
     public function sesiPerluAbsen(User $user): array
     {
         $st = $this->status($user);
         if (!$st['is_piket'] || !$st['window']['aktif']) {
-            return ['boleh' => false, 'alasan' => $st['alasan'] ?? 'Window piket tidak aktif.', 'sesi' => []];
+            return ['boleh' => false, 'alasan' => $st['alasan'] ?? 'Window piket tidak aktif.',
+                'sesi' => [], 'berlangsung' => [], 'ringkasan' => null];
         }
 
+        $svc   = app(SesiMengajarService::class);
         $now   = TimezoneHelper::now();
         $today = $now->toDateString();
-        $hari  = TimezoneHelper::namaHariDB($now);
 
-        $jadwalHariIni = JadwalMengajar::with(['mataPelajaran', 'kelasRel', 'tenagaPendidik.user:id,name'])
-            ->where('hari', $hari)->where('is_aktif', true)->whereNotNull('kelas_id')
-            ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
-            ->get();
+        if ($svc->hariLibur($today)) {
+            return ['boleh' => true, 'alasan' => null, 'sesi' => [], 'berlangsung' => [],
+                'ringkasan' => ['libur' => true, 'tidak_terlaksana' => 0, 'perlu_isi' => 0, 'berlangsung' => 0]];
+        }
 
-        $sudah = AbsensiMengajar::whereDate('tanggal', $today)
-            ->whereIn('jadwal_mengajar_id', $jadwalHariIni->pluck('id'))
-            ->pluck('jadwal_mengajar_id')->flip();
+        $jadwal = $svc->jadwalTanggal($today)->filter(fn ($j) => $j->kelas_id);
 
-        $sesi = $jadwalHariIni->filter(function ($j) use ($now, $today, $sudah) {
-            if ($sudah->has($j->id)) return false; // guru sudah konfirmasi → bukan urusan piket
-            $end = Carbon::parse("$today {$j->jam_selesai}", TimezoneHelper::TZ);
-            return $now->gt($end); // hanya yang window-nya sudah lewat
-        })->map(fn($j) => [
+        $absensi = AbsensiMengajar::whereDate('tanggal', $today)
+            ->whereIn('jadwal_mengajar_id', $jadwal->pluck('id'))
+            ->withCount('absensiSantri')
+            ->with('digantikanOleh.user:id,name')
+            ->get()->keyBy('jadwal_mengajar_id');
+
+        $baris = fn ($j, $a = null) => [
             'jadwal_id'      => $j->id,
             'mata_pelajaran' => $j->mataPelajaran?->nama ?? '—',
             'tipe'           => $j->mataPelajaran?->tipe,
             'kelas'          => $j->kelasRel?->nama ?? $j->kelas,
-            'guru'           => $j->tenagaPendidik?->user?->name ?? '—',
-            'jam'            => substr($j->jam_mulai, 0, 5) . '–' . substr($j->jam_selesai, 0, 5),
-        ])->values()->all();
+            // Pada sesi inval yang tidak datang, yang dicari piket adalah penggantinya.
+            'guru'           => $a?->digantikanOleh?->user?->name ?? $j->tenagaPendidik?->user?->name ?? '—',
+            'inval'          => (bool) $a?->digantikan_oleh,
+            'jam'            => substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5),
+            'batas'          => $svc->batasJam($today, (string) $j->jam_selesai),
+        ];
 
-        return ['boleh' => true, 'alasan' => null, 'sesi' => $sesi];
+        $perluIsi = collect(); $berlangsung = collect(); $tidakTerlaksana = 0;
+
+        foreach ($jadwal as $j) {
+            $a = $absensi->get($j->id);
+            $status = $svc->statusLive($a, $today, (string) $j->jam_mulai, (string) $j->jam_selesai, $now);
+
+            // Inval yang sudah ditunjuk tapi belum absen: bagi piket statusnya sama
+            // dengan sesi tanpa catatan — berlangsung lalu tidak terlaksana.
+            if ($status === 'pengganti' && $a && is_null($a->jam_selesai_aktual)) {
+                $status = $svc->statusLive(null, $today, (string) $j->jam_mulai, (string) $j->jam_selesai, $now);
+            }
+
+            if ($status === 'tidak_terlaksana') {
+                $tidakTerlaksana++;
+                if (!$a || (int) $a->absensi_santri_count === 0) {
+                    $perluIsi->push($baris($j, $a) + ['absensi_mengajar_id' => $a?->id]);
+                }
+            } elseif ($status === 'berlangsung') {
+                $mulai = Carbon::parse("$today {$j->jam_mulai}", TimezoneHelper::TZ);
+                $menit = (int) $mulai->diffInMinutes($now);
+                if ($menit >= self::MENIT_CEK) {
+                    $berlangsung->push($baris($j, $a) + ['menit_berjalan' => $menit]);
+                }
+            }
+        }
+
+        return [
+            'boleh'       => true,
+            'alasan'      => null,
+            'sesi'        => $perluIsi->values()->all(),
+            'berlangsung' => $berlangsung->sortByDesc('menit_berjalan')->values()->all(),
+            'ringkasan'   => [
+                'libur'            => false,
+                'tidak_terlaksana' => $tidakTerlaksana,
+                'perlu_isi'        => $perluIsi->count(),
+                'berlangsung'      => $berlangsung->count(),
+                'menit_cek'        => self::MENIT_CEK,
+            ],
+        ];
     }
 
     /** Roster santri untuk satu jadwal (untuk diisi piket). */
@@ -265,26 +326,49 @@ class PiketService
         if (strtolower($jadwal->hari) !== TimezoneHelper::namaHariDB($now)) {
             throw new \DomainException('Jadwal ini tidak berlangsung hari ini.', 422);
         }
-        $end = Carbon::parse("$today {$jadwal->jam_selesai}", TimezoneHelper::TZ);
-        if ($now->lte($end)) {
-            throw new \DomainException('Sesi belum berakhir — piket mengisi hanya setelah jam selesai & guru tak konfirmasi.', 422);
-        }
-        if (AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->whereDate('tanggal', $today)->exists()) {
-            throw new \DomainException('Sesi ini sudah tercatat — tidak perlu diisi piket.', 422);
+        // Batas SAMA dengan guru (jam selesai + tenggang). Dulu piket boleh mengisi
+        // begitu jam selesai, padahal guru masih berhak mengisi 15 menit lagi —
+        // isian piket membuat guru yang tepat waktu ditolak ALREADY_ABSEN.
+        $batas = KebijakanMengajar::batasAbsenSesi($today, (string) $jadwal->jam_selesai);
+        if ($now->lte($batas)) {
+            throw new \DomainException('Guru masih berhak mengisi sampai ' . $batas->format('H:i')
+                . ' — piket mengisi setelah batas itu.', 422);
         }
 
-        $am = DB::transaction(function () use ($jadwal, $today, $now, $absensi, $materi, $piketNama) {
-            $am = AbsensiMengajar::create([
-                'jadwal_mengajar_id' => $jadwal->id,
-                'tenaga_pendidik_id' => $jadwal->tenaga_pendidik_id, // guru terjadwal (jejak); tidak_terlaksana → tanpa vakasi
-                'tanggal'            => $today,
-                'jam_mulai_aktual'   => $now->format('H:i:s'),
-                'jp_terlaksana'      => 0,
-                'status'             => 'tidak_terlaksana',
-                'materi'             => $materi,
-                'keterangan'         => 'Guru tidak konfirmasi — absensi santri diisi guru piket (' . $piketNama . ').',
-                'sudah_buka_jurnal'  => false,
-            ]);
+        $keterangan = 'Guru tidak mengisi — absensi santri diisi guru piket (' . $piketNama . ').';
+
+        $am = DB::transaction(function () use ($jadwal, $today, $now, $absensi, $materi, $keterangan) {
+            JadwalMengajar::whereKey($jadwal->id)->lockForUpdate()->first();
+            $ada = AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->whereDate('tanggal', $today)->first();
+
+            if ($ada) {
+                // Sesi yang sudah dicatat TIDAK TERLAKSANA (otomatis, atau inval yang
+                // tidak datang) tetap boleh dilengkapi piket selama absensi santrinya
+                // belum diisi siapa pun. Tanpa ini, pencatatan otomatis justru
+                // mengunci piket dari tugas utamanya.
+                if (!app(SesiMengajarService::class)->perluAbsensiSantri($ada)) {
+                    throw new \DomainException('Sesi ini sudah tercatat — tidak perlu diisi piket.', 422);
+                }
+                $ada->update([
+                    'jam_mulai_aktual' => $ada->jam_mulai_aktual ?? $now->format('H:i:s'),
+                    'materi'           => $materi ?? $ada->materi,
+                    'keterangan'       => trim(($ada->keterangan ? $ada->keterangan . ' | ' : '') . $keterangan),
+                ]);
+                $am = $ada;
+            } else {
+                $am = AbsensiMengajar::create([
+                    'jadwal_mengajar_id' => $jadwal->id,
+                    'tenaga_pendidik_id' => $jadwal->tenaga_pendidik_id, // guru terjadwal (jejak); tidak_terlaksana → tanpa JP
+                    'tanggal'            => $today,
+                    'jam_mulai_aktual'   => $now->format('H:i:s'),
+                    'jp_terlaksana'      => 0,
+                    'status'             => 'tidak_terlaksana',
+                    'materi'             => $materi,
+                    'keterangan'         => $keterangan,
+                    'sudah_buka_jurnal'  => false,
+                ]);
+            }
+
             foreach ($absensi as $row) {
                 AbsensiSantri::create([
                     'absensi_mengajar_id' => $am->id,

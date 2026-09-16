@@ -546,15 +546,9 @@ class PayrollCalculationService
             ->get();
         $jpPengganti = (int) $pengganti->sum('jp_terlaksana');
 
-        // SESI TIDAK MENGAJAR (untuk POTONGAN, flat per sesi):
-        // baris di mana guru ini adalah pengajar asli tapi TIDAK mengajar —
-        //   - status 'pengganti'       : sesinya diampu guru pengganti (guru asli dipotong)
-        //   - status 'tidak_terlaksana': sesi tidak berjalan & tanpa pengganti
-        // 'libur' & 'izin' (cuti sah) TIDAK dipotong.
-        $sesiDipotong = (int) AbsensiMengajar::where('tenaga_pendidik_id', $guru->id)
-            ->whereBetween('tanggal', [$mulai->toDateString(), $selesai->toDateString()])
-            ->whereIn('status', ['pengganti', 'tidak_terlaksana'])
-            ->count();
+        // Tidak ada lagi potongan gaji per sesi (kebijakan 16 Sep 2026). Sesi yang
+        // tidak terlaksana cukup tidak mendapat JP dan tercatat di kinerja —
+        // lihat SesiMengajarService & KinerjaCalculationService.
 
         return [
             // total_jp yang DIBAYAR vakasi = HANYA JP mengajar pengganti.
@@ -564,7 +558,6 @@ class PayrollCalculationService
             'jp_libur'      => $jpLibur,
             'jp_izin'       => $jpIzin,
             'jp_pengganti'  => $jpPengganti,
-            'sesi_dipotong' => $sesiDipotong,
             'ids'           => $pengganti->pluck('id')->toArray(),
         ];
     }
@@ -855,23 +848,9 @@ class PayrollCalculationService
                         ];
                         break;
 
-                    // ── Potongan Tidak Mengajar (flat × sesi digantikan / tidak terlaksana) ──
-                    case 'per_sesi_tidak_mengajar':
-                        $sesi = (int) ($rekapMengajar['sesi_dipotong'] ?? 0);
-                        if ($sesi <= 0) break;
-                        $nominal = $s->hitungNominal($gajiPokok, $sesi);
-                        if ($nominal <= 0) break;
-                        $potongLainnya += $nominal;
-                        $details[] = [
-                            'tipe'             => 'potongan_tidak_mengajar',
-                            'keterangan'       => "{$s->nama} — {$sesi} sesi tidak mengajar",
-                            'jumlah_satuan'    => $sesi,
-                            'satuan'           => 'sesi',
-                            'nilai_per_satuan' => $s->hitungNominal($gajiPokok, 1),
-                            'subtotal'         => -$nominal,
-                            'referensi_ids'    => [$s->id],
-                        ];
-                        break;
+                    // 'per_sesi_tidak_mengajar' sengaja tidak ditangani lagi: potongan
+                    // gaji per sesi dihapus (16 Sep 2026). Setting lama yang masih
+                    // bertipe ini tidak berpengaruh walau diaktifkan ulang.
 
                     // ── Potongan Flat Per Bulan (wajib/simpanan/pinjaman) ─
                     case 'per_bulan':

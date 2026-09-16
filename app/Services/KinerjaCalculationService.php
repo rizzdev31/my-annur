@@ -233,30 +233,20 @@ class KinerjaCalculationService
 
         // ── Skor Mengajar (dari sisi absensi — sesi terlaksana) ─────────────
         // Berapa sesi jadwal yang benar-benar terlaksana bulan ini
-        $absensiMengajar = AbsensiMengajar::where('tenaga_pendidik_id', $guru->id)
-            ->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)
-            ->get();
+        // Aturan sesi yang dinilai ada di SesiMengajarService (satu sumber dengan
+        // komponen administrasi): libur & izin netral, sesi yang dialihkan menjadi
+        // tanggung jawab pengganti, dan inval yang tidak datang dihitung ke pengganti.
+        $dinilai = app(\App\Services\SesiMengajarService::class)->sesiDinilaiKinerja(
+            $guru->id,
+            Carbon::create($tahun, $bulan, 1)->toDateString(),
+            Carbon::create($tahun, $bulan, 1)->endOfMonth()->toDateString(),
+        );
 
-        // NETRAL: sesi yang DIALIHKAN ke guru pengganti (digantikan_oleh terisi —
-        // mis. akibat izin sementara / izin harian yang menyediakan pengganti)
-        // TIDAK dihitung dalam kinerja mengajar guru asli (bukan pelanggaran).
-        $absensiDinilai = $absensiMengajar->whereNull('digantikan_oleh');
-
-        $sesiJadwalBulan   = $absensiDinilai->count();
-        $sesiTerlaksana    = $absensiDinilai->where('status', 'terlaksana')->count();
-
-        // JP jadwal: hitung via DB join (Collection tidak support join) — sesi
-        // yang dialihkan (digantikan_oleh) dikecualikan agar denominator adil.
-        $jpJadwal = (int) DB::table('absensi_mengajar')
-            ->join('jadwal_mengajar', 'absensi_mengajar.jadwal_mengajar_id', '=', 'jadwal_mengajar.id')
-            ->where('absensi_mengajar.tenaga_pendidik_id', $guru->id)
-            ->whereNull('absensi_mengajar.digantikan_oleh')
-            ->whereMonth('absensi_mengajar.tanggal', $bulan)
-            ->whereYear('absensi_mengajar.tanggal', $tahun)
-            ->sum('jadwal_mengajar.jumlah_jp');
-
-        // JP terlaksana: sum dari Collection (sudah di-load di atas)
-        $jpTerlaksana = (int) $absensiDinilai->where('status', 'terlaksana')->sum('jp_terlaksana');
+        $sesiJadwalBulan = $dinilai->count();
+        $sesiTerlaksana  = $dinilai->where('terlaksana', true)->count();
+        $jpJadwal        = (int) $dinilai->sum('jp_jadwal');
+        $jpTerlaksana    = (int) $dinilai->where('terlaksana', true)
+            ->sum(fn ($x) => (int) $x['absensi']->jp_terlaksana);
 
         // Jika tidak ada jadwal mengajar, tidak diperhitungkan (100)
         $skorMengajar = $sesiJadwalBulan > 0
@@ -385,15 +375,14 @@ class KinerjaCalculationService
         // Sesi yang DILAPORKAN = absensi mengajar ada + materi diisi
         // Sesi jadwal aktif = semua sesi yang seharusnya mengajar bulan ini
 
-        $absensiMengajar = AbsensiMengajar::where('tenaga_pendidik_id', $guru->id)
-            ->whereBetween('tanggal', [$mulai, $selesai])
-            ->get();
+        $dinilai = app(\App\Services\SesiMengajarService::class)->sesiDinilaiKinerja(
+            $guru->id, $mulai->toDateString(), $selesai->toDateString()
+        );
 
-        $sesiJadwal      = $absensiMengajar->count();
-        $sesiTerlaksana  = $absensiMengajar->where('status', 'terlaksana')->count();
-        $sesiDilaporkan  = $absensiMengajar
-            ->where('status', 'terlaksana')
-            ->filter(fn($a) => !empty(trim($a->materi ?? '')))
+        $sesiJadwal      = $dinilai->count();
+        $sesiTerlaksana  = $dinilai->where('terlaksana', true)->count();
+        $sesiDilaporkan  = $dinilai->where('terlaksana', true)
+            ->filter(fn($x) => !empty(trim($x['absensi']->materi ?? '')))
             ->count();
 
         // Skor laporan: sesi yang absen mengajar DAN ada materinya

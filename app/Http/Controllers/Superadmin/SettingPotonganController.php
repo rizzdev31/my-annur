@@ -174,7 +174,9 @@ class SettingPotonganController extends Controller
             ['value' => 'per_keterlambatan',       'label' => 'Per Kejadian Terlambat', 'desc' => 'Dihitung × jumlah terlambat bulan ini'],
             ['value' => 'per_alfa',               'label' => 'Per Hari Alfa',          'desc' => 'Dihitung × jumlah hari tidak hadir'],
             ['value' => 'per_menit_keterlambatan', 'label' => 'Per Menit Keterlambatan','desc' => 'Dihitung × total menit terlambat kumulatif bulan ini'],
-            ['value' => 'per_sesi_tidak_mengajar', 'label' => 'Per Sesi Tidak Mengajar','desc' => 'Flat × jumlah sesi mengajar yang digantikan / tidak terlaksana'],
+            // 'per_sesi_tidak_mengajar' dihapus dari pilihan (16 Sep 2026): tidak ada
+            // lagi potongan gaji per sesi. Tipe ini tetap lolos validasi hanya agar
+            // setting lama yang sudah nonaktif masih bisa dibuka tanpa galat.
             ['value' => 'per_bulan',              'label' => 'Flat Per Bulan',         'desc' => 'Nominal tetap setiap bulan'],
             ['value' => 'persen_gaji',       'label' => 'Persen dari Gaji Pokok', 'desc' => 'Dihitung % dari total gaji pokok'],
             ['value' => 'manual',            'label' => 'Input Manual',           'desc' => 'Tidak otomatis, diisi manual per guru'],

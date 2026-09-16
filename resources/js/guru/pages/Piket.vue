@@ -47,13 +47,18 @@ onMounted(loadMenilai)
 // ── Absen Kelas (handoff — piket isi sesi yg guru asli tak konfirmasi) ───────
 const sesiBoleh = ref(false)
 const sesiAlasan = ref(null)
-const sesiList = ref([])
+const sesiList = ref([])          // tidak terlaksana & absensi santri belum diisi
+const berlangsungList = ref([])   // kelas sudah jalan, guru belum absen
+const ringkasan = ref(null)
 async function loadKelas() {
     loading.value = true
     try {
         const res = await api.get('/piket/sesi')
         const d = res.data.data ?? res.data
-        sesiBoleh.value = !!d.boleh; sesiAlasan.value = d.alasan; sesiList.value = d.sesi ?? []
+        sesiBoleh.value = !!d.boleh; sesiAlasan.value = d.alasan
+        sesiList.value = d.sesi ?? []
+        berlangsungList.value = d.berlangsung ?? []
+        ringkasan.value = d.ringkasan ?? null
     } catch (e) { msg.value = { ok: false, text: e.response?.data?.message || 'Gagal memuat.' } }
     finally { loading.value = false }
 }
@@ -83,7 +88,7 @@ async function submitAbsenKelas() {
             materi: rMateri.value.trim() || null,
         })
         rosterSesi.value = null
-        msg.value = { ok: true, text: 'Absensi kelas tersimpan. Sesi ditandai tidak terlaksana (guru asli tanpa vakasi).' }
+        msg.value = { ok: true, text: 'Absensi santri tersimpan. Sesi tetap tercatat tidak terlaksana untuk guru.' }
         await loadKelas()
     } catch (e) { msg.value = { ok: false, text: e.response?.data?.message || 'Gagal menyimpan.' } }
     finally { rSaving.value = false }
@@ -210,23 +215,60 @@ const sanggahLabel = (s) => ({ diajukan: 'Sanggahan diproses', diterima: 'Sangga
                 {{ sesiAlasan || 'Absen kelas hanya saat Anda bertugas piket & sudah absen masuk.' }}
             </div>
             <template v-else>
-                <p class="text-[11px] text-gray-400 mb-3">Sesi yang <b>gurunya belum konfirmasi</b> setelah jam mengajar berakhir. Piket mengisi kehadiran santri — sesi ditandai <b>tidak terlaksana</b> (vakasi guru asli tidak diberikan).</p>
-                <div v-if="!sesiList.length" class="pt-12 text-center text-sm text-gray-400">Tidak ada sesi yang perlu diisi. Semua terkonfirmasi ✓</div>
-                <ul v-else class="space-y-3">
-                    <li v-for="s in sesiList" :key="s.jadwal_id" class="rounded-2xl bg-white border border-gray-100 p-4">
-                        <div class="flex items-start gap-3">
-                            <div class="w-12 text-center shrink-0">
-                                <svg class="w-6 h-6 mx-auto text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z"/></svg>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm font-bold text-gray-800 truncate">{{ s.mata_pelajaran }}</p>
-                                <p class="text-[11px] text-gray-400">{{ s.kelas }} · {{ s.jam }}</p>
-                                <p class="text-[11px] text-red-500 mt-0.5">Guru: {{ s.guru }} (belum konfirmasi)</p>
-                                <button @click="bukaRoster(s)" class="mt-2 px-4 py-1.5 rounded-lg bg-[#0C78FF] text-white text-xs font-bold">Isi Kehadiran</button>
-                            </div>
+                <div v-if="ringkasan?.libur" class="pt-12 text-center text-sm text-gray-400">Hari libur — tidak ada sesi mengajar.</div>
+                <template v-else>
+                    <!-- Ringkasan: satu pandangan untuk tahu apakah ada kelas bermasalah -->
+                    <div class="grid grid-cols-2 gap-2 mb-4">
+                        <div class="rounded-2xl p-3 border" :class="berlangsungList.length ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'">
+                            <p class="text-2xl font-extrabold" :class="berlangsungList.length ? 'text-amber-600' : 'text-gray-300'">{{ berlangsungList.length }}</p>
+                            <p class="text-[11px] text-gray-500 leading-tight">Kelas berjalan, guru belum absen</p>
                         </div>
-                    </li>
-                </ul>
+                        <div class="rounded-2xl p-3 border" :class="sesiList.length ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'">
+                            <p class="text-2xl font-extrabold" :class="sesiList.length ? 'text-red-600' : 'text-gray-300'">{{ sesiList.length }}</p>
+                            <p class="text-[11px] text-gray-500 leading-tight">Tidak terlaksana, absensi santri belum diisi</p>
+                        </div>
+                    </div>
+
+                    <!-- 1. Perlu dicek ke kelas (masih bisa diselamatkan) -->
+                    <template v-if="berlangsungList.length">
+                        <h2 class="text-sm font-bold text-gray-800 mb-1">Cek ke kelas</h2>
+                        <p class="text-[11px] text-gray-400 mb-2">Kelas sudah berjalan ≥ {{ ringkasan?.menit_cek ?? 20 }} menit tapi guru belum absen. Ingatkan guru sebelum batas waktunya.</p>
+                        <ul class="space-y-2 mb-5">
+                            <li v-for="s in berlangsungList" :key="'b' + s.jadwal_id" class="rounded-2xl bg-white border border-amber-100 p-3.5">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-bold text-gray-800 truncate">{{ s.mata_pelajaran }} · {{ s.kelas }}</p>
+                                        <p class="text-[11px] text-gray-500">{{ s.guru }}<span v-if="s.inval" class="text-sky-600"> (inval)</span> · {{ s.jam }}</p>
+                                    </div>
+                                    <div class="text-right shrink-0">
+                                        <p class="text-[11px] font-bold text-amber-600">{{ s.menit_berjalan }} mnt</p>
+                                        <p class="text-[10px] text-gray-400">batas {{ s.batas }}</p>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+                    </template>
+
+                    <!-- 2. Tidak terlaksana — piket mengisi absensi santri -->
+                    <h2 class="text-sm font-bold text-gray-800 mb-1">Tidak terlaksana</h2>
+                    <p class="text-[11px] text-gray-400 mb-2">Guru tidak mengisi absen & jurnal sampai batas waktu. Isi kehadiran santri agar datanya tidak kosong — status sesi tetap <b>tidak terlaksana</b> untuk guru (JP tidak diberikan, tercatat di kinerja).</p>
+                    <div v-if="!sesiList.length" class="py-8 text-center text-sm text-gray-400">Tidak ada sesi yang perlu diisi ✓</div>
+                    <ul v-else class="space-y-3">
+                        <li v-for="s in sesiList" :key="s.jadwal_id" class="rounded-2xl bg-white border border-gray-100 p-4">
+                            <div class="flex items-start gap-3">
+                                <div class="w-12 text-center shrink-0">
+                                    <svg class="w-6 h-6 mx-auto text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z"/></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-bold text-gray-800 truncate">{{ s.mata_pelajaran }}</p>
+                                    <p class="text-[11px] text-gray-400">{{ s.kelas }} · {{ s.jam }} · batas {{ s.batas }}</p>
+                                    <p class="text-[11px] text-red-500 mt-0.5">Guru: {{ s.guru }}<span v-if="s.inval"> (inval tidak datang)</span></p>
+                                    <button @click="bukaRoster(s)" class="mt-2 px-4 py-1.5 rounded-lg bg-[#0C78FF] text-white text-xs font-bold">Isi Kehadiran Santri</button>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </template>
             </template>
         </template>
 

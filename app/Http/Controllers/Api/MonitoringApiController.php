@@ -98,22 +98,23 @@ class MonitoringApiController extends Controller
                 ->whereDate('tanggal', $tglStr)->whereIn('jadwal_mengajar_id', $jadwal->pluck('id'))
                 ->get()->keyBy('jadwal_mengajar_id');
 
-            $sesi = $jadwal->map(function ($j) use ($am, $tglStr, $sekarang) {
+            $svcSesi = app(\App\Services\SesiMengajarService::class);
+            $sesi = $jadwal->map(function ($j) use ($am, $tglStr, $sekarang, $svcSesi) {
                 $a = $am->get($j->id);
-                // Pakai batas yang sama dengan absen (jam_selesai + tenggang) agar
-                // pimpinan tidak melihat "terlewat" padahal guru masih berhak mengisi.
-                $lewat = $sekarang->gt(\App\Services\KebijakanMengajar::batasAbsenSesi($tglStr, (string) $j->jam_selesai));
+                // Satu istilah: sesi lewat batas tanpa catatan = TIDAK TERLAKSANA
+                // (batas = jam selesai + tenggang, sama dengan absen guru).
+                $status = $svcSesi->statusLive($a, $tglStr, (string) $j->jam_mulai, (string) $j->jam_selesai, $sekarang);
                 return [
                     'guru'           => $j->tenagaPendidik?->user?->name ?? '—',
                     'mata_pelajaran' => $j->mataPelajaran?->nama ?? '—',
                     'kelas'          => $j->kelas,
                     'jam'            => substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5),
-                    'status'         => $a?->status ?? ($lewat ? 'terlewat' : 'belum'),
+                    'status'         => $status,
                     'pengganti'      => $a?->digantikanOleh?->user?->name,
                 ];
             })->values();
 
-            $bermasalah = $sesi->whereIn('status', ['terlewat', 'tidak_terlaksana']);
+            $bermasalah = $sesi->where('status', 'tidak_terlaksana');
             $out['mengajar'] = [
                 'total'      => $sesi->count(),
                 'beres'      => $sesi->whereIn('status', ['terlaksana', 'hadir', 'pengganti', 'libur'])->count(),
@@ -285,15 +286,13 @@ class MonitoringApiController extends Controller
             ->get()->keyBy('jadwal_mengajar_id');
 
         $ringkas = [];
-        $rows = $guru->map(function ($g) use ($jadwal, $absensi, $tanggal, $sekarang, &$ringkas) {
-            $sesi = $jadwal->where('tenaga_pendidik_id', $g->id)->map(function ($j) use ($absensi, $tanggal, $sekarang, &$ringkas) {
+        $svcSesi = app(\App\Services\SesiMengajarService::class);
+        $rows = $guru->map(function ($g) use ($jadwal, $absensi, $tanggal, $sekarang, &$ringkas, $svcSesi) {
+            $sesi = $jadwal->where('tenaga_pendidik_id', $g->id)->map(function ($j) use ($absensi, $tanggal, $sekarang, &$ringkas, $svcSesi) {
                 $a = $absensi->get($j->id);
-                // Sama dengan dashboard: hormati tenggang jurnal sebelum menandai terlewat.
-                $lewat = $sekarang->gt(\App\Services\KebijakanMengajar::batasAbsenSesi(
-                    $tanggal->toDateString(), (string) $j->jam_selesai
-                ));
-                // Belum ada catatan & jam sudah lewat → TERLEWAT (sinyal utama pimpinan).
-                $status = $a?->status ?? ($lewat ? 'terlewat' : 'belum');
+                // Satu istilah untuk sesi lewat batas tanpa catatan: TIDAK TERLAKSANA.
+                $status = $svcSesi->statusLive($a, $tanggal->toDateString(),
+                    (string) $j->jam_mulai, (string) $j->jam_selesai, $sekarang);
                 $ringkas[$status] = ($ringkas[$status] ?? 0) + 1;
 
                 return [
@@ -315,7 +314,7 @@ class MonitoringApiController extends Controller
                 'jabatan'   => $g->jabatan?->nama_jabatan ?? '—',
                 'total'     => $sesi->count(),
                 'beres'     => $sesi->whereIn('status', ['terlaksana', 'hadir', 'pengganti', 'libur'])->count(),
-                'bermasalah'=> $sesi->whereIn('status', ['terlewat', 'tidak_terlaksana'])->count(),
+                'bermasalah'=> $sesi->where('status', 'tidak_terlaksana')->count(),
                 'sesi'      => $sesi,
             ];
         })->filter(fn($r) => $r['total'] > 0)->values();

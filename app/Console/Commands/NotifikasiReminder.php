@@ -125,16 +125,20 @@ class NotifikasiReminder extends Command
             // Hanya setelah sesi MELEWATI jadwal (jam selesai lewat).
             if ($now->lte($selesai)) continue;
 
-            // Sudah diisi? (ada record absensi mengajar utk sesi ini hari ini)
-            $sudahDiisi = AbsensiMengajar::where('jadwal_mengajar_id', $j->id)
-                ->whereDate('tanggal', $today)->exists();
-            if ($sudahDiisi) continue;
+            // Sudah ditangani? Catatan TIDAK TERLAKSANA yang dibuat scheduler belum
+            // dihitung "ditangani" selama absensi santrinya kosong — kalau dihitung,
+            // eskalasi ke admin berhenti begitu scheduler jalan (≤5 menit setelah batas).
+            $am = AbsensiMengajar::where('jadwal_mengajar_id', $j->id)->whereDate('tanggal', $today)->first();
+            if ($am && !app(\App\Services\SesiMengajarService::class)->perluAbsensiSantri($am)) continue;
 
             // Guru sedang izin → lewati.
             if ($this->sedangIzin($j->tenaga_pendidik_id, $today)) continue;
 
+            // Pengingat ke guru hanya SEBELUM batas — setelahnya sesi sudah tidak
+            // terlaksana dan guru sudah dikabari oleh mengajar:tandai-tidak-terlaksana.
+            $batas = \App\Services\KebijakanMengajar::batasAbsenSesi($today, (string) $j->jam_selesai);
             $end = $selesai->copy()->addMinutes($cfg->reminder['batas_menit'] ?? 60);
-            if ($now->betweenIncluded($selesai, $end)) {
+            if (!$am && $now->betweenIncluded($selesai, $end) && $now->lte($batas)) {
                 $bucket = $this->bucket($now, $selesai, $cfg->reminder['ulang_menit'] ?? 0);
                 $mapel  = $j->mataPelajaran?->nama ?? 'sesi';
                 $kelas  = $j->kelas ?? '';
@@ -142,7 +146,8 @@ class NotifikasiReminder extends Command
                     'user'  => $j->tenagaPendidik->user,
                     'judul' => 'Absen Mengajar Belum Diisi',
                     'pesan' => "Sesi {$mapel} {$kelas} (" . substr($j->jam_mulai, 0, 5) . '–' . substr($j->jam_selesai, 0, 5)
-                        . ') sudah lewat & belum diabsen. Segera isi absen mengajar/jurnal.',
+                        . ') belum diabsen. Isi absen & jurnal sebelum ' . $batas->format('H:i')
+                        . ' agar tidak tercatat tidak terlaksana.',
                     'tipe'  => 'tugas_update', 'data' => ['route' => '/mengajar'],
                     'dedup' => "j{$j->id}-{$today}-{$bucket}",
                 ]);

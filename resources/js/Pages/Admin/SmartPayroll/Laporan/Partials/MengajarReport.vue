@@ -30,8 +30,9 @@
         <div class="px-6 sm:px-8 pt-4 no-print">
             <p class="text-xs text-gray-500 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                 Mengajar jadwal sendiri <b>tidak dibayar vakasi</b> (sudah termasuk gaji pokok).
-                Vakasi mengajar hanya untuk <b>sesi pengganti</b>; sesi yang digantikan / tidak terlaksana
-                dikenai <b>potongan per sesi</b>.
+                Vakasi mengajar hanya untuk <b>sesi pengganti</b>. Sesi yang digantikan / tidak terlaksana
+                <b>tidak dipotong gaji</b> — JP-nya saja yang tidak diberikan, dan sesi tidak terlaksana
+                tercatat di kinerja.
             </p>
         </div>
 
@@ -49,17 +50,14 @@
                     <div class="text-[10px] text-gray-400 mt-0.5">{{ ringkasan.sesi_pengganti }} sesi · {{ ringkasan.jp_pengganti }} JP × {{ rupiah(ringkasan.tarif_per_jp) }}</div>
                 </div>
                 <div class="bg-white rounded-xl border border-gray-100 px-4 py-3 text-center">
-                    <div class="text-[11px] font-semibold text-red-500 uppercase tracking-wide">Potongan</div>
-                    <div class="text-base font-extrabold mt-1.5 text-red-600 tabular-nums">− {{ rupiah(ringkasan.potongan_total) }}</div>
-                    <div class="text-[10px] text-gray-400 mt-0.5">{{ ringkasan.sesi_dipotong }} sesi × {{ rupiah(ringkasan.potongan_per_sesi) }}</div>
+                    <div class="text-[11px] font-semibold text-red-500 uppercase tracking-wide">Tidak Mengajar</div>
+                    <div class="text-2xl font-bold mt-0.5 text-red-600">{{ ringkasan.sesi_tidak_mengajar }} <span class="text-sm font-medium text-gray-400">sesi</span></div>
+                    <div class="text-[10px] text-gray-400 mt-0.5">digantikan / tidak terlaksana · tanpa potongan</div>
                 </div>
-                <div class="rounded-xl border px-4 py-3 text-center"
-                    :class="ringkasan.net_mengajar >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'">
-                    <div class="text-[11px] font-semibold uppercase tracking-wide"
-                        :class="ringkasan.net_mengajar >= 0 ? 'text-emerald-500' : 'text-red-500'">Net Mengajar</div>
-                    <div class="text-base font-extrabold mt-1.5 tabular-nums"
-                        :class="ringkasan.net_mengajar >= 0 ? 'text-emerald-700' : 'text-red-700'">{{ rupiah(ringkasan.net_mengajar) }}</div>
-                    <div class="text-[10px] text-gray-400 mt-0.5">vakasi pengganti − potongan</div>
+                <div class="rounded-xl border px-4 py-3 text-center bg-emerald-50 border-emerald-100">
+                    <div class="text-[11px] font-semibold uppercase tracking-wide text-emerald-500">Vakasi Mengajar</div>
+                    <div class="text-base font-extrabold mt-1.5 tabular-nums text-emerald-700">{{ rupiah(ringkasan.vakasi_pengganti) }}</div>
+                    <div class="text-[10px] text-gray-400 mt-0.5">dari sesi pengganti</div>
                 </div>
             </div>
         </div>
@@ -87,7 +85,7 @@
                         </td>
                     </tr>
                     <tr v-for="row in rows" :key="row.no" class="hover:bg-indigo-50/30"
-                        :class="row.jenis === 'dipotong' ? 'bg-red-50/30' : (row.jenis === 'pengganti' ? 'bg-sky-50/20' : '')">
+                        :class="row.jenis === 'tidak_terlaksana' ? 'bg-red-50/30' : (row.jenis === 'pengganti' ? 'bg-sky-50/20' : '')">
                         <td class="px-3 py-2.5 text-center text-gray-400 tabular-nums">{{ row.no }}</td>
                         <td class="px-3 py-2.5 font-medium text-gray-700">{{ row.hari }}</td>
                         <td class="px-3 py-2.5 text-gray-600 tabular-nums">{{ row.tanggal }}</td>
@@ -111,10 +109,9 @@
                 </tbody>
                 <tfoot v-if="rows.length" class="bg-gray-50 border-t-2 border-gray-200">
                     <tr class="font-bold text-gray-800">
-                        <td colspan="8" class="px-3 py-3 text-right uppercase text-xs tracking-wide text-gray-500">Net dari Mengajar</td>
-                        <td class="px-3 py-3 text-right tabular-nums"
-                            :class="ringkasan.net_mengajar >= 0 ? 'text-emerald-700' : 'text-red-700'">
-                            {{ rupiah(ringkasan.net_mengajar) }}
+                        <td colspan="8" class="px-3 py-3 text-right uppercase text-xs tracking-wide text-gray-500">Vakasi dari Mengajar</td>
+                        <td class="px-3 py-3 text-right tabular-nums text-emerald-700">
+                            {{ rupiah(ringkasan.vakasi_pengganti) }}
                         </td>
                     </tr>
                 </tfoot>
@@ -140,7 +137,8 @@ function jenisStyle(jenis) {
     const map = {
         mengajar_sendiri: 'bg-gray-50 text-gray-600 border-gray-200',
         pengganti:        'bg-sky-50 text-sky-700 border-sky-200',
-        dipotong:         'bg-red-50 text-red-700 border-red-200',
+        tidak_terlaksana: 'bg-red-50 text-red-700 border-red-200',
+        digantikan:       'bg-slate-50 text-slate-600 border-slate-200',
         libur:            'bg-orange-50 text-orange-700 border-orange-200',
         izin:             'bg-blue-50 text-blue-700 border-blue-200',
     }

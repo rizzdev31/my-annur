@@ -32,8 +32,8 @@ const ST = {
     pengganti: { t: 'Pengganti', c: 'text-sky-700 bg-sky-50' },
     libur: { t: 'Libur', c: 'text-gray-500 bg-gray-100' },
     alfa: { t: 'Alfa', c: 'text-red-600 bg-red-50' },
-    tidak_terlaksana: { t: 'Tak terlaksana', c: 'text-red-600 bg-red-50' },
-    terlewat: { t: 'Terlewat', c: 'text-red-600 bg-red-50' },
+    tidak_terlaksana: { t: 'Tidak terlaksana', c: 'text-red-600 bg-red-50' },
+    berlangsung: { t: 'Berlangsung', c: 'text-amber-700 bg-amber-50' },
     belum: { t: 'Belum', c: 'text-gray-500 bg-gray-100' },
 }
 const lbl = (s) => ST[s]?.t ?? s

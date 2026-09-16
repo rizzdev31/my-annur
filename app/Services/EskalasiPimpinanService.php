@@ -137,8 +137,8 @@ class EskalasiPimpinanService
         }
         if (empty($nama)) return 0;
 
-        return $this->kirim($user, 'Sesi mengajar terlewat',
-            count($nama) . ' sesi belum tercatat hari ini: ' . $this->ringkasNama($nama),
+        return $this->kirim($user, 'Sesi mengajar tidak terlaksana',
+            count($nama) . ' sesi tidak terlaksana hari ini: ' . $this->ringkasNama($nama),
             'mengajar-' . $today, 'peringatan');
     }
 
