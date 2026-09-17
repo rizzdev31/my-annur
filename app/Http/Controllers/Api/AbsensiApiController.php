@@ -1320,6 +1320,10 @@ class AbsensiApiController extends Controller
                     'is_hari_ini'    => $hariIni,
                     'status'         => $a->status, // pengganti | tidak_terlaksana
                     'sudah_diajar'   => $a->status === 'pengganti' && !is_null($a->jam_selesai_aktual),
+                    // Sesi yang terlanjur diisi dengan alur lama (tanpa roster) masih
+                    // bisa dilengkapi selama jam kelas.
+                    'roster_terisi'  => \App\Models\AbsensiSantri::where('absensi_mengajar_id', $a->id)->exists(),
+                    'kelas_id'       => $j?->kelas_id,
                     'jp_terlaksana'  => (int) $a->jp_terlaksana,
                     'dalam_jam'      => $dalamJam,
                     'belum_mulai'    => $belumMulai,
@@ -1378,13 +1382,26 @@ class AbsensiApiController extends Controller
                 }
             }
         }
+        // Hanya santri kelas sesi ini — roster tidak boleh memuat santri kelas lain.
+        if ($santri && $am?->jadwalMengajar?->kelas_id) {
+            $anggota = \Illuminate\Support\Facades\DB::table('kelas_santri')
+                ->where('kelas_id', $am->jadwalMengajar->kelas_id)->pluck('santri_id')->flip();
+            $santri = array_values(array_filter($santri, fn ($r) => $anggota->has($r['santri_id'])));
+        }
 
-        // Tolak di luar jam SEBELUM menyimpan foto, agar tidak menumpuk berkas yatim.
+        // Tolak di luar jam / tanpa absensi santri SEBELUM menyimpan foto, agar
+        // tidak menumpuk berkas yatim.
         if ($am && (int) $am->digantikan_oleh === $tp->id && $am->status === 'pengganti') {
+            $svcInval = new \App\Services\PenggantiMengajarService();
             try {
-                (new \App\Services\PenggantiMengajarService())->pastikanJamInval($am);
+                $svcInval->pastikanJamInval($am);
             } catch (\DomainException $e) {
                 return response()->json(['success' => false, 'message' => $e->getMessage(), 'code' => 'DILUAR_JAM'], 422);
+            }
+            try {
+                $svcInval->pastikanRosterInval($am, $santri);
+            } catch (\DomainException $e) {
+                return response()->json(['success' => false, 'message' => $e->getMessage(), 'code' => 'ROSTER_WAJIB'], 422);
             }
         }
 
@@ -1404,7 +1421,7 @@ class AbsensiApiController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Absen pengganti tersimpan. {$jpDapat} JP masuk ke Anda. Lanjutkan absen santri.",
+            'message' => "Absen inval & kehadiran santri tersimpan. {$jpDapat} JP masuk ke Anda.",
             'jp_terlaksana' => $jpDapat,
             'data'    => ['absensi_id' => $absensi->id, 'jp_terlaksana' => $jpDapat],
         ]);

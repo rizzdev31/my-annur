@@ -240,6 +240,30 @@ class PenggantiMengajarService
     }
 
     /**
+     * Absensi kehadiran santri WAJIB dikirim bersama absen inval bila kelasnya
+     * punya santri — sama untuk reguler, tahfidz, dan tahsin.
+     *
+     * Dulu inval reguler hanya mengirim jurnal (materi + foto); absensi santri
+     * dianggap langkah terpisah yang opsional, sehingga sesi inval selesai tanpa
+     * data kehadiran (September 2026: 24 sesi, 0 roster). Tahfidz & tahsin sejak
+     * awal mewajibkan roster saat absen — aturan reguler kini disamakan.
+     */
+    public function pastikanRosterInval(AbsensiMengajar $absensi, array $santri): void
+    {
+        if (!empty($santri)) return;
+
+        $kelasId = $absensi->jadwalMengajar?->kelas_id;
+        if (!$kelasId) return; // kelas belum tersinkron — tidak ada roster untuk diisi
+
+        $adaSantri = \App\Models\Santri::aktif()
+            ->whereHas('kelas', fn ($q) => $q->where('kelas.id', $kelasId))->exists();
+        if ($adaSantri) {
+            throw new \DomainException('Absensi kehadiran santri wajib diisi bersama absen inval. '
+                . 'Bila daftar santri tidak muncul, tutup lalu buka ulang aplikasi.');
+        }
+    }
+
+    /**
      * Guru ini mengampu santri tsb di kelas bertipe $tipe (tahfidz/tahsin).
      * Penjaga untuk tindakan yang hanya boleh dilakukan pengampu: hafalan baru,
      * tasmi', penilaian materi, tasnif, naik level.
@@ -322,6 +346,7 @@ class PenggantiMengajarService
         $this->pastikanJamInval($absensi);
 
         $santri = $data['absensi_santri'] ?? [];
+        $this->pastikanRosterInval($absensi, $santri);
         $jp     = (int) ($absensi->jadwalMengajar?->jumlah_jp ?? 0);
         $now    = TimezoneHelper::now()->toTimeString();
 
