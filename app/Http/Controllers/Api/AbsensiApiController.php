@@ -1385,7 +1385,8 @@ class AbsensiApiController extends Controller
         // Hanya santri kelas sesi ini — roster tidak boleh memuat santri kelas lain.
         if ($santri && $am?->jadwalMengajar?->kelas_id) {
             $anggota = \Illuminate\Support\Facades\DB::table('kelas_santri')
-                ->where('kelas_id', $am->jadwalMengajar->kelas_id)->pluck('santri_id')->flip();
+                ->where('kelas_id', $am->jadwalMengajar->kelas_id)->where('is_aktif', true)
+                ->pluck('santri_id')->flip();
             $santri = array_values(array_filter($santri, fn ($r) => $anggota->has($r['santri_id'])));
         }
 
@@ -1726,7 +1727,7 @@ class AbsensiApiController extends Controller
             : collect();
 
         $santri = \App\Models\Santri::aktif()
-            ->whereHas('kelas', fn($q) => $q->where('kelas.id', $jadwal->kelas_id))
+            ->anggotaKelas($jadwal->kelas_id)
             ->orderBy('nama_lengkap')->get();
 
         $santriIds = $santri->pluck('id');

@@ -256,7 +256,7 @@ class PenggantiMengajarService
         if (!$kelasId) return; // kelas belum tersinkron — tidak ada roster untuk diisi
 
         $adaSantri = \App\Models\Santri::aktif()
-            ->whereHas('kelas', fn ($q) => $q->where('kelas.id', $kelasId))->exists();
+            ->anggotaKelas($kelasId)->exists();
         if ($adaSantri) {
             throw new \DomainException('Absensi kehadiran santri wajib diisi bersama absen inval. '
                 . 'Bila daftar santri tidak muncul, tutup lalu buka ulang aplikasi.');
@@ -273,7 +273,8 @@ class PenggantiMengajarService
         return JadwalMengajar::where('tenaga_pendidik_id', $tpId)->where('is_aktif', true)
             ->whereHas('mataPelajaran', fn ($q) => $q->where('tipe', $tipe))
             ->whereNotNull('kelas_id')
-            ->whereIn('kelas_id', DB::table('kelas_santri')->where('santri_id', $santriId)->pluck('kelas_id'))
+            ->whereIn('kelas_id', DB::table('kelas_santri')->where('santri_id', $santriId)
+                ->where('is_aktif', true)->pluck('kelas_id'))
             ->exists();
     }
 

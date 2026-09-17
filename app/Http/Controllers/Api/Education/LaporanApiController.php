@@ -130,7 +130,7 @@ class LaporanApiController extends Controller
         $rows = collect(); $detail = null; $santriOpsi = collect();
 
         if ($kelas) {
-            $list = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelas->id))
+            $list = Santri::aktif()->anggotaKelas($kelas->id)
                 ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
             $santriOpsi = $list->map(fn($s) => ['id' => $s->id, 'nama' => $s->nama_lengkap, 'nip' => $s->nip]);
 
@@ -243,7 +243,7 @@ class LaporanApiController extends Controller
             ->selectRaw('level, COUNT(*) as jml')->groupBy('level')->pluck('jml', 'level');
 
         if ($kelas) {
-            $list = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelas->id))
+            $list = Santri::aktif()->anggotaKelas($kelas->id)
                 ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap', 'tahsin_level']);
             $santriOpsi = $list->map(fn($s) => ['id' => $s->id, 'nama' => $s->nama_lengkap, 'nip' => $s->nip]);
 

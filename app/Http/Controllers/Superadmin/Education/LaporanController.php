@@ -164,7 +164,7 @@ class LaporanController extends Controller
     private function santriOpsi(?int $kelasId)
     {
         if (!$kelasId) return collect();
-        return Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelasId))
+        return Santri::aktif()->anggotaKelas($kelasId)
             ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
     }
 
@@ -215,7 +215,7 @@ class LaporanController extends Controller
         $detail = null;
 
         if ($mode === 'kelas') {
-            $list = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelas->id))
+            $list = Santri::aktif()->anggotaKelas($kelas->id)
                 ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
             $ids = $list->pluck('id');
             $hafalan = HafalanSantri::whereIn('santri_id', $ids)->get()->keyBy('santri_id');
@@ -447,7 +447,7 @@ class LaporanController extends Controller
             ->selectRaw('level, COUNT(*) as jml')->groupBy('level')->pluck('jml', 'level');
 
         if ($mode === 'kelas') {
-            $list = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelas->id))
+            $list = Santri::aktif()->anggotaKelas($kelas->id)
                 ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap', 'tahsin_level']);
             $ids = $list->pluck('id');
             $lulus = TahsinPenilaian::whereIn('santri_id', $ids)->where('lulus', true)

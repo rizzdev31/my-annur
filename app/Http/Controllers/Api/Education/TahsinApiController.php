@@ -47,7 +47,7 @@ class TahsinApiController extends Controller
             $am      = $isToday ? $absensi->get($j->id) : null;
             $diinval = $am && $am->digantikan_oleh ? ($am->digantikanOleh?->user?->name ?? 'Guru pengganti') : null;
             $jumlahSantri = $j->kelas_id
-                ? Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $j->kelas_id))->count() : 0;
+                ? Santri::aktif()->anggotaKelas($j->kelas_id)->count() : 0;
 
             // Window sedang berjalan (untuk pemilihan jadwal aktif: pagi vs sore).
             $dalamJam = false;
@@ -295,7 +295,7 @@ class TahsinApiController extends Controller
     /** Bangun payload roster tahsin (total_santri + santri dgn ringkasan materi). */
     private function rosterPayload(int $kelasId, ?string $tanggal = null, array $tersimpan = []): array
     {
-        $santri = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelasId))
+        $santri = Santri::aktif()->anggotaKelas($kelasId)
             ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap', 'tahsin_level']);
 
         $materiTotal = SettingTahsinMateri::where('is_aktif', true)

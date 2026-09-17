@@ -39,11 +39,29 @@ class Kelas extends Model
         return $this->belongsTo(TenagaPendidik::class, 'wali_kelas_id');
     }
 
+    /** Seluruh keanggotaan, termasuk riwayat. Untuk anggota saat ini pakai santriAktif(). */
     public function santri()
     {
         return $this->belongsToMany(Santri::class, 'kelas_santri')
             ->withPivot(['tanggal_masuk', 'tanggal_keluar', 'tahun_ajaran_id', 'keterangan', 'is_aktif'])
             ->withTimestamps();
+    }
+
+    public function santriAktif()
+    {
+        return $this->santri()->wherePivot('is_aktif', true);
+    }
+
+    /**
+     * Slot keanggotaan: santri hanya boleh punya SATU kelas aktif per slot.
+     * Tahfidz & tahsin satu slot (program Quran) — santri lulus Persiapan Tahfidz
+     * pindah ke kelas tahfidz dan otomatis keluar dari kelas tahsinnya.
+     */
+    public const SLOT = ['sekolah' => ['sekolah'], 'tahfidz' => ['tahfidz', 'tahsin'], 'tahsin' => ['tahfidz', 'tahsin']];
+
+    public function jenisSeslot(): array
+    {
+        return self::SLOT[$this->jenis] ?? [$this->jenis];
     }
 
     public function jadwalMengajar()

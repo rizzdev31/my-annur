@@ -26,7 +26,7 @@ class MonitoringTahsinController extends Controller
 
         if ($kelas) {
             $santri = Santri::aktif()
-                ->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelas->id))
+                ->anggotaKelas($kelas->id)
                 ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap', 'tahsin_level']);
 
             $lulus = TahsinPenilaian::whereIn('santri_id', $santri->pluck('id'))->where('lulus', true)

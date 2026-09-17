@@ -14,7 +14,8 @@ class KelasController extends Controller
     public function index(Request $request)
     {
         $kelas = Kelas::with(['tahunAjaran', 'waliKelas.user'])
-            ->withCount(['santri', 'jadwalMengajar'])
+            // Hitung anggota yang MASIH aktif — baris riwayat tidak boleh ikut.
+            ->withCount(['santri as santri_count' => fn ($q) => $q->where('kelas_santri.is_aktif', true), 'jadwalMengajar'])
             ->orderBy('jenis')->orderBy('nama')->get()
             ->map(fn($k) => [
                 'id'             => $k->id,
@@ -88,6 +89,80 @@ class KelasController extends Controller
             ->get(['santri.id', 'nip', 'nama_lengkap'])
             ->map(fn($s) => ['id' => $s->id, 'nip' => $s->nip, 'nama' => $s->nama_lengkap]);
         return response()->json(['success' => true, 'data' => $santri]);
+    }
+
+    /**
+     * GET kelas/{kelas}/atur-santri — data panel centang.
+     * Semua santri aktif + status keanggotaan di kelas ini + kelas mereka saat ini
+     * di slot yang sama (agar admin tahu siapa yang akan dipindah).
+     */
+    public function aturSantriData(Kelas $kelas)
+    {
+        $slot = $kelas->jenisSeslot();
+
+        $kelasSlot = \Illuminate\Support\Facades\DB::table('kelas_santri')
+            ->join('kelas', 'kelas.id', '=', 'kelas_santri.kelas_id')
+            ->where('kelas_santri.is_aktif', true)->whereIn('kelas.jenis', $slot)
+            ->get(['kelas_santri.santri_id', 'kelas.id', 'kelas.nama'])
+            ->keyBy('santri_id');
+
+        $santri = \App\Models\Santri::aktif()->orderBy('nama_lengkap')
+            ->get(['id', 'nip', 'nama_lengkap', 'jenis_kelamin'])
+            ->map(function ($s) use ($kelasSlot, $kelas) {
+                $k = $kelasSlot->get($s->id);
+                return [
+                    'id'            => $s->id,
+                    'nip'           => $s->nip,
+                    'nama'          => $s->nama_lengkap,
+                    'jenis_kelamin' => $s->jenis_kelamin,
+                    'anggota'       => $k && (int) $k->id === $kelas->id,
+                    // Kelas lain di slot yang sama → akan DIPINDAH bila dicentang.
+                    'kelas_lain'    => $k && (int) $k->id !== $kelas->id ? $k->nama : null,
+                ];
+            })->values();
+
+        // Kelas Putra/Putri → saran filter jenis kelamin.
+        $namaKecil = mb_strtolower($kelas->nama);
+        $saranJk = str_contains($namaKecil, 'putri') ? 'P' : (str_contains($namaKecil, 'putra') ? 'L' : null);
+
+        return response()->json(['success' => true, 'data' => [
+            'kelas' => [
+                'id' => $kelas->id, 'nama' => $kelas->nama, 'jenis' => $kelas->jenis,
+                'slot_label' => $kelas->jenis === 'sekolah' ? 'kelas sekolah' : 'kelas tahfidz/tahsin',
+            ],
+            'saran_jk' => $saranJk,
+            'santri'   => $santri,
+        ]]);
+    }
+
+    /** POST kelas/{kelas}/atur-santri — simpan anggota kelas hasil centang. */
+    public function aturSantri(Request $request, Kelas $kelas)
+    {
+        $d = $request->validate([
+            'santri_ids'   => 'present|array',
+            'santri_ids.*' => 'integer|exists:santri,id',
+            'tanggal'      => 'nullable|date_format:Y-m-d',
+        ]);
+
+        if (!$kelas->is_aktif) {
+            return back()->with('error', "Kelas {$kelas->nama} nonaktif — aktifkan dulu sebelum mengatur santri.");
+        }
+
+        $hasil = app(\App\Services\KenaikanKelasService::class)
+            ->aturAnggota($kelas, $d['santri_ids'], $d['tanggal'] ?? null);
+
+        $masuk   = count($hasil['masuk']);
+        $pindah  = collect($hasil['masuk'])->whereNotNull('dari')->count();
+        $keluar  = count($hasil['keluar']);
+
+        if (!$masuk && !$keluar) {
+            return back()->with('success', "Tidak ada perubahan santri di {$kelas->nama}.");
+        }
+
+        return back()->with('success', "Santri {$kelas->nama} diperbarui: {$masuk} masuk"
+            . ($pindah ? " ({$pindah} dipindah dari kelas lain)" : '')
+            . ", {$keluar} keluar."
+            . (in_array($kelas->jenis, \App\Services\KenaikanKelasService::JENIS_DIKABARI, true) ? ' Pengampu sudah dikabari.' : ''));
     }
 
     /** POST kelas/{kelas}/naik-kelas — pindahkan santri aktif kelas ini ke kelas tujuan (sejenis). */

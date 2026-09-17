@@ -66,7 +66,7 @@ class TahfidzApiController extends Controller
             // Sesi yang dialihkan ke inval: guru asli tidak mengabsen — jangan tampil "sudah absen".
             $diinval = $am && $am->digantikan_oleh ? ($am->digantikanOleh?->user?->name ?? 'Guru pengganti') : null;
             $jumlahSantri = $j->kelas_id
-                ? Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $j->kelas_id))->count() : 0;
+                ? Santri::aktif()->anggotaKelas($j->kelas_id)->count() : 0;
 
             // Dalam jam mengajar (hanya bila jadwal hari ini) → absen WAJIB sebelum isi jurnal.
             $dalamJam = false;
@@ -381,7 +381,7 @@ class TahfidzApiController extends Controller
     {
         $totalQuran = (int) Surah::sum('jumlah_ayat');
         $santri = Santri::aktif()
-            ->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelasId))
+            ->anggotaKelas($kelasId)
             ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
 
         $ids      = $santri->pluck('id');
@@ -454,7 +454,7 @@ class TahfidzApiController extends Controller
         }
 
         $santri = Santri::aktif()
-            ->whereHas('kelas', fn($q) => $q->where('kelas.id', $jadwal->kelas_id))
+            ->anggotaKelas($jadwal->kelas_id)
             ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
 
         $ids = $santri->pluck('id');
@@ -530,7 +530,7 @@ class TahfidzApiController extends Controller
         }
 
         // Hanya santri kelas ini — id dari klien tidak dipercaya.
-        $sah = Santri::aktif()->whereHas('kelas', fn($q) => $q->where('kelas.id', $jadwal->kelas_id))
+        $sah = Santri::aktif()->anggotaKelas($jadwal->kelas_id)
             ->pluck('id')->flip();
 
         $svc = app(TahfidzService::class);

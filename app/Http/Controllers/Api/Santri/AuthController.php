@@ -38,7 +38,9 @@ class AuthController extends Controller
 
     private function profil(Santri $s): array
     {
-        $kelas = $s->kelas()->first();
+        // Kelas yang ditampilkan ke wali = kelas SEKOLAH yang masih berjalan
+        // (bukan baris riwayat pertama, dan bukan kelas tahfidz/tahsin).
+        $kelas = $s->kelasAktif()->where('kelas.jenis', 'sekolah')->first() ?? $s->kelasAktif()->first();
         return [
             'id' => $s->id, 'nis' => $s->nip, 'nama' => $s->nama_lengkap,
             'panggilan' => $s->nama_panggilan, 'foto' => $s->foto ? url('storage/' . $s->foto) : null,

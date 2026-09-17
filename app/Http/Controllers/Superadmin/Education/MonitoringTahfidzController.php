@@ -26,7 +26,7 @@ class MonitoringTahfidzController extends Controller
 
         if ($kelas) {
             $santri = Santri::aktif()
-                ->whereHas('kelas', fn($q) => $q->where('kelas.id', $kelas->id))
+                ->anggotaKelas($kelas->id)
                 ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap']);
 
             $ids     = $santri->pluck('id');

@@ -81,7 +81,8 @@ class MonitorController extends Controller
         $izinDisetujui = IzinSantri::where('santri_id', $s->id)->where('status', 'disetujui')->count();
         $kesehatanAktif = SmartHealthLaporan::where('santri_id', $s->id)->whereIn('status', ['menunggu', 'dalam_pengecekan'])->count();
 
-        $kelas = $s->kelas()->first();
+        // Kelas SEKOLAH yang masih berjalan (bukan baris riwayat pertama).
+        $kelas = $s->kelasAktif()->where('kelas.jenis', 'sekolah')->first() ?? $s->kelasAktif()->first();
 
         return response()->json(['success' => true, 'data' => [
             'santri' => [

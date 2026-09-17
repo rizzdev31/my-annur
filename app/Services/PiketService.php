@@ -300,7 +300,7 @@ class PiketService
         }
 
         $santri = Santri::aktif()
-            ->whereHas('kelas', fn($q) => $q->where('kelas.id', $jadwal->kelas_id))
+            ->anggotaKelas($jadwal->kelas_id)
             ->orderBy('nama_lengkap')->get(['id', 'nip', 'nama_lengkap'])
             ->map(fn($s) => ['santri_id' => $s->id, 'nip' => $s->nip, 'nama' => $s->nama_lengkap])
             ->values()->all();

@@ -592,6 +592,9 @@ Route::prefix('admin')
             Route::patch('kelas/{kelas}/aktifkan', [KelasController::class, 'aktifkan'])->name('kelas.aktifkan');
             Route::get('kelas/{kelas}/santri', [KelasController::class, 'santriKelas'])->name('kelas.santri');
             Route::post('kelas/{kelas}/naik-kelas', [KelasController::class, 'naikKelas'])->name('kelas.naik-kelas');
+            // Panel centang "Atur Santri": satu layanan keanggotaan, riwayat dijaga.
+            Route::get('kelas/{kelas}/atur-santri', [KelasController::class, 'aturSantriData'])->name('kelas.atur-santri.data');
+            Route::post('kelas/{kelas}/atur-santri', [KelasController::class, 'aturSantri'])->name('kelas.atur-santri');
 
             // ── Ekstrakurikuler ───────────────────────────────────────────
             Route::get('ekstrakurikuler',  [\App\Http\Controllers\Superadmin\EkstrakurikulerController::class, 'index'])->name('ekstrakurikuler.index');

@@ -74,6 +74,11 @@
                         </td>
                         <td class="px-5 py-3.5">
                             <div class="flex justify-end gap-1">
+                                <button v-if="k.is_aktif" @click="openAtur(k)" title="Atur Santri (centang)"
+                                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-3-3" /></svg>
+                                    Atur Santri
+                                </button>
                                 <button v-if="k.jumlah_santri > 0" @click="openNaik(k)" title="Naik / Pindah Kelas"
                                     class="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
                                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
@@ -225,6 +230,139 @@
                 </div>
             </div>
         </Transition>
+
+        <!-- Modal Atur Santri (centang) -->
+        <Transition name="modal">
+            <div v-if="atur" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/40" @click="!aturSaving && (atur = null)"></div>
+                <div class="relative bg-white rounded-2xl w-full max-w-2xl shadow-xl max-h-[92vh] flex flex-col">
+
+                    <!-- Header -->
+                    <div class="px-6 pt-5 pb-3 border-b border-gray-100">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 class="text-base font-semibold text-gray-900">Atur Santri · {{ atur.nama }}</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Centang santri yang menjadi anggota kelas ini. Santri yang sudah punya {{ aturData?.kelas?.slot_label || 'kelas' }} lain akan <b>dipindah</b> ke sini.
+                                </p>
+                            </div>
+                            <span class="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700">{{ dipilih.length }} santri</span>
+                        </div>
+
+                        <template v-if="!aturKonfirmasi">
+                            <div class="flex flex-wrap gap-2 mt-3">
+                                <input v-model="aturQ" type="text" placeholder="Cari nama / NIS…" class="flex-1 min-w-[180px] px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                                <select v-model="aturJk" class="px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white">
+                                    <option value="semua">L & P</option>
+                                    <option value="L">Putra</option>
+                                    <option value="P">Putri</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5 mt-2">
+                                <button v-for="f in aturFilters" :key="f.val" @click="aturStatus = f.val"
+                                    class="px-2.5 py-1 rounded-lg text-xs font-medium"
+                                    :class="aturStatus === f.val ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                                    {{ f.label }} <span class="opacity-70">({{ f.n }})</span>
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Isi -->
+                    <div class="flex-1 overflow-y-auto px-6 py-3">
+                        <div v-if="aturLoading" class="py-10 text-center text-sm text-gray-400">Memuat santri…</div>
+
+                        <!-- Langkah 1: centang -->
+                        <template v-else-if="!aturKonfirmasi">
+                            <div class="flex items-center justify-between mb-2 text-xs">
+                                <span class="text-gray-400">{{ daftarAtur.length }} santri ditampilkan</span>
+                                <div class="flex gap-3">
+                                    <button @click="centangSemua(true)" class="font-semibold text-indigo-600 hover:underline">Centang semua yang tampil</button>
+                                    <button @click="centangSemua(false)" class="font-semibold text-gray-500 hover:underline">Hapus centang yang tampil</button>
+                                </div>
+                            </div>
+                            <div class="border border-gray-100 rounded-xl divide-y divide-gray-50">
+                                <label v-for="s in daftarAtur" :key="s.id"
+                                    class="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50"
+                                    :class="perubahanBaris(s)">
+                                    <input type="checkbox" :checked="pilih.has(s.id)" @change="toggle(s.id)"
+                                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-200" />
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-sm text-gray-800 truncate">{{ s.nama }}</p>
+                                        <p class="text-[11px] text-gray-400">{{ s.nip || '—' }} · {{ s.jenis_kelamin === 'P' ? 'Putri' : 'Putra' }}</p>
+                                    </div>
+                                    <span v-if="s.anggota && !pilih.has(s.id)" class="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-50 text-red-600">akan keluar</span>
+                                    <span v-else-if="!s.anggota && pilih.has(s.id)" class="text-[10px] font-semibold px-2 py-0.5 rounded"
+                                        :class="s.kelas_lain ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'">
+                                        {{ s.kelas_lain ? `pindah dari ${s.kelas_lain}` : 'masuk' }}
+                                    </span>
+                                    <span v-else-if="s.anggota" class="text-[10px] text-gray-400">anggota</span>
+                                    <span v-else-if="s.kelas_lain" class="text-[10px] text-gray-400 truncate max-w-[120px]">{{ s.kelas_lain }}</span>
+                                    <span v-else class="text-[10px] text-gray-300">belum ada kelas</span>
+                                </label>
+                                <p v-if="!daftarAtur.length" class="px-3 py-6 text-sm text-gray-400 text-center">Tidak ada santri yang cocok.</p>
+                            </div>
+                        </template>
+
+                        <!-- Langkah 2: konfirmasi -->
+                        <template v-else>
+                            <div class="grid grid-cols-3 gap-2 mb-4 text-center">
+                                <div class="rounded-xl bg-emerald-50 py-2"><p class="text-lg font-bold text-emerald-700">{{ diff.baru.length }}</p><p class="text-[11px] text-emerald-700">masuk baru</p></div>
+                                <div class="rounded-xl bg-amber-50 py-2"><p class="text-lg font-bold text-amber-700">{{ diff.pindah.length }}</p><p class="text-[11px] text-amber-700">dipindah ke sini</p></div>
+                                <div class="rounded-xl bg-red-50 py-2"><p class="text-lg font-bold text-red-600">{{ diff.keluar.length }}</p><p class="text-[11px] text-red-600">keluar</p></div>
+                            </div>
+
+                            <div v-if="diff.pindah.length" class="mb-3">
+                                <p class="text-xs font-semibold text-gray-700 mb-1">Dipindah ke {{ atur.nama }}</p>
+                                <ul class="text-xs text-gray-600 space-y-0.5">
+                                    <li v-for="s in diff.pindah" :key="s.id">{{ s.nama }} <span class="text-gray-400">— keluar dari {{ s.kelas_lain }}</span></li>
+                                </ul>
+                            </div>
+                            <div v-if="diff.baru.length" class="mb-3">
+                                <p class="text-xs font-semibold text-gray-700 mb-1">Masuk baru</p>
+                                <p class="text-xs text-gray-600">{{ diff.baru.map(s => s.nama).join(', ') }}</p>
+                            </div>
+                            <div v-if="diff.keluar.length" class="mb-3 rounded-xl bg-red-50 border border-red-100 p-3">
+                                <p class="text-xs font-semibold text-red-700 mb-1">⚠ Keluar dan TIDAK punya {{ aturData?.kelas?.slot_label }} lagi</p>
+                                <p class="text-xs text-red-600">{{ diff.keluar.map(s => s.nama).join(', ') }}</p>
+                                <p class="text-[11px] text-red-500 mt-1">Santri ini tidak akan muncul di absensi kelas mana pun sampai dimasukkan ke kelas lain.</p>
+                            </div>
+
+                            <label class="block text-xs font-medium text-gray-600 mb-1 mt-2">Berlaku mulai</label>
+                            <input v-model="aturTanggal" type="date" :class="inputCls()" />
+                            <p class="text-[11px] text-gray-500 mt-2 bg-gray-50 rounded-lg px-3 py-2">
+                                Data lama <b>tidak dihapus</b> — keanggotaan sebelumnya tersimpan sebagai riwayat, sehingga absensi & laporan yang sudah ada tetap tercatat di kelas lama.
+                                <template v-if="['tahfidz','tahsin'].includes(atur.jenis)"> Pengampu kelas yang terdampak akan dikabari.</template>
+                            </p>
+                        </template>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="px-6 py-4 border-t border-gray-100 flex items-center gap-2">
+                        <p v-if="!aturKonfirmasi" class="flex-1 text-xs text-gray-500">
+                            <template v-if="adaPerubahan">
+                                <span class="text-emerald-600 font-semibold">+{{ diff.baru.length + diff.pindah.length }} masuk</span>
+                                <span v-if="diff.pindah.length" class="text-amber-600"> ({{ diff.pindah.length }} pindah)</span>
+                                · <span class="text-red-600 font-semibold">−{{ diff.keluar.length }} keluar</span>
+                            </template>
+                            <template v-else>Belum ada perubahan.</template>
+                        </p>
+                        <template v-if="!aturKonfirmasi">
+                            <button @click="atur = null" class="px-4 py-2.5 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">Batal</button>
+                            <button @click="aturKonfirmasi = true" :disabled="!adaPerubahan || aturLoading"
+                                class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50">Tinjau Perubahan</button>
+                        </template>
+                        <template v-else>
+                            <button @click="aturKonfirmasi = false" :disabled="aturSaving" class="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">Kembali</button>
+                            <button @click="simpanAtur" :disabled="aturSaving"
+                                class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50">
+                                {{ aturSaving ? 'Menyimpan…' : 'Simpan Perubahan' }}
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </Transition>
     </AdminLayout>
 </template>
 
@@ -314,9 +452,11 @@ const kecuali = ref([])               // santri_id yang tinggal kelas
 const naikLoading = ref(false)
 const naikSaving = ref(false)
 
-// Kelas tujuan yang valid: sejenis & bukan diri sendiri.
+// Kelas tujuan yang valid: satu slot (sekolah↔sekolah, tahfidz/tahsin↔tahfidz/tahsin)
+// & bukan diri sendiri — Persiapan Tahfidz bisa langsung dinaikkan ke kelas tahfidz.
+const slotOf = (jenis) => (jenis === 'sekolah' ? 'sekolah' : 'quran')
 const kelasTujuanOpsi = computed(() =>
-    props.kelas.filter(k => naikSumber.value && k.jenis === naikSumber.value.jenis && k.id !== naikSumber.value.id && k.is_aktif))
+    props.kelas.filter(k => naikSumber.value && slotOf(k.jenis) === slotOf(naikSumber.value.jenis) && k.id !== naikSumber.value.id && k.is_aktif))
 
 async function openNaik(k) {
     naikSumber.value = k; naikTujuanId.value = null; kecuali.value = []
@@ -327,6 +467,89 @@ async function openNaik(k) {
         naikSantri.value = (await res.json()).data ?? []
     } catch (_) {/* */ } finally { naikLoading.value = false }
 }
+// ── Atur Santri (centang) ─────────────────────────────────────────────────────
+const atur = ref(null)              // kelas yang sedang diatur
+const aturData = ref(null)          // { kelas, saran_jk, santri: [...] }
+const aturLoading = ref(false)
+const aturSaving = ref(false)
+const aturKonfirmasi = ref(false)
+const aturQ = ref('')
+const aturJk = ref('semua')
+const aturStatus = ref('semua')
+const aturTanggal = ref(new Date().toISOString().slice(0, 10))
+const pilih = ref(new Set())
+
+async function openAtur(k) {
+    atur.value = k; aturData.value = null; aturKonfirmasi.value = false
+    aturQ.value = ''; aturStatus.value = 'semua'; aturJk.value = 'semua'
+    aturTanggal.value = new Date().toISOString().slice(0, 10)
+    pilih.value = new Set(); aturLoading.value = true
+    try {
+        const res = await fetch(route('admin.smart-education.kelas.atur-santri.data', k.id), { headers: { Accept: 'application/json' } })
+        aturData.value = (await res.json()).data
+        pilih.value = new Set(aturData.value.santri.filter(s => s.anggota).map(s => s.id))
+        // Kelas Putra/Putri → langsung saring jenis kelamin yang relevan.
+        if (aturData.value.saran_jk) aturJk.value = aturData.value.saran_jk
+    } catch (_) {
+        atur.value = null
+    } finally { aturLoading.value = false }
+}
+
+const semuaSantri = computed(() => aturData.value?.santri ?? [])
+const cocokCari = (s) => {
+    const q = aturQ.value.trim().toLowerCase()
+    return (!q || s.nama.toLowerCase().includes(q) || (s.nip || '').toLowerCase().includes(q))
+        && (aturJk.value === 'semua' || s.jenis_kelamin === aturJk.value)
+}
+const aturFilters = computed(() => {
+    const dasar = semuaSantri.value.filter(cocokCari)
+    return [
+        { val: 'semua',   label: 'Semua',                   n: dasar.length },
+        { val: 'anggota', label: 'Anggota kelas ini',       n: dasar.filter(s => s.anggota).length },
+        { val: 'tanpa',   label: 'Belum punya kelas',       n: dasar.filter(s => !s.anggota && !s.kelas_lain).length },
+        { val: 'lain',    label: 'Di kelas lain',           n: dasar.filter(s => s.kelas_lain).length },
+    ]
+})
+const daftarAtur = computed(() => semuaSantri.value.filter(cocokCari).filter(s =>
+    aturStatus.value === 'anggota' ? s.anggota
+        : aturStatus.value === 'tanpa' ? (!s.anggota && !s.kelas_lain)
+        : aturStatus.value === 'lain' ? !!s.kelas_lain
+        : true))
+
+function toggle(id) {
+    const baru = new Set(pilih.value)
+    baru.has(id) ? baru.delete(id) : baru.add(id)
+    pilih.value = baru
+}
+function centangSemua(nyala) {
+    const baru = new Set(pilih.value)
+    daftarAtur.value.forEach(s => nyala ? baru.add(s.id) : baru.delete(s.id))
+    pilih.value = baru
+}
+
+const dipilih = computed(() => [...pilih.value])
+const diff = computed(() => {
+    const s = semuaSantri.value
+    return {
+        baru:   s.filter(x => !x.anggota && pilih.value.has(x.id) && !x.kelas_lain),
+        pindah: s.filter(x => !x.anggota && pilih.value.has(x.id) && x.kelas_lain),
+        keluar: s.filter(x => x.anggota && !pilih.value.has(x.id)),
+    }
+})
+const adaPerubahan = computed(() => diff.value.baru.length + diff.value.pindah.length + diff.value.keluar.length > 0)
+const perubahanBaris = (s) => (s.anggota !== pilih.value.has(s.id) ? 'bg-indigo-50/40' : '')
+
+function simpanAtur() {
+    aturSaving.value = true
+    router.post(route('admin.smart-education.kelas.atur-santri', atur.value.id),
+        { santri_ids: dipilih.value, tanggal: aturTanggal.value },
+        {
+            preserveScroll: true,
+            onSuccess: () => { atur.value = null },
+            onFinish: () => { aturSaving.value = false },
+        })
+}
+
 function toggleKecuali(id) { const i = kecuali.value.indexOf(id); i >= 0 ? kecuali.value.splice(i, 1) : kecuali.value.push(id) }
 function submitNaik() {
     if (!naikTujuanId.value) return

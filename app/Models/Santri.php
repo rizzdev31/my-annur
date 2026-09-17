@@ -41,11 +41,35 @@ class Santri extends Model
 
     // ─── Relasi ──────────────────────────────────────────────────────────────
 
+    /**
+     * SELURUH keanggotaan kelas, termasuk riwayat yang sudah ditutup. Untuk
+     * "kelas santri saat ini" pakai kelasAktif() / scopeAnggotaKelas().
+     */
     public function kelas()
     {
         return $this->belongsToMany(Kelas::class, 'kelas_santri')
             ->withPivot(['tanggal_masuk', 'tanggal_keluar', 'tahun_ajaran_id', 'keterangan', 'is_aktif'])
             ->withTimestamps();
+    }
+
+    /** Keanggotaan kelas yang masih berjalan. */
+    public function kelasAktif()
+    {
+        return $this->kelas()->wherePivot('is_aktif', true);
+    }
+
+    /**
+     * Santri yang SAAT INI anggota kelas tsb.
+     *
+     * Wajib dipakai untuk semua roster. kelas_santri menyimpan riwayat — santri
+     * yang pindah kelas tetap punya baris lama (is_aktif=false). Tanpa filter ini
+     * ia muncul di kelas lama DAN baru: diabsen dua kali, WA wali ganda.
+     */
+    public function scopeAnggotaKelas($query, int $kelasId)
+    {
+        return $query->whereHas('kelas', fn ($q) => $q
+            ->where('kelas.id', $kelasId)
+            ->where('kelas_santri.is_aktif', true));
     }
 
     /**

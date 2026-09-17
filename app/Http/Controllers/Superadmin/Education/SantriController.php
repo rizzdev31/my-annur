@@ -14,7 +14,7 @@ class SantriController extends Controller
 
     public function index(Request $request)
     {
-        $santri = Santri::with('kelas:id,nama,jenis')
+        $santri = Santri::with(['kelas' => fn ($q) => $q->select('kelas.id', 'nama', 'jenis')->where('kelas_santri.is_aktif', true)])
             ->orderBy('nama_lengkap')->get()
             ->map(fn($s) => [
                 'id'             => $s->id,
@@ -53,10 +53,18 @@ class SantriController extends Controller
         $kelasIds = $data['kelas_ids'] ?? [];
         unset($data['kelas_ids']);
 
+        // Keanggotaan kelas lewat layanan yang sama dengan panel "Atur Santri":
+        // satu kelas per slot, riwayat dijaga. Dulu sync() menghapus riwayat.
+        $keanggotaan = app(\App\Services\KenaikanKelasService::class);
+        try {
+            $keanggotaan->pastikanSatuPerSlot($kelasIds);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['kelas_ids' => $e->getMessage()])->with('error', $e->getMessage());
+        }
+
         $santri = Santri::create(array_merge($data, ['is_aktif' => true]));
-        $santri->kelas()->sync($kelasIds);
-        $santri->selaraskanLevelTahsin();   // materi tahsin mengikuti kelas
-        $this->sync->sync($santri);
+        $keanggotaan->aturKelasSantri($santri, $kelasIds);   // + level tahsin & sinkron RamahAnak
+        $this->sync->sync($santri->fresh());
 
         return back()->with('success', "Santri {$data['nama_lengkap']} berhasil ditambahkan.");
     }
@@ -67,9 +75,15 @@ class SantriController extends Controller
         $kelasIds = $data['kelas_ids'] ?? [];
         unset($data['kelas_ids']);
 
+        $keanggotaan = app(\App\Services\KenaikanKelasService::class);
+        try {
+            $keanggotaan->pastikanSatuPerSlot($kelasIds);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['kelas_ids' => $e->getMessage()])->with('error', $e->getMessage());
+        }
+
         $santri->update($data);
-        $santri->kelas()->sync($kelasIds);
-        $santri->selaraskanLevelTahsin();   // materi tahsin mengikuti kelas
+        $keanggotaan->aturKelasSantri($santri, $kelasIds);   // + level tahsin & sinkron RamahAnak
         $this->sync->sync($santri->fresh());
 
         return back()->with('success', "Santri {$santri->nama_lengkap} berhasil diperbarui.");
