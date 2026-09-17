@@ -8,6 +8,8 @@
                 <Link :href="route('admin.smart-education.laporan.index')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Jurnal Pembelajaran</Link>
                 <span class="px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-200">Kehadiran Santri</span>
+                <Link :href="route('admin.smart-education.laporan.mengajar-quran')"
+                    class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Mengajar Tahfidz & Tahsin</Link>
                 <Link :href="route('admin.smart-education.laporan.tahfidz')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Tahfidz</Link>
                 <Link :href="route('admin.smart-education.laporan.tahsin')"

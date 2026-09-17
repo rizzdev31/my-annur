@@ -614,6 +614,8 @@ Route::prefix('admin')
             Route::get('laporan/tahsin', [EducationLaporanController::class, 'tahsin'])->name('laporan.tahsin');
             // Rekap bulanan kehadiran santri di pembelajaran (bukan jurnal guru).
             Route::get('laporan/kehadiran-santri', [EducationLaporanController::class, 'kehadiranSantri'])->name('laporan.kehadiran-santri');
+            // Rekap berapa kali guru mengajar tahfidz & tahsin (harian/mingguan/bulanan).
+            Route::get('laporan/mengajar-quran', [EducationLaporanController::class, 'mengajarQuran'])->name('laporan.mengajar-quran');
 
             // ── Smart Tahfidz (hub + setting penilaian) ───────────────────
             Route::get('tahfidz', [EducationTahfidzController::class, 'index'])->name('tahfidz.index');

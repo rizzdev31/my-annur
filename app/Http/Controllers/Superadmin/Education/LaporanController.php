@@ -411,6 +411,70 @@ class LaporanController extends Controller
         ]));
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // REKAP MENGAJAR GURU TAHFIDZ & TAHSIN — harian / mingguan / bulanan
+    // ══════════════════════════════════════════════════════════════════════
+    public function mengajarQuran(Request $request, \App\Services\RekapMengajarQuranService $svc)
+    {
+        [$mode, $mulai, $selesai, $label, $filterPeriode] = $this->periodeRekap($request);
+        $tipe   = in_array($request->tipe, \App\Services\RekapMengajarQuranService::TIPE, true) ? $request->tipe : null;
+        $guruId = $request->guru_id ? (int) $request->guru_id : null;
+
+        $rekap  = $svc->rekap($mulai, $selesai, $tipe, $guruId);
+        $detail = $guruId ? $svc->detail($guruId, $mulai, $selesai, $tipe) : null;
+
+        // Guru yang relevan: pemegang jadwal tahfidz/tahsin aktif (+ yang muncul di rekap sbg inval).
+        $guruOpsi = TenagaPendidik::aktif()->with('user:id,name')
+            ->whereHas('jadwalMengajar', fn ($j) => $j->where('is_aktif', true)
+                ->whereHas('mataPelajaran', fn ($m) => $m->whereIn('tipe', ['tahfidz', 'tahsin'])))
+            ->get()->map(fn ($g) => ['id' => $g->id, 'nama' => $g->user?->name])
+            ->filter(fn ($g) => $g['nama'])->sortBy('nama')->values();
+
+        return Inertia::render('Admin/SmartEducation/Laporan/MengajarQuran', array_merge($this->kopPayload(), [
+            'filter'       => array_merge($filterPeriode, ['tipe' => $tipe, 'guru_id' => $guruId]),
+            'periodeLabel' => $label,
+            'baris'        => $rekap['baris'],
+            'total'        => $rekap['total'],
+            'detail'       => $detail,
+            'guru'         => $guruId ? ['id' => $guruId, 'nama' => TenagaPendidik::with('user:id,name')->find($guruId)?->user?->name] : null,
+            'guruOpsi'     => $guruOpsi,
+        ]));
+    }
+
+    /** Periode rekap: harian (rentang), mingguan (Senin–Minggu), bulanan. */
+    private function periodeRekap(Request $request): array
+    {
+        $mode = in_array($request->mode, ['harian', 'mingguan', 'bulanan'], true) ? $request->mode : 'bulanan';
+        $hariIni = Carbon::today();
+
+        if ($mode === 'harian') {
+            $a = $request->filled('dari') ? Carbon::parse($request->dari) : $hariIni->copy();
+            $b = $request->filled('sampai') ? Carbon::parse($request->sampai) : $a->copy();
+            if ($b->lt($a)) [$a, $b] = [$b, $a];
+            if ($a->diffInDays($b) > 92) $b = $a->copy()->addDays(92);
+            $label = $a->isSameDay($b)
+                ? $a->locale('id')->isoFormat('dddd, D MMMM YYYY')
+                : $a->locale('id')->isoFormat('D MMM YYYY') . ' – ' . $b->locale('id')->isoFormat('D MMM YYYY');
+            return [$mode, $a->startOfDay(), $b->endOfDay(), $label,
+                ['mode' => $mode, 'dari' => $a->toDateString(), 'sampai' => $b->toDateString()]];
+        }
+
+        if ($mode === 'mingguan') {
+            $t = $request->filled('tanggal') ? Carbon::parse($request->tanggal) : $hariIni->copy();
+            $a = $t->copy()->startOfWeek(Carbon::MONDAY);
+            $b = $t->copy()->endOfWeek(Carbon::SUNDAY);
+            return [$mode, $a, $b,
+                'Minggu ' . $a->locale('id')->isoFormat('D MMM') . ' – ' . $b->locale('id')->isoFormat('D MMM YYYY'),
+                ['mode' => $mode, 'tanggal' => $t->toDateString()]];
+        }
+
+        $bulan = (int) ($request->bulan ?: $hariIni->month);
+        $tahun = (int) ($request->tahun ?: $hariIni->year);
+        $a = Carbon::create($tahun, $bulan, 1)->startOfMonth();
+        return [$mode, $a, $a->copy()->endOfMonth(), $a->locale('id')->isoFormat('MMMM YYYY'),
+            ['mode' => $mode, 'bulan' => $bulan, 'tahun' => $tahun]];
+    }
+
     private function jenisLabel(string $j): string
     {
         return [

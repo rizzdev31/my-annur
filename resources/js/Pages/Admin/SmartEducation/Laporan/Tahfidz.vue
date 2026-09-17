@@ -4,11 +4,13 @@
         <Head title="Laporan Tahfidz" />
 
         <div class="print:hidden">
-            <div class="flex gap-2 mb-5">
+            <div class="flex flex-wrap gap-2 mb-5">
                 <Link :href="route('admin.smart-education.laporan.index')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Jurnal Pembelajaran</Link>
                 <Link :href="route('admin.smart-education.laporan.kehadiran-santri')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Kehadiran Santri</Link>
+                <Link :href="route('admin.smart-education.laporan.mengajar-quran')"
+                    class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Mengajar Tahfidz & Tahsin</Link>
                 <span class="px-4 py-2 rounded-xl text-sm font-semibold bg-teal-600 text-white shadow-sm shadow-teal-200">Tahfidz</span>
                 <Link :href="route('admin.smart-education.laporan.tahsin')"
                     class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">Tahsin</Link>
