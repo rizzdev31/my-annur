@@ -314,7 +314,7 @@ async function tunjukPengganti(sesi) {
                             <div v-else class="mt-2 flex gap-2">
                                 <select v-model="s.pengganti_id" :disabled="!s.opsi" class="flex-1 px-2.5 py-2 rounded-lg border border-gray-200 text-xs outline-none focus:border-amber-500">
                                     <option value="">{{ s.opsi ? '— pilih pengganti —' : 'Memuat…' }}</option>
-                                    <option v-for="o in (s.opsi || [])" :key="o.id" :value="o.id">{{ o.nama }}</option>
+                                    <option v-for="o in (s.opsi || [])" :key="o.id" :value="o.id">{{ o.nama + (o.gabung ? ` — gabung ${o.gabung}` : '') + (o.mukim ? ' · mukim' : '') }}</option>
                                 </select>
                                 <button @click="tunjukPengganti(s)" :disabled="!s.pengganti_id || s.assigning"
                                     class="px-3 py-2 rounded-lg bg-[#0C78FF] text-white text-xs font-bold disabled:opacity-50">

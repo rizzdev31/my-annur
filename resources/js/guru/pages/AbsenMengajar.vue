@@ -34,6 +34,10 @@ async function loadPengganti(j) {
         j.opsi = o.data.data ?? []
     } catch (_) { j.opsi = [] }
 }
+// Label calon: gabung kelas (guru yang juga mengajar di jam itu) & mukim asrama.
+const labelCalon = (o) => o.nama + (o.gabung ? ` — gabung ${o.gabung}` : '') + (o.mukim ? ' · mukim' : '')
+const calonTerpilih = (j) => (j.opsi || []).find(o => o.id == j.pengganti_id)
+
 async function tunjukPengganti(j) {
     if (!j.pengganti_id) { msg.value = { ok: false, text: 'Pilih guru pengganti dulu.' }; return }
     j.assigning = true; msg.value = null
@@ -220,13 +224,16 @@ async function kirim() {
                                     <select v-model="j.pengganti_id" :disabled="!j.opsi"
                                         class="flex-1 min-w-0 px-2 py-2 rounded-lg border border-gray-200 text-[12px] outline-none bg-white truncate">
                                         <option value="">{{ j.opsi ? `Pilih guru pengganti… (${j.opsi.length} kosong)` : 'Memuat…' }}</option>
-                                        <option v-for="o in (j.opsi || [])" :key="o.id" :value="o.id">{{ o.nama }}</option>
+                                        <option v-for="o in (j.opsi || [])" :key="o.id" :value="o.id">{{ labelCalon(o) }}</option>
                                     </select>
                                     <button @click="tunjukPengganti(j)" :disabled="!j.pengganti_id || j.assigning"
                                         class="shrink-0 whitespace-nowrap px-3.5 py-2 rounded-lg bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-50 active:scale-[0.98] transition">
                                         {{ j.assigning ? '…' : 'Tunjuk' }}
                                     </button>
                                 </div>
+                                <p v-if="calonTerpilih(j)?.gabung" class="mt-1.5 text-[10px] text-sky-700 leading-snug">
+                                    Kelas ini akan <b>digabung</b> dengan kelas {{ calonTerpilih(j).gabung }} yang diajar {{ calonTerpilih(j).nama }} pada jam yang sama.
+                                </p>
                                 <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
                                     class="mt-1.5 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">
                                     Saya ajar sendiri (izin selesai)

@@ -90,8 +90,9 @@ class PenggantiMengajarService
 
         // Pengganti harus benar-benar kosong di jam itu — aturan yang sama dengan
         // daftar calon, agar pilihan yang tampil tidak pernah ditolak di sini.
-        if ($alasan = $this->alasanTidakBisaInval($penggantiTpId, $jadwal, $tanggal)) {
-            throw new \DomainException($alasan);
+        $kelayakan = $this->kelayakanInval($penggantiTpId, $jadwal, $tanggal);
+        if ($kelayakan['alasan']) {
+            throw new \DomainException($kelayakan['alasan']);
         }
 
         // Tidak boleh menimpa sesi yang sudah benar-benar terlaksana / libur.
@@ -115,6 +116,7 @@ class PenggantiMengajarService
                 'foto_mengajar'      => null,
                 'sudah_buka_jurnal'  => false,
                 'keterangan'         => 'Pengganti izin (' . ($izin->jenisPengajuan?->nama ?? 'Izin') . ')'
+                    . ($kelayakan['gabung'] ? ' — digabung dengan ' . $kelayakan['gabung'] : '')
                     . ($keterangan ? ' — ' . $keterangan : ''),
             ]
         );
@@ -129,6 +131,7 @@ class PenggantiMengajarService
                 'pesan' => 'Menggantikan ' . ($jadwal->mataPelajaran?->nama ?? '')
                     . ' ' . ($jadwal->kelasRel?->nama ?? $jadwal->kelas ?? '') . ' pada ' . $tanggal->format('d/m/Y')
                     . ' (' . substr((string) $jadwal->jam_mulai, 0, 5) . '–' . substr((string) $jadwal->jam_selesai, 0, 5) . ').'
+                    . ($kelayakan['gabung'] ? ' Digabung dengan kelas Anda: ' . $kelayakan['gabung'] . ' — absen tiap kelas terpisah.' : '')
                     . ' Absen & jurnal hanya bisa diisi selama jam mengajar.',
                 'tipe'  => 'tugas_baru',
                 'data'  => ['type' => 'kegiatan', 'route' => '/kelas-pengganti', 'tipe_kelas' => $tipe],
@@ -139,46 +142,152 @@ class PenggantiMengajarService
         return $absen;
     }
 
+    /** Tipe kelas Quran yang boleh DIGABUNG dalam satu jam oleh satu guru. */
+    public const TIPE_BISA_GABUNG = ['tahfidz', 'tahsin'];
+
+    /** Jumlah kelas maksimal yang dipegang satu guru pada jam yang sama. */
+    public const MAKS_KELAS_BERSAMAAN = 2;
+
     /**
      * Alasan seorang guru TIDAK bisa menginval sesi ini, atau null bila bisa.
      * Dipakai daftar calon dan penunjukan, supaya keduanya tak pernah berbeda.
      */
     public function alasanTidakBisaInval(int $tpId, JadwalMengajar $jadwal, Carbon $tanggal): ?string
     {
-        $tgl = $tanggal->toDateString();
+        return $this->kelayakanInval($tpId, $jadwal, $tanggal)['alasan'];
+    }
+
+    /**
+     * Kelayakan satu guru menginval sesi ini.
+     *
+     * GABUNG KELAS (keputusan 17 Sep 2026): seluruh kelas tahfidz & tahsin berjalan
+     * di 8 slot yang sama, dan guru yang ada di asrama pada jam itu adalah guru yang
+     * sedang mengajar kelasnya sendiri. Data Tahfidz Putra 5 Kamis 18:00: 29 calon
+     * "kosong", hanya 1 mukim dan 0 laki-laki-mukim — tak ada calon yang realistis,
+     * dan belum pernah sekali pun terjadi inval tahfidz/tahsin. Maka guru tahfidz/
+     * tahsin BOLEH memegang kelas Quran lain pada jam yang sama, dengan syarat:
+     *   - kedua kelas bertipe tahfidz/tahsin (kelas reguler tidak bisa dirangkap);
+     *   - total kelas bersamaan ≤ MAKS_KELAS_BERSAMAAN;
+     *   - kelas putra & putri tidak digabung (santrinya belajar bersama).
+     *
+     * @return array{alasan: ?string, gabung: ?string}  gabung = nama kelas yang dirangkap
+     */
+    public function kelayakanInval(int $tpId, JadwalMengajar $jadwal, Carbon $tanggal): array
+    {
+        $tgl  = $tanggal->toDateString();
+        $tolak = fn (string $a) => ['alasan' => $a, 'gabung' => null];
 
         $izin = PengajuanIzin::where('tenaga_pendidik_id', $tpId)->where('status', 'disetujui')
             ->where('tanggal_mulai', '<=', $tgl)->where('tanggal_selesai', '>=', $tgl)->exists();
-        if ($izin) return 'Guru pengganti sedang izin pada tanggal tersebut.';
+        if ($izin) return $tolak('Guru pengganti sedang izin pada tanggal tersebut.');
 
-        // Jadwal sendiri (tipe apa pun) yang beririsan jam.
-        $bentrok = JadwalMengajar::where('tenaga_pendidik_id', $tpId)
+        $jadwal->loadMissing(['mataPelajaran:id,tipe', 'kelasRel:id,nama']);
+        $targetQuran = in_array($jadwal->mataPelajaran?->tipe, self::TIPE_BISA_GABUNG, true);
+
+        // Kelas yang sudah dipegang guru ini pada jam yang sama: jadwal sendiri + inval lain.
+        $sendiri = JadwalMengajar::with(['mataPelajaran:id,tipe', 'kelasRel:id,nama'])
+            ->where('tenaga_pendidik_id', $tpId)
             ->where('hari', $jadwal->hari)->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
             ->where('jam_mulai', '<', $jadwal->jam_selesai)
             ->where('jam_selesai', '>', $jadwal->jam_mulai)
-            ->exists();
-        if ($bentrok) return 'Guru pengganti punya jadwal mengajar sendiri di jam yang sama.';
+            ->get();
+        // Jadwal sendiri yang hari itu dialihkan ke pengganti lain tidak dipegangnya.
+        $dialihkan = AbsensiMengajar::whereDate('tanggal', $tgl)->whereIn('jadwal_mengajar_id', $sendiri->pluck('id'))
+            ->whereNotNull('digantikan_oleh')->pluck('jadwal_mengajar_id')->flip();
+        $sendiri = $sendiri->reject(fn ($j) => $dialihkan->has($j->id));
 
-        // Sudah menginval sesi lain yang beririsan jam di tanggal yang sama.
-        $invalLain = AbsensiMengajar::where('digantikan_oleh', $tpId)->whereDate('tanggal', $tgl)
+        $invalLain = AbsensiMengajar::with(['jadwalMengajar.mataPelajaran:id,tipe', 'jadwalMengajar.kelasRel:id,nama'])
+            ->where('digantikan_oleh', $tpId)->whereDate('tanggal', $tgl)
+            ->whereIn('status', ['pengganti', 'tidak_terlaksana'])
             ->where('jadwal_mengajar_id', '!=', $jadwal->id)
             ->whereHas('jadwalMengajar', fn ($q) => $q
                 ->where('jam_mulai', '<', $jadwal->jam_selesai)
                 ->where('jam_selesai', '>', $jadwal->jam_mulai))
-            ->exists();
-        if ($invalLain) return 'Guru pengganti sudah menginval kelas lain di jam yang sama.';
+            ->get()->map(fn ($a) => $a->jadwalMengajar);
 
-        return null;
+        $dipegang = $sendiri->concat($invalLain)->filter()->values();
+        if ($dipegang->isEmpty()) return ['alasan' => null, 'gabung' => null];
+
+        // Ada kelas pada jam yang sama → hanya sah sebagai GABUNG kelas Quran.
+        if (!$targetQuran) {
+            return $tolak('Guru pengganti sudah mengajar kelas lain di jam yang sama.');
+        }
+        if ($dipegang->contains(fn ($j) => !in_array($j->mataPelajaran?->tipe, self::TIPE_BISA_GABUNG, true))) {
+            return $tolak('Guru pengganti mengajar kelas reguler di jam yang sama — tidak bisa dirangkap.');
+        }
+        if ($dipegang->count() + 1 > self::MAKS_KELAS_BERSAMAAN) {
+            return $tolak('Guru pengganti sudah memegang ' . $dipegang->count() . ' kelas di jam yang sama.');
+        }
+        $jkTarget = $this->jenisKelaminKelas($jadwal->kelas_id);
+        foreach ($dipegang as $j) {
+            $jk = $this->jenisKelaminKelas($j->kelas_id);
+            if ($jkTarget && $jk && $jkTarget !== $jk) {
+                return $tolak('Kelas putra dan putri tidak bisa digabung (' . ($j->kelasRel?->nama ?? 'kelas') . ').');
+            }
+        }
+
+        return ['alasan' => null, 'gabung' => $dipegang->map(fn ($j) => $j->kelasRel?->nama ?? $j->kelas)->implode(', ')];
     }
 
-    /** Calon pengganti yang benar-benar kosong di jam sesi ini. */
+    /**
+     * Jenis kelamin kelas: dari nama (Putra/Putri), bila tidak ada dari mayoritas
+     * ≥80% santri aktif (mis. "Persiapan Tahfidz 3"). null bila tidak bisa dipastikan.
+     */
+    public function jenisKelaminKelas(?int $kelasId): ?string
+    {
+        if (!$kelasId) return null;
+        static $memo = [];
+        if (array_key_exists($kelasId, $memo)) return $memo[$kelasId];
+
+        $nama = mb_strtolower((string) DB::table('kelas')->where('id', $kelasId)->value('nama'));
+        if (str_contains($nama, 'putri')) return $memo[$kelasId] = 'P';
+        if (str_contains($nama, 'putra')) return $memo[$kelasId] = 'L';
+
+        $jk = DB::table('kelas_santri as ks')->join('santri as s', 's.id', '=', 'ks.santri_id')
+            ->where('ks.kelas_id', $kelasId)->where('ks.is_aktif', true)
+            ->selectRaw('s.jenis_kelamin jk, COUNT(*) n')->groupBy('s.jenis_kelamin')->pluck('n', 'jk');
+        $total = $jk->sum();
+        if (!$total) return $memo[$kelasId] = null;
+        $atas = $jk->sortDesc()->keys()->first();
+        return $memo[$kelasId] = ($jk[$atas] / $total >= 0.8 ? $atas : null);
+    }
+
+    /**
+     * Calon pengganti untuk sesi ini, urut dari yang paling layak:
+     * sesama jenis kelamin dengan kelas → mukim (ada di asrama) → guru yang kosong
+     * → gabung kelas dengan program yang sama.
+     */
     public function calonPengganti(JadwalMengajar $jadwal, Carbon $tanggal, int $guruTpId): Collection
     {
+        $jadwal->loadMissing('mataPelajaran:id,tipe');
+        $jkKelas = $this->jenisKelaminKelas($jadwal->kelas_id);
+        $tipe    = $jadwal->mataPelajaran?->tipe;
+
         return TenagaPendidik::aktif()->where('id', '!=', $guruTpId)->with('user:id,name')->get()
-            ->filter(fn ($g) => $g->user && $this->alasanTidakBisaInval($g->id, $jadwal, $tanggal) === null)
-            ->map(fn ($g) => ['id' => $g->id, 'nama' => $g->user->name])
-            ->sortBy('nama')->values();
+            ->filter(fn ($g) => $g->user)
+            ->map(function ($g) use ($jadwal, $tanggal, $jkKelas, $tipe) {
+                $k = $this->kelayakanInval($g->id, $jadwal, $tanggal);
+                if ($k['alasan'] !== null) return null;
+
+                $sejenis = !$jkKelas || $g->jenis_kelamin === $jkKelas;
+                $programSama = $k['gabung'] && JadwalMengajar::where('tenaga_pendidik_id', $g->id)->where('is_aktif', true)
+                    ->whereHas('mataPelajaran', fn ($q) => $q->where('tipe', $tipe))->exists();
+
+                return [
+                    'id'      => $g->id,
+                    'nama'    => $g->user->name,
+                    'gabung'  => $k['gabung'],
+                    'mukim'   => (bool) $g->is_mukim,
+                    'sejenis' => $sejenis,
+                    // Kunci urut: angka kecil = lebih layak.
+                    '_urut'   => sprintf('%d%d%d%d-%s', $sejenis ? 0 : 1, $g->is_mukim ? 0 : 1,
+                        $k['gabung'] ? 1 : 0, $programSama ? 0 : 1, $g->user->name),
+                ];
+            })
+            ->filter()->sortBy('_urut')
+            ->map(fn ($c) => collect($c)->except('_urut')->all())
+            ->values();
     }
 
     /** Tugas inval AKTIF milik guru ini untuk satu jadwal hari ini (belum/sudah diisi). */
