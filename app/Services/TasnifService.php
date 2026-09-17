@@ -116,7 +116,12 @@ class TasnifService
 
             if ($lulus) {
                 // LULUS ujian → naik level (override: ujian adalah otoritas kenaikan).
-                $naik = (new TahsinService())->naikLevel($tt->santri_id, true);
+                // Bila santri sudah dinaikkan melewati level yang diujikan (penyesuaian admin),
+                // jangan naik lagi — naikLevel menambah dari level SEKARANG, bukan level ujian.
+                $levelKini = (int) (Santri::whereKey($tt->santri_id)->value('tahsin_level') ?? 1);
+                $naik = $levelKini > (int) $tt->level
+                    ? ['level' => $levelKini, 'tahsin_selesai' => false, 'sudah_naik' => true]
+                    : (new TahsinService())->naikLevel($tt->santri_id, true);
             }
 
             // Selesaikan penugasan → vakasi mengalir ke payroll bulan ini.

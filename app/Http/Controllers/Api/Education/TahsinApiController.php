@@ -565,7 +565,9 @@ class TahsinApiController extends Controller
         }
 
         $msg = $hasil['lulus']
-            ? "Tasnif LULUS (rata-rata {$hasil['nilai']}). Santri naik level."
+            ? "Tasnif LULUS (rata-rata {$hasil['nilai']}). " . (!empty($hasil['naik']['sudah_naik'])
+                ? "Santri sudah berada di Level {$hasil['naik']['level']}."
+                : 'Santri naik level.')
             : "Tasnif belum lulus (rata-rata {$hasil['nilai']}, minimal 8).";
         return response()->json(['success' => true, 'message' => $msg, 'data' => $hasil]);
     }
