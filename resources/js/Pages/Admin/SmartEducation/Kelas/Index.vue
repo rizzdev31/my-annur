@@ -312,15 +312,30 @@
                                 <div class="rounded-xl bg-red-50 py-2"><p class="text-lg font-bold text-red-600">{{ diff.keluar.length }}</p><p class="text-[11px] text-red-600">keluar</p></div>
                             </div>
 
+                            <div v-if="['tahfidz','tahsin'].includes(atur.jenis) && (diff.pindah.length || diff.baru.length)"
+                                class="mb-3 rounded-xl bg-sky-50 border border-sky-100 px-3 py-2 text-[11px] text-sky-800 leading-snug">
+                                <b>Pencapaian tidak berubah karena pindah kelas.</b>
+                                Hafalan tahfidz lanjut dari capaian terakhir; santri dari tahsin memulai hafalan tahfidz baru
+                                (nilai tahsinnya tetap tersimpan); level tahsin santri yang sudah punya nilai tidak diubah.
+                            </div>
+
                             <div v-if="diff.pindah.length" class="mb-3">
                                 <p class="text-xs font-semibold text-gray-700 mb-1">Dipindah ke {{ atur.nama }}</p>
-                                <ul class="text-xs text-gray-600 space-y-0.5">
-                                    <li v-for="s in diff.pindah" :key="s.id">{{ s.nama }} <span class="text-gray-400">— keluar dari {{ s.kelas_lain }}</span></li>
+                                <ul class="text-xs text-gray-600 space-y-1">
+                                    <li v-for="s in diff.pindah" :key="s.id">
+                                        {{ s.nama }} <span class="text-gray-400">— dari {{ s.kelas_lain }}</span>
+                                        <span v-if="catatanPencapaian(s)" class="block text-[11px] text-emerald-700">↳ {{ catatanPencapaian(s) }}</span>
+                                    </li>
                                 </ul>
                             </div>
                             <div v-if="diff.baru.length" class="mb-3">
                                 <p class="text-xs font-semibold text-gray-700 mb-1">Masuk baru</p>
-                                <p class="text-xs text-gray-600">{{ diff.baru.map(s => s.nama).join(', ') }}</p>
+                                <ul class="text-xs text-gray-600 space-y-1">
+                                    <li v-for="s in diff.baru" :key="s.id">
+                                        {{ s.nama }}
+                                        <span v-if="catatanPencapaian(s)" class="block text-[11px] text-emerald-700">↳ {{ catatanPencapaian(s) }}</span>
+                                    </li>
+                                </ul>
                             </div>
                             <div v-if="diff.keluar.length" class="mb-3 rounded-xl bg-red-50 border border-red-100 p-3">
                                 <p class="text-xs font-semibold text-red-700 mb-1">⚠ Keluar dan TIDAK punya {{ aturData?.kelas?.slot_label }} lagi</p>
@@ -536,6 +551,29 @@ const diff = computed(() => {
         keluar: s.filter(x => x.anggota && !pilih.value.has(x.id)),
     }
 })
+// Pencapaian yang dibawa santri ke kelas ini — sama dengan aturan di server
+// (KenaikanKelasService / Santri::tempatkanLevelTahsin).
+const labelLevel = (lv) => (lv === 6 ? 'Persiapan Tahfidz' : `Level ${lv ?? '?'}`)
+function catatanPencapaian(s) {
+    const k = aturData.value?.kelas
+    if (!k) return null
+    if (k.jenis === 'tahfidz') {
+        if (s.hafalan_ayat > 0) return `hafalan lanjut dari capaian terakhir (${s.hafalan_ayat} ayat)`
+        return s.progres_tahsin
+            ? `mulai hafalan tahfidz baru · nilai tahsin (${labelLevel(s.tahsin_level)}) tetap tersimpan`
+            : 'mulai hafalan tahfidz baru'
+    }
+    if (k.jenis === 'tahsin') {
+        const hafalan = s.hafalan_ayat > 0 ? ` · hafalan tahfidz ${s.hafalan_ayat} ayat tetap tersimpan` : ''
+        if (s.progres_tahsin) {
+            const beda = k.level_tahsin && s.tahsin_level !== k.level_tahsin ? ` (kelas ${labelLevel(k.level_tahsin)})` : ''
+            return `level tetap ${labelLevel(s.tahsin_level)}${beda}, lanjut dari nilai sebelumnya${hafalan}`
+        }
+        return `ditempatkan di ${labelLevel(k.level_tahsin)} (belum punya nilai tahsin)${hafalan}`
+    }
+    return null
+}
+
 const adaPerubahan = computed(() => diff.value.baru.length + diff.value.pindah.length + diff.value.keluar.length > 0)
 const perubahanBaris = (s) => (s.anggota !== pilih.value.has(s.id) ? 'bg-indigo-50/40' : '')
 

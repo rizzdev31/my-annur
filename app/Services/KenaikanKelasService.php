@@ -18,8 +18,11 @@ use Illuminate\Support\Facades\DB;
  *  2. SATU KELAS AKTIF PER SLOT (Kelas::SLOT): sekolah = 1, program Quran
  *     (tahfidz ∪ tahsin) = 1. Memasukkan santri ke kelas lain di slot yang sama
  *     otomatis MEMINDAHKAN-nya.
- *  3. Setelah berubah: level tahsin menyesuaikan kelas, data disinkron ke
- *     RamahAnak (outbox, asinkron), dan pengampu kelas tahfidz/tahsin dikabari.
+ *  3. PENCAPAIAN TIDAK BERUBAH KARENA PINDAH: hafalan tahfidz & level/nilai tahsin
+ *     melekat pada santri. Level tahsin hanya ditempatkan saat santri tanpa progres
+ *     tahsin masuk kelas tahsin. Tahsin → tahfidz memulai hafalan tahfidz baru.
+ *  4. Setelah berubah: data disinkron ke RamahAnak (outbox, asinkron) dan pengampu
+ *     kelas tahfidz/tahsin dikabari.
  *
  * Dulu form edit santri memakai sync() yang menghapus riwayat dan membolehkan dua
  * kelas sejenis, sementara naik kelas menjaga riwayat — dua jalur, dua aturan.
@@ -32,6 +35,8 @@ class KenaikanKelasService
     /** Perubahan per kelas selama satu operasi: [kelas_id => ['masuk'=>[nama], 'keluar'=>[nama]]]. */
     private array $perubahan = [];
     private array $santriBerubah = [];
+    /** Santri yang baru dibuka keanggotaannya di kelas TAHSIN: [santri_id => Kelas]. */
+    private array $masukTahsin = [];
 
     public function __construct(private SantriSyncService $sync) {}
 
@@ -204,6 +209,7 @@ class KenaikanKelasService
         }
 
         $this->catat($tujuan->id, $santriId, 'masuk');
+        if ($tujuan->jenis === 'tahsin') $this->masukTahsin[$santriId] = $tujuan;
         return $lama->isNotEmpty() ? $lama->pluck('nama')->implode(', ') : null;
     }
 
@@ -228,15 +234,28 @@ class KenaikanKelasService
     {
         $this->perubahan = [];
         $this->santriBerubah = [];
+        $this->masukTahsin = [];
     }
 
-    /** Efek lanjutan SETELAH transaksi selesai. */
+    /**
+     * Efek lanjutan SETELAH transaksi selesai.
+     *
+     * Pencapaian tidak disentuh oleh perpindahan:
+     *  - Tahfidz: hafalan, juz, setoran, tasmi' semuanya melekat pada santri_id —
+     *    pindah halaqoh langsung lanjut dari pencapaian terakhir.
+     *  - Tahsin → tahfidz: tahfidz mulai dari data hafalannya sendiri (baru);
+     *    level & nilai tahsin tetap tersimpan.
+     *  - Masuk kelas tahsin: level hanya ditempatkan bila santri belum punya
+     *    progres tahsin (Santri::tempatkanLevelTahsin).
+     */
     private function selesai(): void
     {
         foreach (array_keys($this->santriBerubah) as $sid) {
             $s = Santri::find($sid);
             if (!$s) continue;
-            $s->selaraskanLevelTahsin();   // materi tahsin mengikuti kelas
+            if (isset($this->masukTahsin[$sid])) {
+                $s->tempatkanLevelTahsin($this->masukTahsin[$sid]);
+            }
             $this->sync->sync($s);         // RamahAnak (outbox)
         }
         $this->kabariPengampu();

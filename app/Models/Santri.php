@@ -72,25 +72,37 @@ class Santri extends Model
             ->where('kelas_santri.is_aktif', true));
     }
 
-    /**
-     * Selaraskan tahsin_level dengan kelas TAHSIN aktif santri (materi mengikuti kelas):
-     * kelas Persiapan Tahfidz (level 6) → tahsin_level 6, dst. Tak berbuat apa-apa
-     * bila santri tak berada di kelas tahsin. Kembalikan true bila ada perubahan.
-     */
-    public function selaraskanLevelTahsin(): bool
+    /** Santri sudah punya pencapaian tahsin (nilai materi atau ujian tasnif). */
+    public function punyaProgresTahsin(): bool
     {
-        $kelasTahsin = $this->kelas()
-            ->wherePivot('is_aktif', true)
-            ->where('kelas.jenis', 'tahsin')
-            ->whereNotNull('level_tahsin')
-            ->orderByDesc('level_tahsin')
-            ->first();
+        return \App\Models\TahsinPenilaian::where('santri_id', $this->id)->exists()
+            || \Illuminate\Support\Facades\DB::table('tugas_tasnif')->where('santri_id', $this->id)->where('lulus', true)->exists();
+    }
 
-        if ($kelasTahsin && (int) $this->tahsin_level !== (int) $kelasTahsin->level_tahsin) {
-            $this->update(['tahsin_level' => $kelasTahsin->level_tahsin]);
-            return true;
-        }
-        return false;
+    /**
+     * Tempatkan level tahsin saat santri MASUK kelas tahsin.
+     *
+     * PENCAPAIAN TIDAK BERUBAH KARENA PINDAH KELAS — prinsip yang sama dengan
+     * tahfidz (hafalan melekat pada santri, bukan pada halaqoh):
+     *  - Santri belum punya progres tahsin → level mengikuti kelas (penempatan awal).
+     *  - Santri sudah punya progres → level TETAP, lanjut dari pencapaiannya,
+     *    walau kelas barunya berlevel lain. Naik level hanya lewat tasnif/naikLevel.
+     *
+     * Dulu level selalu disamakan dengan kelas pada SETIAP perubahan keanggotaan,
+     * termasuk pindah kelas sekolah atau sekadar menyimpan form santri. Santri yang
+     * lulus tasnif (level naik, kelas tetap) akan turun level diam-diam begitu
+     * keanggotaannya tersentuh.
+     *
+     * @return bool true bila level diubah
+     */
+    public function tempatkanLevelTahsin(Kelas $kelasTahsin): bool
+    {
+        if ($kelasTahsin->jenis !== 'tahsin' || !$kelasTahsin->level_tahsin) return false;
+        if ($this->punyaProgresTahsin()) return false;
+        if ((int) $this->tahsin_level === (int) $kelasTahsin->level_tahsin) return false;
+
+        $this->update(['tahsin_level' => $kelasTahsin->level_tahsin]);
+        return true;
     }
 
     // ─── Accessor ─────────────────────────────────────────────────────────────

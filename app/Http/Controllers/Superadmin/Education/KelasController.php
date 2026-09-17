@@ -106,9 +106,14 @@ class KelasController extends Controller
             ->get(['kelas_santri.santri_id', 'kelas.id', 'kelas.nama'])
             ->keyBy('santri_id');
 
+        // Pencapaian yang DIBAWA santri — ditampilkan di konfirmasi agar admin
+        // melihat bahwa pindah kelas tidak mengubahnya.
+        $hafalan = \App\Models\HafalanSantri::pluck('total_ayat', 'santri_id');
+        $progresTahsin = \App\Models\TahsinPenilaian::distinct()->pluck('santri_id')->flip();
+
         $santri = \App\Models\Santri::aktif()->orderBy('nama_lengkap')
-            ->get(['id', 'nip', 'nama_lengkap', 'jenis_kelamin'])
-            ->map(function ($s) use ($kelasSlot, $kelas) {
+            ->get(['id', 'nip', 'nama_lengkap', 'jenis_kelamin', 'tahsin_level'])
+            ->map(function ($s) use ($kelasSlot, $kelas, $hafalan, $progresTahsin) {
                 $k = $kelasSlot->get($s->id);
                 return [
                     'id'            => $s->id,
@@ -118,6 +123,9 @@ class KelasController extends Controller
                     'anggota'       => $k && (int) $k->id === $kelas->id,
                     // Kelas lain di slot yang sama → akan DIPINDAH bila dicentang.
                     'kelas_lain'    => $k && (int) $k->id !== $kelas->id ? $k->nama : null,
+                    'hafalan_ayat'  => (int) ($hafalan[$s->id] ?? 0),
+                    'tahsin_level'  => $s->tahsin_level,
+                    'progres_tahsin'=> $progresTahsin->has($s->id),
                 ];
             })->values();
 
@@ -128,6 +136,7 @@ class KelasController extends Controller
         return response()->json(['success' => true, 'data' => [
             'kelas' => [
                 'id' => $kelas->id, 'nama' => $kelas->nama, 'jenis' => $kelas->jenis,
+                'level_tahsin' => $kelas->level_tahsin,
                 'slot_label' => $kelas->jenis === 'sekolah' ? 'kelas sekolah' : 'kelas tahfidz/tahsin',
             ],
             'saran_jk' => $saranJk,
