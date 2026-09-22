@@ -409,11 +409,14 @@ class PayrollCalculationService
         // kerja (tidak menambah potongan) → tidak memotong gaji.
         $liburSet = HariLibur::tanggalSetDalamRentang($mulai->toDateString(), $selesai->toDateString());
         $liburIndividuSet = \App\Models\LiburTendik::tanggalSetUntuk($guru->id, $mulai->toDateString(), $selesai->toDateString());
-        $jamKerja = $guru->jamKerjaAktif();
+        // Guru yang dibebaskan absen harian tidak punya hari kerja harian sama
+        // sekali — penghasilannya dari vakasi sesi/pertemuan, bukan kehadiran.
+        $jamKerja = $guru->wajibAbsenHarian() ? $guru->jamKerjaAktif() : null;
         $totalHariKerja = 0;
         $c   = $mulai->copy()->startOfDay();
         $end = $selesai->copy()->startOfDay();
         while ($c->lte($end)) {
+            if (!$guru->wajibAbsenHarian()) { $c->addDay(); continue; }
             $tglStr = $c->toDateString();
             $liburMingguan = $jamKerja ? $jamKerja->isHariLibur(TimezoneHelper::namaHariDB($c)) : false;
             if (!isset($liburSet[$tglStr]) && !$liburMingguan && !isset($liburIndividuSet[$tglStr])) $totalHariKerja++;

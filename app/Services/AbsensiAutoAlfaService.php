@@ -55,11 +55,10 @@ class AbsensiAutoAlfaService
             $namaHari  = TimezoneHelper::namaHariDB($tglCarbon);
 
             foreach ($gurus as $guru) {
-                $jamKerja = $guru->jamKerjaAktif();
-                if (!$jamKerja) continue;
-
-                $jadwal = $jamKerja->getJamUntukHari($namaHari);
-                if (!$jadwal) continue; // hari libur mingguan tendik ini → bukan alfa
+                // Satu pintu: guru yang dibebaskan absen harian & hari libur
+                // mingguan sama-sama mengembalikan null → bukan alfa.
+                $jadwal = $guru->jadwalHari($namaHari, $tgl);
+                if (!$jadwal) continue;
 
                 // Libur individu (guru mukim) pada tanggal ini → bukan alfa.
                 if (LiburTendik::isLibur($guru->id, $tgl)) continue;

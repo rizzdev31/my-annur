@@ -569,6 +569,10 @@ class KinerjaCalculationService
     {
         // Hari kerja = hari kalender − HariLibur (nasional/pesantren/darurat) − libur
         // mingguan − libur individu guru mukim (bila $tpId diberikan).
+        // Dibebaskan absen harian → tidak punya hari kerja harian; target tugas
+        // berfrekuensi harian & target log ikut nol, skor absensi harian netral.
+        if ($tpId && !(TenagaPendidik::find($tpId)?->wajibAbsenHarian() ?? true)) return 0;
+
         $liburSet = HariLibur::tanggalSetDalamRentang($mulai->toDateString(), $selesai->toDateString());
         $liburIndividuSet = $tpId
             ? \App\Models\LiburTendik::tanggalSetUntuk($tpId, $mulai->toDateString(), $selesai->toDateString())

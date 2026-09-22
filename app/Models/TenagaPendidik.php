@@ -38,6 +38,7 @@ class TenagaPendidik extends Model
         'no_rekening', 'nama_bank', 'nama_rekening',
         'jenis_guru', 'is_aktif',
         'is_mukim',                 // guru mukim asrama → punya libur individu rolling
+        'wajib_absen_harian',       // false → cukup absen per sesi mengajar (mis. pembina ekskul)
         'hari_libur',               // hari libur mingguan tetap (array, mis. ["sabtu"])
         'hari_libur_diajukan',      // usulan libur dari guru (menunggu approval)
         // Status kepegawaian (dari file user)
@@ -58,7 +59,41 @@ class TenagaPendidik extends Model
             'hari_libur'          => 'array',
             'hari_libur_diajukan' => 'array',
             'is_mukim'         => 'boolean',
+            'wajib_absen_harian' => 'boolean',
         ];
+    }
+
+    // ─── Kewajiban absen harian ───────────────────────────────────────────────
+
+    /**
+     * Apakah guru ini wajib check-in harian. Guru yang dibebaskan (mis. pembina
+     * ekstrakurikuler) tetap wajib absen per SESI MENGAJAR — yang dilepas hanya
+     * absensi harian: tidak dialfakan, tak diingatkan, tak masuk peserta kegiatan
+     * piket, dan hari kerjanya 0 di kinerja & payroll.
+     */
+    public function wajibAbsenHarian(): bool
+    {
+        return (bool) ($this->wajib_absen_harian ?? true);
+    }
+
+    /**
+     * Jadwal kerja harian yang BERLAKU untuk guru ini pada satu hari — satu-satunya
+     * pintu untuk pertanyaan "hari ini dia wajib absen, jam berapa?".
+     * Null = tidak ada kewajiban absen harian (dibebaskan, atau libur mingguannya).
+     *
+     * @param  string      $namaHari  senin|selasa|… (TimezoneHelper::namaHariDB)
+     * @param  string|null $tanggal   untuk overlay shift pada tanggal tertentu
+     */
+    public function jadwalHari(string $namaHari, ?string $tanggal = null): ?array
+    {
+        if (!$this->wajibAbsenHarian()) return null;
+
+        return $this->jamKerjaAktif($tanggal)?->getJamUntukHari($namaHari);
+    }
+
+    public function scopeWajibAbsenHarian($query)
+    {
+        return $query->where('wajib_absen_harian', true);
     }
 
     // ─── Libur individu (guru mukim) ───────────────────────────────────────────

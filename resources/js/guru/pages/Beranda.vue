@@ -33,6 +33,7 @@ const initials = computed(() => {
 const absen = computed(() => data.value?.absen_harian ?? {})
 const absenStatus = computed(() => {
     const a = absen.value
+    if (a.wajib_absen_harian === false) return { label: 'Tanpa absen harian', dot: '#94A3B8' }
     if (a.is_libur && !a.sudah_masuk) return { label: 'Libur', dot: '#94A3B8' }
     if (a.sudah_pulang) return { label: 'Selesai', dot: '#34D399' }
     if (a.sudah_masuk) return { label: 'Sudah Masuk', dot: '#FBBF24' }
@@ -43,6 +44,7 @@ const absenStatus = computed(() => {
 // Reminder aktif untuk guru (call-to-action / hitung mundur / info).
 const absenReminder = computed(() => {
     const a = absen.value
+    if (a.wajib_absen_harian === false) return { text: 'Anda tidak wajib absen harian — cukup absen tiap sesi mengajar.', tone: 'info' }
     if (a.is_libur && !a.sudah_masuk) return { text: 'Hari ini libur — tidak perlu absen.', tone: 'info' }
     if (a.izin_aktif?.ada && !a.sudah_masuk) return { text: `Sedang ${a.izin_aktif.jenis} — absen tidak diperlukan.`, tone: 'info' }
     if (a.sudah_pulang) return { text: 'Absensi hari ini selesai. Terima kasih!', tone: 'done' }

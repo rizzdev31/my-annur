@@ -193,6 +193,12 @@
                                                 d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                         </svg>
                                     </button>
+                                    <!-- Dibebaskan dari absen harian (mis. pembina ekskul) -->
+                                    <span v-if="guru.wajib_absen_harian === false"
+                                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-teal-50 text-teal-700 w-fit"
+                                        title="Tidak wajib absen harian — kehadiran dinilai dari absensi tiap sesi mengajar">
+                                        Tanpa absen harian
+                                    </span>
                                     <!-- Alasan nonaktif -->
                                     <p v-if="guru.alasan_nonaktif && guru.status_kepegawaian !== 'aktif'"
                                         class="text-xs text-gray-400 truncate max-w-[130px]"

@@ -82,7 +82,10 @@ class AbsensiApiController extends Controller
             ->select('id', 'nama', 'sumber', 'tipe')
             ->first();
         $liburMingguan = $jamKerja && $jamKerja->isHariLibur($namaHari);
-        $isLibur       = $hariLiburAktif !== null || $liburMingguan;
+        // Dibebaskan absen harian → tombol absen tertutup setiap hari; klien lama
+        // membacanya lewat hari_libur, klien baru lewat wajib_absen_harian.
+        $bebasAbsenHarian = !$tp->wajibAbsenHarian();
+        $isLibur       = $hariLiburAktif !== null || $liburMingguan || $bebasAbsenHarian;
         // Libur individu guru mukim: TIDAK menonaktifkan check-in (opsional) —
         // hanya info + tidak dialfa + tidak dihitung hari kerja (lihat auto-alfa & payroll).
         $liburIndividu = \App\Models\LiburTendik::isLibur($tp->id, $kerjaDate->toDateString());
@@ -151,7 +154,15 @@ class AbsensiApiController extends Controller
                 'izin_aktif'     => $izinAktif ?? ['ada' => false],
                 // INFO HARI LIBUR — untuk Flutter menampilkan banner & disable tombol
                 // Prioritas: libur nasional/pesantren (HariLibur) → libur mingguan (jam kerja).
-                'hari_libur'     => $hariLiburAktif ? [
+                // Dibebaskan absen harian — kehadiran dinilai dari absensi tiap sesi.
+                'wajib_absen_harian' => !$bebasAbsenHarian,
+                'hari_libur'     => $bebasAbsenHarian ? [
+                    'ada'     => true,
+                    'nama'    => 'Tidak wajib absen harian',
+                    'sumber'  => 'bebas_absen_harian',
+                    'opsional'=> false,
+                    'catatan' => 'Kehadiran Anda dicatat dari absensi tiap sesi mengajar.',
+                ] : ($hariLiburAktif ? [
                     'ada'     => true,
                     'nama'    => $hariLiburAktif->nama,
                     'sumber'  => $hariLiburAktif->sumber,
@@ -167,7 +178,7 @@ class AbsensiApiController extends Controller
                     'nama'    => 'Libur (jadwal Anda)',
                     'sumber'  => 'libur_individu',
                     'opsional'=> true,
-                ] : ['ada' => false])),
+                ] : ['ada' => false]))),
             ],
         ]);
     }
@@ -195,6 +206,16 @@ class AbsensiApiController extends Controller
                 'success' => false,
                 'message' => 'Data tenaga pendidik tidak ditemukan.',
             ], 404);
+        }
+
+        // Dibebaskan absen harian (mis. pembina ekstrakurikuler) → tak ada check-in
+        // harian sama sekali; kehadirannya dinilai dari absensi tiap sesi mengajar.
+        if (!$tp->wajibAbsenHarian()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak wajib absen harian. Cukup isi absensi & jurnal pada tiap sesi mengajar.',
+                'code'    => 'TIDAK_WAJIB_ABSEN_HARIAN',
+            ], 422);
         }
 
         // Gunakan device_date dari Flutter agar konsisten dengan hariIni() — handle timezone WIB.

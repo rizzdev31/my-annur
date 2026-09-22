@@ -69,7 +69,10 @@ class AbsensiController extends Controller
             $absensi = $absensiAda->get($guru->id);
 
             // ── Kalkulasi status & terlambat otomatis ─────────────────────
-            $status         = $absensi?->status ?? 'belum';
+            // Guru yang dibebaskan absen harian tidak pernah "belum absen" —
+            // kehadirannya dinilai dari absensi tiap sesi mengajar.
+            $status         = $absensi?->status
+                ?? ($guru->wajibAbsenHarian() ? 'belum' : 'tanpa_absen');
             $menitTerlambat = (int) ($absensi?->menit_terlambat ?? 0);
 
             // Hanya kalkulasi ulang jika ada jam masuk dan belum dikoreksi manual

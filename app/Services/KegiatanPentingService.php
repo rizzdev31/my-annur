@@ -82,6 +82,9 @@ class KegiatanPentingService
             if ($liburNasional) return false;                                  // libur nasional/pesantren
             // Jam kerja WAJIB diresolusi per tanggal kegiatan — guru shift
             // (satpam/asrama) bisa memakai jadwal berbeda pada tanggal tertentu.
+            // Guru yang dibebaskan absen harian tidak hadir sepanjang hari kerja →
+            // bukan peserta kegiatan. Sama perlakuannya dengan libur mingguan.
+            if (!$g->wajibAbsenHarian()) return false;
             $jk = $g->jamKerjaAktif($tanggal);
             if ($jk && $jk->isHariLibur($namaHari)) return false;              // libur mingguan
 

@@ -87,9 +87,8 @@ class EskalasiPimpinanService
             if ($sudah->has($g->id) || $izin->has($g->id)) continue;
             if (LiburTendik::isLibur($g->id, $today)) continue;
 
-            $jk = $g->jamKerjaAktif();
-            $jadwal = $jk?->getJamUntukHari($namaHari);
-            if (!$jadwal) continue;                       // libur mingguan guru ini
+            $jadwal = $g->jadwalHari($namaHari, $today);
+            if (!$jadwal) continue;                       // libur mingguan / dibebaskan absen harian
 
             $batas = Carbon::parse($today . ' ' . $jadwal['jam_masuk'], TimezoneHelper::TZ)
                 ->addMinutes((int) ($jadwal['toleransi'] ?? 15));

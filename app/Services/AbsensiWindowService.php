@@ -73,7 +73,11 @@ class AbsensiWindowService
                 ->orWhere('tanggal_selesai', '>=', $kerjaDate->toDateString()))
             ->exists();
         $liburMingguan = $jamKerja && $jamKerja->isHariLibur($namaHari);
-        $isLibur       = $hariLiburAktif || $liburMingguan;
+        // Dibebaskan absen harian → diperlakukan seperti libur bagi klien lama
+        // (tombol check-in tersembunyi), dan ditandai lewat flag baru di bawah
+        // agar aplikasi baru bisa menampilkan sebabnya dengan benar.
+        $bebasAbsenHarian = !$tp->wajibAbsenHarian();
+        $isLibur       = $hariLiburAktif || $liburMingguan || $bebasAbsenHarian;
 
         $sudahCheckin  = $absensi?->jam_masuk  !== null;
         $sudahCheckout = $absensi?->jam_pulang !== null;
@@ -104,6 +108,10 @@ class AbsensiWindowService
             'bisa_checkin_mulai'     => $bisaCheckInMulai,
             'menit_menunggu_checkin' => $menitMenunggu,
             'is_libur'               => $isLibur,
+            'wajib_absen_harian'     => !$bebasAbsenHarian,
+            'alasan_tanpa_absen'     => $bebasAbsenHarian
+                ? 'Anda tidak wajib absen harian. Kehadiran dicatat dari absensi tiap sesi mengajar.'
+                : null,
             'izin_aktif'             => $izinAktif,
             'status'                 => $absensi?->status,
             'absen'                  => $absensi,

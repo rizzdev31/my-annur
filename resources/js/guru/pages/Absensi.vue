@@ -28,6 +28,7 @@ const hero = computed(() => {
     if (!d.value) return { text: '—', tone: 'default' }
     if (sudahCheckout.value) return { text: 'Absensi hari ini selesai', tone: 'done' }
     if (izin.value)  return { text: `Sedang ${izin.value.jenis}`, tone: 'izin' }
+    if (d.value.wajib_absen_harian === false) return { text: 'Tidak wajib absen harian', tone: 'libur' }
     if (libur.value && !libur.value.opsional) return { text: `Libur — ${libur.value.nama}`, tone: 'libur' }
     if (sudahCheckin.value) return { text: 'Sudah masuk, menunggu jam pulang', tone: 'in' }
     if (bolehCheckin.value) return { text: 'Belum absen masuk', tone: 'pending' }
@@ -151,8 +152,8 @@ async function konfirmasi() {
                     <svg class="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
                 </div>
                 <div>
-                    <p class="text-sm font-bold text-slate-700">Hari Libur</p>
-                    <p class="text-xs text-slate-500">{{ libur.nama }}</p>
+                    <p class="text-sm font-bold text-slate-700">{{ libur.nama }}</p>
+                    <p class="text-xs text-slate-500">{{ libur.catatan || 'Tidak perlu absen harian hari ini.' }}</p>
                 </div>
             </div>
 

@@ -55,9 +55,8 @@ class NotifikasiReminder extends Command
 
         foreach ($guruList as $g) {
             if (!$g->user) continue;
-            $jk = $g->jamKerjaAktif();
-            if (!$jk || $jk->isHariLibur($namaHari)) continue;
-            $jadwal = $jk->getJamUntukHari($namaHari);
+            // Null = dibebaskan absen harian atau libur mingguannya → tak diingatkan.
+            $jadwal = $g->jadwalHari($namaHari, $today);
             if (!$jadwal || empty($jadwal['jam_masuk']) || empty($jadwal['jam_pulang'])) continue;
 
             if ($this->sedangIzin($g->id, $today)) continue;

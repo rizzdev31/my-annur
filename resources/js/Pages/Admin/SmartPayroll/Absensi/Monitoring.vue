@@ -491,7 +491,7 @@ const tahunSekarang = new Date().getFullYear()
 
 const statusLabel = {
     hadir: 'Hadir', terlambat: 'Terlambat', izin: 'Izin', sakit: 'Sakit',
-    alfa: 'Alfa', libur: 'Libur', dinas_luar: 'Dinas Luar', belum: 'Belum', izin_sakit: 'Izin Sakit',
+    alfa: 'Alfa', libur: 'Libur', dinas_luar: 'Dinas Luar', belum: 'Belum', izin_sakit: 'Izin Sakit', tanpa_absen: 'Tanpa Absen Harian',
 }
 const statusCls = (s) => ({
     hadir: 'bg-emerald-50 text-emerald-700', terlambat: 'bg-amber-50 text-amber-700',
@@ -499,6 +499,7 @@ const statusCls = (s) => ({
     izin_sakit: 'bg-indigo-50 text-indigo-700', dinas_luar: 'bg-violet-50 text-violet-700',
     alfa: 'bg-red-50 text-red-600', libur: 'bg-gray-100 text-gray-500',
     belum: 'bg-gray-100 text-gray-400',
+    tanpa_absen: 'bg-teal-50 text-teal-700',
 }[s] ?? 'bg-gray-100 text-gray-500')
 
 const skorColor = (v) => v >= 80 ? '#10B981' : v >= 50 ? '#F59E0B' : '#EF4444'

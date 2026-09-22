@@ -292,7 +292,7 @@ const batasTerlambat = computed(() => {
 
 const statusLabel = {
     hadir: 'Hadir', terlambat: 'Terlambat', izin: 'Izin', izin_sakit: 'Izin Sakit',
-    sakit: 'Sakit', alfa: 'Alfa', libur: 'Libur', dinas_luar: 'Dinas Luar', belum: 'Belum Absen',
+    sakit: 'Sakit', alfa: 'Alfa', libur: 'Libur', dinas_luar: 'Dinas Luar', belum: 'Belum Absen', tanpa_absen: 'Tanpa Absen Harian',
 }
 
 const statusCls = (s) => ({
@@ -305,6 +305,7 @@ const statusCls = (s) => ({
     libur: 'bg-gray-100 text-gray-500',
     dinas_luar: 'bg-violet-50 text-violet-700',
     belum: 'bg-gray-100 text-gray-400',
+    tanpa_absen: 'bg-teal-50 text-teal-700',
 }[s] ?? 'bg-gray-100 text-gray-500')
 
 const summaryCards = computed(() => [

@@ -231,6 +231,20 @@
                                 <p class="text-xs text-gray-400 mt-1">Kosongkan untuk pakai jam kerja default</p>
                             </FormField>
 
+                            <FormField label="Kewajiban Absen Harian" :error="form.errors.wajib_absen_harian">
+                                <label class="flex items-start gap-2.5 cursor-pointer px-3 py-2.5 rounded-xl border transition-colors"
+                                    :class="form.wajib_absen_harian ? 'border-gray-200 hover:border-indigo-300' : 'border-teal-300 bg-teal-50'">
+                                    <input v-model="form.wajib_absen_harian" type="checkbox" :true-value="false" :false-value="true"
+                                        class="mt-0.5 w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500" />
+                                    <span class="text-xs text-gray-600 leading-snug">
+                                        <b>Tidak wajib absen harian</b> — cukup absen tiap sesi mengajar
+                                        (mis. pembina ekstrakurikuler / guru sesi tertentu). Tidak pernah dialfakan,
+                                        tidak diingatkan absen, dan tidak masuk daftar peserta kegiatan piket.
+                                        Absensi &amp; jurnal per sesi mengajar <b>tetap wajib</b>.
+                                    </span>
+                                </label>
+                            </FormField>
+
                             <FormField label="Libur Individu (Guru Mukim Shift)" :error="form.errors.is_mukim">
                                 <label class="flex items-start gap-2.5 cursor-pointer px-3 py-2.5 rounded-xl border border-gray-200 hover:border-indigo-300 transition-colors">
                                     <input v-model="form.is_mukim" type="checkbox"
@@ -394,6 +408,7 @@ const form = useForm({
     tanggal_masuk: props.guru?.tanggal_masuk ?? '',
     setting_jam_kerja_id: props.guru?.setting_jam_kerja_id ?? '',
     is_mukim: props.guru?.is_mukim ?? false,
+    wajib_absen_harian: props.guru?.wajib_absen_harian ?? true,
     hari_libur: props.guru?.hari_libur ?? [],
     // Rekening
     no_rekening: props.guru?.no_rekening ?? '',

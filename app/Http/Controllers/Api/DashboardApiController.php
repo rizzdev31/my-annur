@@ -115,6 +115,7 @@ class DashboardApiController extends Controller
                 'jadwal_masuk'           => $absenStatus['jam_masuk'],
                 'jadwal_pulang'          => $absenStatus['jam_pulang'],
                 'is_libur'               => $absenStatus['is_libur'],
+                'wajib_absen_harian'     => $absenStatus['wajib_absen_harian'] ?? true,
             ],
             'mengajar' => [
                 'total'       => $totalJadwal,

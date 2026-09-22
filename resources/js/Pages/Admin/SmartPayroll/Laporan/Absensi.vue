@@ -551,6 +551,7 @@ function statusStyle(status) {
         dinas_luar: { badge: 'bg-indigo-50 text-indigo-700 border-indigo-200', label: 'Dinas Luar' },
         libur: { badge: 'bg-gray-50 text-gray-500 border-gray-200', label: 'Libur' },
         belum: { badge: 'bg-gray-50 text-gray-400 border-gray-200', label: 'Belum Absen' },
+        tanpa_absen: { badge: 'bg-teal-50 text-teal-700 border-teal-200', label: 'Tanpa Absen Harian' },
     }
     return map[status] ?? { badge: 'bg-gray-50 text-gray-500 border-gray-200', label: status ?? '—' }
 }

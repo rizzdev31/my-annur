@@ -109,7 +109,8 @@ class LaporanController extends Controller
             $a = $absensiAda->get($g->id);
 
             // ── Kalkulasi status & terlambat via service ─────────────────────
-            $status         = $a?->status ?? 'belum';
+            // Dibebaskan absen harian → bukan "belum absen" (lihat AbsensiController).
+            $status         = $a?->status ?? ($g->wajibAbsenHarian() ? 'belum' : 'tanpa_absen');
             $menitTerlambat = (int) ($a?->menit_terlambat ?? 0);
 
             // Hitung ulang jika ada jam masuk dan belum dikoreksi manual
