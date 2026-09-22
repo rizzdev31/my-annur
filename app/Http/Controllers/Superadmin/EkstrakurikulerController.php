@@ -34,7 +34,7 @@ class EkstrakurikulerController extends Controller
                 'pembina' => $e->pembina?->user?->name ?? '—', 'pembina_id' => $e->pembina_id,
                 'hari' => $e->hari, 'jam_mulai' => $e->jam_mulai ? substr($e->jam_mulai, 0, 5) : null,
                 'jam_selesai' => $e->jam_selesai ? substr($e->jam_selesai, 0, 5) : null,
-                'lokasi' => $e->lokasi, 'kuota' => $e->kuota,
+                'lokasi' => $e->lokasi, 'wajib_lokasi' => $e->wajibLokasi(), 'kuota' => $e->kuota,
                 'tahun_ajaran' => $e->tahunAjaran?->nama, 'tahun_ajaran_id' => $e->tahun_ajaran_id,
                 'nominal_vakasi' => $e->nominal_vakasi, 'vakasi_efektif' => $e->nominal_vakasi ?? $default,
                 'batas_isi_hari' => $e->batas_isi_hari,
@@ -84,6 +84,7 @@ class EkstrakurikulerController extends Controller
             'jam_mulai' => 'nullable|date_format:H:i',
             'jam_selesai' => 'nullable|date_format:H:i|after:jam_mulai',
             'lokasi' => 'nullable|string|max:100',
+            'wajib_lokasi' => 'boolean',
             'tahun_ajaran_id' => 'nullable|exists:tahun_ajaran,id',
             'kuota' => 'nullable|integer|min:1|max:1000',
             'nominal_vakasi' => 'nullable|numeric|min:0',
@@ -147,8 +148,24 @@ class EkstrakurikulerController extends Controller
             'catatan' => $nilai[$s->id]->catatan ?? null,
         ]);
 
+        // Bukti pengisian pembina: kapan & dari titik mana pertemuan dibuka.
+        $pertemuan = $ekstrakurikuler->pertemuan()->with('pembina.user:id,name')
+            ->orderByDesc('tanggal')->orderByDesc('id')->limit(30)->get()
+            ->map(fn($p) => [
+                'tanggal'     => optional($p->tanggal)->format('d M Y'),
+                'jam'         => $p->jam_mulai_aktual ? substr($p->jam_mulai_aktual, 0, 5) : '—',
+                'pembina'     => $p->pembina?->user?->name ?? '—',
+                'materi'      => $p->materi,
+                'status'      => $p->status,
+                'jarak_meter' => $p->jarak_meter !== null ? round($p->jarak_meter) : null,
+                'validasi'    => $p->validasi_lokasi,
+                'di_lokasi'   => in_array($p->validasi_lokasi, ['valid_koordinat', 'valid_wifi'], true),
+            ]);
+
         return response()->json(['success' => true, 'data' => [
             'nama' => $ekstrakurikuler->nama, 'total_pertemuan' => $totalPertemuan, 'rows' => $rows,
+            'pertemuan' => $pertemuan,
+            'wajib_lokasi' => $ekstrakurikuler->wajibLokasi(),
         ]]);
     }
 }

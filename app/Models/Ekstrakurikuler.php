@@ -8,8 +8,13 @@ class Ekstrakurikuler extends Model
 {
     protected $table = 'ekstrakurikuler';
     protected $fillable = ['nama', 'deskripsi', 'pembina_id', 'hari', 'jam_mulai', 'jam_selesai',
-        'lokasi', 'tahun_ajaran_id', 'kuota', 'nominal_vakasi', 'batas_isi_hari', 'is_aktif', 'dibuat_oleh'];
-    protected $casts = ['is_aktif' => 'boolean', 'nominal_vakasi' => 'float', 'kuota' => 'integer', 'batas_isi_hari' => 'integer'];
+        'lokasi', 'wajib_lokasi', 'tahun_ajaran_id', 'kuota', 'nominal_vakasi', 'batas_isi_hari',
+        'is_aktif', 'dibuat_oleh'];
+    protected $casts = ['is_aktif' => 'boolean', 'nominal_vakasi' => 'float', 'kuota' => 'integer',
+        'batas_isi_hari' => 'integer', 'wajib_lokasi' => 'boolean'];
+
+    /** Pembina harus berada di area yang diizinkan saat membuka pertemuan. */
+    public function wajibLokasi(): bool { return (bool) ($this->wajib_lokasi ?? true); }
 
     public function pembina()    { return $this->belongsTo(TenagaPendidik::class, 'pembina_id'); }
     public function tahunAjaran(){ return $this->belongsTo(TahunAjaran::class, 'tahun_ajaran_id'); }

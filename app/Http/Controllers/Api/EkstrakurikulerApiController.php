@@ -59,11 +59,23 @@ class EkstrakurikulerApiController extends Controller
             ->map(fn($p) => [
                 'id' => $p->id, 'tanggal' => optional($p->tanggal)->locale('id')->isoFormat('dd, D MMM YYYY'),
                 'materi' => $p->materi, 'status' => $p->status, 'hadir' => $p->hadir,
+                'jarak_meter' => $p->jarak_meter !== null ? round($p->jarak_meter) : null,
             ]);
+
+        // Info penjaga waktu & lokasi untuk ditampilkan sebelum tombol "Mulai".
+        $sesi = app(\App\Services\EkstrakurikulerSesiService::class);
+        $bolehMulai = true; $alasanTolak = null;
+        try { $sesi->pastikanBolehMulai($e, TimezoneHelper::now()->toDateString()); }
+        catch (\DomainException $ex) { $bolehMulai = false; $alasanTolak = $ex->getMessage(); }
+
         return response()->json(['success' => true, 'data' => [
             'id' => $e->id, 'nama' => $e->nama, 'hari' => $e->hari,
             'jam' => $e->jam_mulai ? substr($e->jam_mulai, 0, 5) . '–' . substr($e->jam_selesai, 0, 5) : null,
             'lokasi' => $e->lokasi, 'vakasi' => $this->vakasi($e),
+            'wajib_lokasi' => $e->wajibLokasi(),
+            'batas_isi_hari' => $e->batas_isi_hari ?? \App\Services\EkstrakurikulerSesiService::BATAS_ISI_HARI_DEFAULT,
+            'boleh_mulai' => $bolehMulai,
+            'alasan_tidak_boleh' => $alasanTolak,
             'anggota_count' => $e->anggota()->where('is_aktif', true)->count(),
             'pertemuan' => $pertemuan,
         ]]);
@@ -74,17 +86,40 @@ class EkstrakurikulerApiController extends Controller
     {
         $e = Ekstrakurikuler::findOrFail($id);
         if (!$this->milikSaya($request, $e)) return response()->json(['success' => false, 'message' => 'Bukan ekskul Anda.'], 403);
-        $request->validate(['tanggal' => 'required|date_format:Y-m-d', 'materi' => 'nullable|string|max:300']);
+        $request->validate([
+            'tanggal'    => 'required|date_format:Y-m-d',
+            'materi'     => 'nullable|string|max:300',
+            'latitude'   => 'nullable|numeric',
+            'longitude'  => 'nullable|numeric',
+            'wifi_ssid'  => 'nullable|string|max:100',
+            'wifi_bssid' => 'nullable|string|max:100',
+        ]);
 
-        $tp = $this->tp($request);
+        $tp   = $this->tp($request);
+        $sesi = app(\App\Services\EkstrakurikulerSesiService::class);
+
+        // Aturan waktu & lokasi ada di EkstrakurikulerSesiService (satu sumber).
+        try {
+            $sesi->pastikanBolehMulai($e, $request->tanggal);
+            $bukti = $sesi->validasiLokasi($e, $tp, [
+                'latitude'   => $request->latitude,
+                'longitude'  => $request->longitude,
+                'wifi_ssid'  => $request->wifi_ssid,
+                'wifi_bssid' => $request->wifi_bssid,
+                'tanggal'    => $request->tanggal,
+            ]);
+        } catch (\DomainException $ex) {
+            return response()->json(['success' => false, 'message' => $ex->getMessage(), 'code' => 'EKSKUL_SESI'], 422);
+        }
+
         $anggotaIds = $e->anggota()->where('is_aktif', true)->pluck('santri_id');
 
-        $pertemuan = DB::transaction(function () use ($e, $request, $tp, $anggotaIds) {
+        $pertemuan = DB::transaction(function () use ($e, $request, $tp, $anggotaIds, $bukti) {
             $p = EkstrakurikulerPertemuan::create([
                 'ekstrakurikuler_id' => $e->id, 'tanggal' => $request->tanggal,
                 'jam_mulai_aktual' => TimezoneHelper::now()->format('H:i:s'),
                 'materi' => $request->materi, 'status' => 'berlangsung', 'pembina_id' => $tp->id,
-            ]);
+            ] + $bukti);
             foreach ($anggotaIds as $sid) {
                 EkstrakurikulerAbsensi::create(['pertemuan_id' => $p->id, 'santri_id' => $sid, 'status' => 'hadir']);
             }

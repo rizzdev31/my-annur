@@ -93,6 +93,15 @@
                             <div><label :class="lab">Kuota</label><input v-model.number="form.kuota" type="number" min="1" :class="inp" placeholder="opsional" /></div>
                             <div><label :class="lab">Batas isi (hari)</label><input v-model.number="form.batas_isi_hari" type="number" min="0" :class="inp" placeholder="bebas" /></div>
                         </div>
+                        <label class="flex items-start gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors"
+                            :class="form.wajib_lokasi ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200'">
+                            <input v-model="form.wajib_lokasi" type="checkbox" class="mt-0.5 w-4 h-4 rounded text-emerald-600" />
+                            <span class="text-xs text-gray-600 leading-snug">
+                                <b>Kunci lokasi</b> — pembina hanya bisa membuka pertemuan dari area pesantren
+                                (titik lokasi yang sama dengan absensi harian) dan titiknya direkam sebagai bukti.
+                                Matikan bila ekskul ini dilaksanakan di luar.
+                            </span>
+                        </label>
                         <div>
                             <label :class="lab">Vakasi/Pertemuan (override)</label>
                             <input v-model.number="form.nominal_vakasi" type="number" min="0" :class="inp" :placeholder="`kosong = default Rp ${rupiah(vakasiDefault)}`" />
@@ -168,6 +177,32 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- Bukti pengisian pembina: waktu & titik lokasi -->
+                    <h4 class="text-sm font-semibold text-gray-900 mt-5 mb-1">Riwayat Pertemuan</h4>
+                    <p class="text-xs text-gray-400 mb-2">
+                        {{ monitor.wajib_lokasi === false
+                            ? 'Kunci lokasi dimatikan untuk ekskul ini — titik hanya direkam bila tersedia.'
+                            : 'Pembina hanya bisa membuka pertemuan dari area pesantren.' }}
+                    </p>
+                    <div class="overflow-x-auto border border-gray-100 rounded-xl">
+                        <table class="w-full text-sm">
+                            <thead><tr class="text-left text-[11px] uppercase text-gray-400 bg-gray-50"><th class="px-4 py-2">Tanggal</th><th class="px-3 py-2">Jam</th><th class="px-3 py-2">Pembina</th><th class="px-3 py-2 text-center">Lokasi</th></tr></thead>
+                            <tbody class="divide-y divide-gray-50">
+                                <tr v-for="(p, i) in (monitor.pertemuan ?? [])" :key="i">
+                                    <td class="px-4 py-2.5 text-gray-700">{{ p.tanggal }}</td>
+                                    <td class="px-3 py-2.5 text-gray-500">{{ p.jam }}</td>
+                                    <td class="px-3 py-2.5 text-gray-600">{{ p.pembina }}</td>
+                                    <td class="px-3 py-2.5 text-center">
+                                        <span v-if="p.di_lokasi" class="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-700">
+                                            Di lokasi{{ p.jarak_meter !== null ? ` · ${p.jarak_meter}m` : '' }}
+                                        </span>
+                                        <span v-else class="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-gray-100 text-gray-500">Tanpa titik</span>
+                                    </td>
+                                </tr>
+                                <tr v-if="!(monitor.pertemuan ?? []).length"><td colspan="4" class="px-4 py-6 text-center text-sm text-gray-400">Belum ada pertemuan.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                     <button @click="monitor = null" class="w-full mt-4 py-2 text-sm text-gray-500 font-medium">Tutup</button>
                 </div>
             </div>
@@ -199,12 +234,12 @@ const gradeCls = (g) => ({ A: 'bg-emerald-100 text-emerald-700', B: 'bg-blue-100
 const showForm = ref(false)
 const editTarget = ref(null)
 const saving = ref(false)
-const blank = () => ({ nama: '', deskripsi: '', pembina_id: null, hari: null, jam_mulai: '', jam_selesai: '', lokasi: '', tahun_ajaran_id: null, kuota: null, nominal_vakasi: null, batas_isi_hari: null })
+const blank = () => ({ nama: '', deskripsi: '', pembina_id: null, hari: null, jam_mulai: '', jam_selesai: '', lokasi: '', wajib_lokasi: true, tahun_ajaran_id: null, kuota: null, nominal_vakasi: null, batas_isi_hari: null })
 const form = reactive(blank())
 function openCreate() { Object.assign(form, blank()); editTarget.value = null; showForm.value = true }
 function openEdit(e) {
     editTarget.value = e
-    Object.assign(form, { nama: e.nama, deskripsi: e.deskripsi ?? '', pembina_id: e.pembina_id, hari: e.hari, jam_mulai: e.jam_mulai ?? '', jam_selesai: e.jam_selesai ?? '', lokasi: e.lokasi ?? '', tahun_ajaran_id: e.tahun_ajaran_id, kuota: e.kuota, nominal_vakasi: e.nominal_vakasi, batas_isi_hari: e.batas_isi_hari })
+    Object.assign(form, { nama: e.nama, deskripsi: e.deskripsi ?? '', pembina_id: e.pembina_id, hari: e.hari, jam_mulai: e.jam_mulai ?? '', jam_selesai: e.jam_selesai ?? '', lokasi: e.lokasi ?? '', wajib_lokasi: e.wajib_lokasi !== false, tahun_ajaran_id: e.tahun_ajaran_id, kuota: e.kuota, nominal_vakasi: e.nominal_vakasi, batas_isi_hari: e.batas_isi_hari })
     showForm.value = true
 }
 function submit() {

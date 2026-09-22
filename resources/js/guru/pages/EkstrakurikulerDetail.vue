@@ -27,13 +27,35 @@ async function loadDetail() {
 onMounted(loadDetail)
 
 // ── Mulai pertemuan ──────────────────────────────────────────────────────────
+// Lokasi pembina dikirim bersama pertemuan — server yang memutuskan sah/tidak
+// (mesin yang sama dengan absensi harian), jadi tak ada aturan ganda di sini.
 const sheet = ref(false)
+const gps = ref('idle')          // idle | getting | ok | fail
+const pos = ref(null)
 const f = reactive({ tanggal: tanggalLokal(), materi: '' })
-function buka() { Object.assign(f, { tanggal: tanggalLokal(), materi: '' }); sheet.value = true }
+function buka() {
+    Object.assign(f, { tanggal: tanggalLokal(), materi: '' })
+    pos.value = null; sheet.value = true
+    mintaLokasi()
+}
+function mintaLokasi() {
+    if (!navigator.geolocation) { gps.value = 'fail'; return }
+    gps.value = 'getting'
+    navigator.geolocation.getCurrentPosition(
+        (p) => { pos.value = { lat: p.coords.latitude, lng: p.coords.longitude }; gps.value = 'ok' },
+        () => { gps.value = 'fail' },
+        { enableHighAccuracy: true, timeout: 8000 },
+    )
+}
 async function mulai() {
     busy.value = true
     try {
-        const res = await api.post(`/ekstrakurikuler/${id}/pertemuan`, { tanggal: f.tanggal, materi: f.materi.trim() || null })
+        const res = await api.post(`/ekstrakurikuler/${id}/pertemuan`, {
+            tanggal: f.tanggal,
+            materi: f.materi.trim() || null,
+            latitude: pos.value?.lat ?? null,
+            longitude: pos.value?.lng ?? null,
+        })
         sheet.value = false
         toast.success('Pertemuan dimulai.')
         router.push({ name: 'ekstra-pertemuan', params: { id: res.data.data.id } })
@@ -85,7 +107,12 @@ async function simpanNilai() {
 
             <!-- ABSENSI -->
             <template v-if="tab === 'absensi'">
-                <button @click="buka" class="w-full py-3 rounded-2xl bg-[#0C78FF] text-white font-bold mb-3 active:scale-[0.99] transition">+ Mulai Pertemuan</button>
+                <button @click="buka" :disabled="d.boleh_mulai === false"
+                    class="w-full py-3 rounded-2xl bg-[#0C78FF] text-white font-bold mb-2 active:scale-[0.99] transition disabled:opacity-50 disabled:active:scale-100">
+                    + Mulai Pertemuan
+                </button>
+                <p v-if="d.boleh_mulai === false" class="text-[11px] text-amber-600 mb-3 px-1">{{ d.alasan_tidak_boleh }}</p>
+                <p v-else-if="d.wajib_lokasi !== false" class="text-[11px] text-gray-400 mb-3 px-1">Pertemuan direkam bersama titik lokasi Anda.</p>
                 <div v-if="!d.pertemuan.length" class="pt-8 text-center text-sm text-gray-400">Belum ada pertemuan.</div>
                 <ul v-else class="space-y-2.5">
                     <li v-for="p in d.pertemuan" :key="p.id" @click="router.push({ name: 'ekstra-pertemuan', params: { id: p.id } })"
@@ -131,8 +158,27 @@ async function simpanNilai() {
             <label class="block text-[11px] font-medium text-gray-600 mb-1">Tanggal</label>
             <input v-model="f.tanggal" type="date" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3" />
             <label class="block text-[11px] font-medium text-gray-600 mb-1">Materi (opsional)</label>
-            <textarea v-model="f.materi" rows="2" placeholder="Materi/kegiatan hari ini…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-4"></textarea>
-            <button @click="mulai" :disabled="busy" class="w-full py-3 rounded-xl bg-[#0C78FF] text-white font-bold text-sm disabled:opacity-60">{{ busy ? 'Memulai…' : 'Mulai & Isi Absensi' }}</button>
+            <textarea v-model="f.materi" rows="2" placeholder="Materi/kegiatan hari ini…" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3"></textarea>
+
+            <!-- Status lokasi — wajib bila ekskul ini terkunci lokasi -->
+            <div v-if="d?.wajib_lokasi !== false" class="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-xl"
+                :class="gps === 'ok' ? 'bg-emerald-50' : gps === 'fail' ? 'bg-rose-50' : 'bg-gray-50'">
+                <span class="w-2 h-2 rounded-full shrink-0"
+                    :class="gps === 'ok' ? 'bg-emerald-500' : gps === 'fail' ? 'bg-rose-500' : 'bg-gray-300'"></span>
+                <p class="text-[11px] flex-1"
+                    :class="gps === 'ok' ? 'text-emerald-700' : gps === 'fail' ? 'text-rose-600' : 'text-gray-500'">
+                    {{ gps === 'ok' ? 'Lokasi terdeteksi — pertemuan direkam di titik ini.'
+                        : gps === 'getting' ? 'Mengambil lokasi…'
+                        : gps === 'fail' ? 'Lokasi tidak didapat. Aktifkan izin lokasi, lalu coba lagi.'
+                        : 'Menunggu lokasi…' }}
+                </p>
+                <button v-if="gps === 'fail'" @click="mintaLokasi" class="text-[11px] font-bold text-[#0C78FF] shrink-0">Coba lagi</button>
+            </div>
+
+            <button @click="mulai" :disabled="busy || (d?.wajib_lokasi !== false && gps !== 'ok')"
+                class="w-full py-3 rounded-xl bg-[#0C78FF] text-white font-bold text-sm disabled:opacity-60">
+                {{ busy ? 'Memulai…' : (d?.wajib_lokasi !== false && gps !== 'ok') ? 'Menunggu lokasi…' : 'Mulai & Isi Absensi' }}
+            </button>
         </BottomSheet>
     </div>
 </template>
