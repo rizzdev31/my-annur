@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Ekstrakurikuler;
+use App\Models\EkstrakurikulerPertemuan;
 use App\Models\TenagaPendidik;
 use Carbon\Carbon;
 
@@ -10,28 +11,50 @@ use Carbon\Carbon;
  * EkstrakurikulerSesiService — satu sumber aturan "boleh tidaknya pembina
  * membuka pertemuan ekskul", agar controller tidak menulis ulang aturannya.
  *
- * Dua penjaga:
- *  1. WAKTU  — pertemuan hanya boleh dibuka pada hari & jam ekskul itu
- *              (toleransi TOLERANSI_MENIT sebelum/sesudah), tidak boleh untuk
- *              tanggal di masa depan, dan mundur paling jauh `batas_isi_hari`.
- *  2. LOKASI — pembina harus berada di area yang diizinkan, divalidasi oleh
- *              LokasiAbsensiService (mesin yang sama dengan check-in harian):
- *              lokasi global pesantren + lokasi per-guru yang di-assign admin.
- *              Ekskul di luar pesantren → matikan `wajib_lokasi` pada ekskulnya,
- *              atau assign lokasi khusus ke pembinanya.
+ * Kebijakan 23 Sep 2026: ekskul TIDAK terikat hari & jam. Tiap bulan pembina
+ * punya jatah pertemuan (`pertemuan_per_bulan`, bawaan 4×) dan bebas memilih
+ * kapan mengisinya. Penjaganya:
+ *
+ *  1. JATAH  — maksimal N pertemuan dalam satu bulan kalender, satu pertemuan
+ *              per tanggal, tidak boleh untuk tanggal yang belum tiba, dan
+ *              tidak boleh mundur ke bulan sebelumnya (opsional diperketat
+ *              lewat `batas_isi_hari`).
+ *  2. LOKASI — penanda sah: pembina harus berada di area yang diizinkan,
+ *              divalidasi LokasiAbsensiService (mesin yang sama dengan
+ *              check-in harian: lokasi global + lokasi per-guru).
+ *              Ekskul di luar pesantren → matikan `wajib_lokasi`.
  */
 class EkstrakurikulerSesiService
 {
-    /** Toleransi buka pertemuan, sebelum jam mulai & sesudah jam selesai. */
-    public const TOLERANSI_MENIT = 30;
-
-    /** Batas mundur bawaan bila ekskul belum diberi `batas_isi_hari`. */
-    public const BATAS_ISI_HARI_DEFAULT = 1;
+    /** Jatah pertemuan sebulan bila ekskul belum disetel. */
+    public const KUOTA_BULANAN_DEFAULT = 4;
 
     public function __construct(private readonly LokasiAbsensiService $lokasi = new LokasiAbsensiService()) {}
 
+    public function kuotaBulanan(Ekstrakurikuler $e): int
+    {
+        return (int) ($e->pertemuan_per_bulan ?: self::KUOTA_BULANAN_DEFAULT);
+    }
+
+    /** Pertemuan yang sudah dibuat pada bulan kalender tanggal tsb. */
+    public function terpakaiBulan(Ekstrakurikuler $e, string $tanggal): int
+    {
+        $tgl = Carbon::parse($tanggal, TimezoneHelper::TZ);
+
+        return EkstrakurikulerPertemuan::where('ekstrakurikuler_id', $e->id)
+            ->whereBetween('tanggal', [
+                $tgl->copy()->startOfMonth()->toDateString(),
+                $tgl->copy()->endOfMonth()->toDateString(),
+            ])->count();
+    }
+
+    public function sisaBulan(Ekstrakurikuler $e, string $tanggal): int
+    {
+        return max(0, $this->kuotaBulanan($e) - $this->terpakaiBulan($e, $tanggal));
+    }
+
     /**
-     * @throws \DomainException bila tanggal/jam tidak diizinkan.
+     * @throws \DomainException bila jatah habis / tanggal tidak diizinkan.
      */
     public function pastikanBolehMulai(Ekstrakurikuler $e, string $tanggal): void
     {
@@ -43,35 +66,34 @@ class EkstrakurikulerSesiService
             throw new \DomainException('Pertemuan tidak bisa dibuka untuk tanggal yang belum tiba.');
         }
 
-        $batas = $e->batas_isi_hari ?? self::BATAS_ISI_HARI_DEFAULT;
-        $mundur = (int) $tgl->diffInDays($hari);
-        if ($mundur > $batas) {
-            throw new \DomainException($batas === 0
+        // Jatah dihitung per bulan kalender → tanggal harus di bulan berjalan.
+        if (!$tgl->isSameMonth($hari)) {
+            throw new \DomainException('Pertemuan hanya bisa diisi untuk bulan berjalan ('
+                . $hari->locale('id')->isoFormat('MMMM YYYY') . ').');
+        }
+
+        // Opsional: admin memperketat batas mundur.
+        if ($e->batas_isi_hari !== null && (int) $tgl->diffInDays($hari) > (int) $e->batas_isi_hari) {
+            throw new \DomainException((int) $e->batas_isi_hari === 0
                 ? 'Pertemuan hanya bisa diisi pada hari pelaksanaannya.'
-                : "Pertemuan hanya bisa diisi maksimal {$batas} hari setelah pelaksanaan.");
+                : "Pertemuan hanya bisa diisi maksimal {$e->batas_isi_hari} hari setelah pelaksanaan.");
         }
 
-        // Hari pelaksanaan (bila ekskul punya jadwal hari tetap).
-        if ($e->hari && TimezoneHelper::namaHariDB($tgl) !== strtolower($e->hari)) {
-            throw new \DomainException("Jadwal {$e->nama} hari " . ucfirst($e->hari)
-                . '. Tanggal yang dipilih bukan hari tersebut.');
+        if (EkstrakurikulerPertemuan::where('ekstrakurikuler_id', $e->id)
+            ->whereDate('tanggal', $tgl->toDateString())->exists()) {
+            throw new \DomainException('Sudah ada pertemuan pada tanggal ini. Lanjutkan pertemuan tersebut.');
         }
 
-        // Jendela jam hanya ditegakkan saat mengisi di hari-H — pengisian susulan
-        // (dalam batas hari) memang terjadi di luar jam ekskul.
-        if ($mundur === 0 && $e->jam_mulai && $e->jam_selesai) {
-            [$buka, $tutup] = $this->jendela($e, $tgl);
-            if ($now->lt($buka) || $now->gt($tutup)) {
-                throw new \DomainException('Pertemuan hanya bisa dibuka pukul '
-                    . $buka->format('H:i') . '–' . $tutup->format('H:i') . '.');
-            }
+        $kuota = $this->kuotaBulanan($e);
+        if ($this->terpakaiBulan($e, $tgl->toDateString()) >= $kuota) {
+            throw new \DomainException("Jatah {$kuota} pertemuan bulan ini sudah terpakai semua.");
         }
     }
 
     /**
-     * Validasi lokasi pembina. Mengembalikan data bukti untuk disimpan pada
-     * pertemuan. Ekskul dengan `wajib_lokasi` = false dilewati (tetap dicatat
-     * bila pembina mengirim koordinat).
+     * Validasi lokasi pembina — penanda sah pengisian. Mengembalikan data bukti
+     * untuk disimpan pada pertemuan. Ekskul dengan `wajib_lokasi` = false
+     * dilewati (titik tetap dicatat bila pembina mengirimnya).
      *
      * @throws \DomainException bila di luar area yang diizinkan.
      */
@@ -100,17 +122,6 @@ class EkstrakurikulerSesiService
         }
 
         return $this->bukti($payload, $hasil);
-    }
-
-    /** Jendela buka pertemuan pada satu tanggal. */
-    public function jendela(Ekstrakurikuler $e, Carbon $tgl): array
-    {
-        $buka  = Carbon::parse($tgl->toDateString() . ' ' . $e->jam_mulai, TimezoneHelper::TZ)
-            ->subMinutes(self::TOLERANSI_MENIT);
-        $tutup = Carbon::parse($tgl->toDateString() . ' ' . $e->jam_selesai, TimezoneHelper::TZ)
-            ->addMinutes(self::TOLERANSI_MENIT);
-
-        return [$buka, $tutup];
     }
 
     private function bukti(array $payload, array $hasil): array

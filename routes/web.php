@@ -603,6 +603,7 @@ Route::prefix('admin')
             Route::delete('ekstrakurikuler/{ekstrakurikuler}', [\App\Http\Controllers\Superadmin\EkstrakurikulerController::class, 'destroy'])->name('ekstrakurikuler.destroy');
             Route::get('ekstrakurikuler/{ekstrakurikuler}/anggota',  [\App\Http\Controllers\Superadmin\EkstrakurikulerController::class, 'anggota'])->name('ekstrakurikuler.anggota');
             Route::post('ekstrakurikuler/{ekstrakurikuler}/anggota', [\App\Http\Controllers\Superadmin\EkstrakurikulerController::class, 'simpanAnggota'])->name('ekstrakurikuler.anggota.simpan');
+            Route::post('ekstrakurikuler/{ekstrakurikuler}/anggota/cocokkan', [\App\Http\Controllers\Superadmin\EkstrakurikulerController::class, 'cocokkanNama'])->name('ekstrakurikuler.anggota.cocokkan');
             Route::get('ekstrakurikuler/{ekstrakurikuler}/monitoring', [\App\Http\Controllers\Superadmin\EkstrakurikulerController::class, 'monitoring'])->name('ekstrakurikuler.monitoring');
 
             // ── Jurnal Mengajar (monitoring absensi santri) ───────────────

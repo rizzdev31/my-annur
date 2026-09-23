@@ -35,6 +35,9 @@ class EkstrakurikulerApiController extends Controller
         $tp = $this->tp($request);
         if (!$tp) return response()->json(['success' => false, 'message' => 'Tenaga pendidik tidak ditemukan.'], 404);
 
+        $sesi = app(\App\Services\EkstrakurikulerSesiService::class);
+        $hariIni = TimezoneHelper::now()->toDateString();
+
         $data = Ekstrakurikuler::where('pembina_id', $tp->id)->where('is_aktif', true)
             ->withCount(['anggota as anggota_count' => fn($q) => $q->where('is_aktif', true), 'pertemuan'])
             ->orderBy('nama')->get()
@@ -44,6 +47,9 @@ class EkstrakurikulerApiController extends Controller
                 'jam_selesai' => $e->jam_selesai ? substr($e->jam_selesai, 0, 5) : null,
                 'lokasi' => $e->lokasi, 'anggota' => $e->anggota_count, 'pertemuan' => $e->pertemuan_count,
                 'vakasi' => $this->vakasi($e),
+                // Jatah pertemuan bulan ini — pengganti jadwal hari/jam.
+                'kuota_bulan' => $sesi->kuotaBulanan($e),
+                'sisa_bulan'  => $sesi->sisaBulan($e, $hariIni),
             ]);
         return response()->json(['success' => true, 'data' => $data]);
     }
@@ -62,10 +68,11 @@ class EkstrakurikulerApiController extends Controller
                 'jarak_meter' => $p->jarak_meter !== null ? round($p->jarak_meter) : null,
             ]);
 
-        // Info penjaga waktu & lokasi untuk ditampilkan sebelum tombol "Mulai".
+        // Info jatah bulan ini & penjaga lokasi, ditampilkan sebelum tombol "Mulai".
         $sesi = app(\App\Services\EkstrakurikulerSesiService::class);
+        $hariIni = TimezoneHelper::now()->toDateString();
         $bolehMulai = true; $alasanTolak = null;
-        try { $sesi->pastikanBolehMulai($e, TimezoneHelper::now()->toDateString()); }
+        try { $sesi->pastikanBolehMulai($e, $hariIni); }
         catch (\DomainException $ex) { $bolehMulai = false; $alasanTolak = $ex->getMessage(); }
 
         return response()->json(['success' => true, 'data' => [
@@ -73,7 +80,10 @@ class EkstrakurikulerApiController extends Controller
             'jam' => $e->jam_mulai ? substr($e->jam_mulai, 0, 5) . '–' . substr($e->jam_selesai, 0, 5) : null,
             'lokasi' => $e->lokasi, 'vakasi' => $this->vakasi($e),
             'wajib_lokasi' => $e->wajibLokasi(),
-            'batas_isi_hari' => $e->batas_isi_hari ?? \App\Services\EkstrakurikulerSesiService::BATAS_ISI_HARI_DEFAULT,
+            'kuota_bulan' => $sesi->kuotaBulanan($e),
+            'terpakai_bulan' => $sesi->terpakaiBulan($e, $hariIni),
+            'sisa_bulan' => $sesi->sisaBulan($e, $hariIni),
+            'bulan_label' => TimezoneHelper::now()->locale('id')->isoFormat('MMMM YYYY'),
             'boleh_mulai' => $bolehMulai,
             'alasan_tidak_boleh' => $alasanTolak,
             'anggota_count' => $e->anggota()->where('is_aktif', true)->count(),

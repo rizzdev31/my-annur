@@ -34,8 +34,7 @@ onMounted(load)
                         <div class="flex-1 min-w-0">
                             <p class="text-sm font-bold text-gray-800">{{ e.nama }}</p>
                             <p class="text-[11px] text-gray-400 capitalize">
-                                <span v-if="e.hari">{{ e.hari }}<span v-if="e.jam_mulai"> {{ e.jam_mulai }}–{{ e.jam_selesai }}</span> · </span>
-                                {{ e.anggota }} anggota · {{ e.pertemuan }} pertemuan
+                                {{ e.anggota }} anggota · sisa {{ e.sisa_bulan }}/{{ e.kuota_bulan }} pertemuan bulan ini
                             </p>
                             <p class="text-[11px] font-semibold text-emerald-600 mt-0.5">Mendapatkan vakasi tiap pertemuan</p>
                         </div>

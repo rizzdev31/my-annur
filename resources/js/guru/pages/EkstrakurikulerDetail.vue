@@ -98,6 +98,10 @@ async function simpanNilai() {
                 <p class="text-sm font-bold">{{ d.nama }}</p>
                 <p class="text-[12px] text-white/75 capitalize">{{ d.hari }}<span v-if="d.jam"> · {{ d.jam }}</span><span v-if="d.lokasi"> · {{ d.lokasi }}</span></p>
                 <p class="text-[11px] text-white/70 mt-1">{{ d.anggota_count }} anggota · mendapatkan vakasi tiap pertemuan</p>
+                <div class="mt-2.5 rounded-xl bg-white/15 px-3 py-2">
+                    <p class="text-[12px] font-bold">Jatah {{ d.bulan_label }}: {{ d.terpakai_bulan }}/{{ d.kuota_bulan }} pertemuan</p>
+                    <p class="text-[11px] text-white/75">{{ d.sisa_bulan > 0 ? `Sisa ${d.sisa_bulan}× — bebas pilih tanggal & jam.` : 'Jatah bulan ini sudah habis.' }}</p>
+                </div>
             </div>
 
             <div class="flex gap-2 mb-4 bg-gray-100 rounded-2xl p-1">
@@ -112,7 +116,7 @@ async function simpanNilai() {
                     + Mulai Pertemuan
                 </button>
                 <p v-if="d.boleh_mulai === false" class="text-[11px] text-amber-600 mb-3 px-1">{{ d.alasan_tidak_boleh }}</p>
-                <p v-else-if="d.wajib_lokasi !== false" class="text-[11px] text-gray-400 mb-3 px-1">Pertemuan direkam bersama titik lokasi Anda.</p>
+                <p v-else-if="d.wajib_lokasi !== false" class="text-[11px] text-gray-400 mb-3 px-1">Bebas jam — yang dicek lokasi pengisian Anda.</p>
                 <div v-if="!d.pertemuan.length" class="pt-8 text-center text-sm text-gray-400">Belum ada pertemuan.</div>
                 <ul v-else class="space-y-2.5">
                     <li v-for="p in d.pertemuan" :key="p.id" @click="router.push({ name: 'ekstra-pertemuan', params: { id: p.id } })"

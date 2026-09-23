@@ -28,7 +28,7 @@
                     <thead><tr class="text-left text-[11px] uppercase tracking-wide text-gray-400 bg-gray-50/70">
                         <th class="px-5 py-3 font-semibold">Ekskul</th>
                         <th class="px-4 py-3 font-semibold">Pembina</th>
-                        <th class="px-4 py-3 font-semibold whitespace-nowrap">Jadwal</th>
+                        <th class="px-4 py-3 font-semibold whitespace-nowrap">Jatah Bulan Ini</th>
                         <th class="px-4 py-3 font-semibold text-center">Anggota</th>
                         <th class="px-4 py-3 font-semibold whitespace-nowrap">Vakasi/Pertemuan</th>
                         <th class="px-4 py-3 font-semibold text-center">Status</th>
@@ -42,8 +42,9 @@
                             </td>
                             <td class="px-4 py-3.5 text-gray-700">{{ e.pembina }}</td>
                             <td class="px-4 py-3.5 whitespace-nowrap text-gray-600">
-                                <span v-if="e.hari" class="capitalize">{{ e.hari }}</span><span v-else class="text-gray-300">—</span>
-                                <span v-if="e.jam_mulai" class="text-[11px] text-gray-400"> {{ e.jam_mulai }}–{{ e.jam_selesai }}</span>
+                                <span class="font-semibold">{{ e.terpakai_bulan }}/{{ e.pertemuan_per_bulan }}</span>
+                                <span class="text-[11px] text-gray-400"> pertemuan</span>
+                                <p v-if="e.hari" class="text-[11px] text-gray-400 capitalize">{{ e.hari }}<span v-if="e.jam_mulai"> {{ e.jam_mulai }}–{{ e.jam_selesai }}</span> <span class="text-gray-300">(info)</span></p>
                             </td>
                             <td class="px-4 py-3.5 text-center"><span class="inline-flex px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold">{{ e.anggota }}</span></td>
                             <td class="px-4 py-3.5 whitespace-nowrap">
@@ -83,15 +84,20 @@
                             <div><label :class="lab">Pembina</label><select v-model="form.pembina_id" :class="inp"><option :value="null">—</option><option v-for="g in guru" :key="g.id" :value="g.id">{{ g.nama }}</option></select></div>
                             <div><label :class="lab">Tahun Ajaran</label><select v-model="form.tahun_ajaran_id" :class="inp"><option :value="null">—</option><option v-for="t in tahunAjaran" :key="t.id" :value="t.id">{{ t.nama }}</option></select></div>
                         </div>
+                        <div>
+                            <label :class="lab">Jatah pertemuan per bulan *</label>
+                            <input v-model.number="form.pertemuan_per_bulan" type="number" min="1" max="31" :class="inp" />
+                            <p class="text-[11px] text-gray-400 mt-1">Pembina bebas memilih tanggal & jam dalam bulan berjalan, maksimal sebanyak ini. Penanda sahnya lokasi pengisian.</p>
+                        </div>
                         <div class="grid grid-cols-3 gap-3">
-                            <div><label :class="lab">Hari</label><select v-model="form.hari" :class="inp"><option :value="null">—</option><option v-for="h in hariOpsi" :key="h" :value="h" class="capitalize">{{ h }}</option></select></div>
-                            <div><label :class="lab">Jam Mulai</label><input v-model="form.jam_mulai" type="time" :class="inp" /></div>
-                            <div><label :class="lab">Jam Selesai</label><input v-model="form.jam_selesai" type="time" :class="inp" /></div>
+                            <div><label :class="lab">Hari <span class="text-gray-300">(info)</span></label><select v-model="form.hari" :class="inp"><option :value="null">—</option><option v-for="h in hariOpsi" :key="h" :value="h" class="capitalize">{{ h }}</option></select></div>
+                            <div><label :class="lab">Jam Mulai <span class="text-gray-300">(info)</span></label><input v-model="form.jam_mulai" type="time" :class="inp" /></div>
+                            <div><label :class="lab">Jam Selesai <span class="text-gray-300">(info)</span></label><input v-model="form.jam_selesai" type="time" :class="inp" /></div>
                         </div>
                         <div class="grid grid-cols-3 gap-3">
                             <div><label :class="lab">Lokasi</label><input v-model="form.lokasi" :class="inp" /></div>
                             <div><label :class="lab">Kuota</label><input v-model.number="form.kuota" type="number" min="1" :class="inp" placeholder="opsional" /></div>
-                            <div><label :class="lab">Batas isi (hari)</label><input v-model.number="form.batas_isi_hari" type="number" min="0" :class="inp" placeholder="bebas" /></div>
+                            <div><label :class="lab">Batas mundur (hari)</label><input v-model.number="form.batas_isi_hari" type="number" min="0" :class="inp" placeholder="bebas dlm bulan" /></div>
                         </div>
                         <label class="flex items-start gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors"
                             :class="form.wajib_lokasi ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200'">
@@ -121,11 +127,44 @@
                 <div class="absolute inset-0 bg-black/40"></div>
                 <div class="relative bg-white rounded-2xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
                     <h3 class="text-base font-semibold text-gray-900">Kelola Anggota — {{ anggotaTarget.nama }}</h3>
-                    <p class="text-xs text-gray-400 mb-4">Anggota lintas kelas. Keluarkan tidak menghapus histori.</p>
+                    <p class="text-xs text-gray-400 mb-3">Anggota lintas kelas. Keluarkan tidak menghapus histori.</p>
+
+                    <!-- Impor daftar nama -->
+                    <div class="rounded-xl border border-gray-200 mb-4">
+                        <button @click="imporBuka = !imporBuka" type="button" class="w-full flex items-center justify-between px-3 py-2.5 text-left">
+                            <span class="text-xs font-semibold text-gray-700">Impor dari daftar nama</span>
+                            <span class="text-[11px] text-gray-400">{{ imporBuka ? 'tutup' : 'tempel nama santri' }}</span>
+                        </button>
+                        <div v-if="imporBuka" class="px-3 pb-3">
+                            <textarea v-model="imporTeks" rows="4" :class="inp"
+                                placeholder="Satu nama per baris. Penomoran seperti '1. Ahmad' otomatis diabaikan."></textarea>
+                            <div class="flex gap-2 mt-2">
+                                <button @click="cocokkanNama" :disabled="!imporTeks.trim() || imporBusy"
+                                    class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50">
+                                    {{ imporBusy ? 'Mencocokkan…' : 'Cocokkan' }}
+                                </button>
+                                <button v-if="imporHasil" @click="terapkanImpor" :disabled="!imporHasil.cocok.length"
+                                    class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50">
+                                    Centang {{ imporHasil.cocok.length }} yang cocok
+                                </button>
+                            </div>
+                            <div v-if="imporHasil" class="mt-2 space-y-1 text-[11px]">
+                                <p class="text-emerald-700">{{ imporHasil.cocok.length }} nama cocok dari {{ imporHasil.total_baris }} baris.</p>
+                                <p v-if="imporHasil.sudah_anggota.length" class="text-gray-500">Sudah jadi anggota: {{ imporHasil.sudah_anggota.join(', ') }}</p>
+                                <p v-if="imporHasil.ganda.length" class="text-amber-600">Nama ganda (pilih manual): {{ imporHasil.ganda.map(g => g.input).join(', ') }}</p>
+                                <p v-if="imporHasil.tidak_ketemu.length" class="text-rose-600">Tidak ditemukan: {{ imporHasil.tidak_ketemu.join(', ') }}</p>
+                            </div>
+                        </div>
+                    </div>
                     <div v-if="anggotaLoading" class="py-8 text-center text-sm text-gray-400">Memuat…</div>
                     <div v-else class="grid grid-cols-2 gap-4">
                         <div>
-                            <p class="text-xs font-semibold text-gray-500 mb-1">Anggota ({{ anggotaAktif.length }})</p>
+                            <div class="flex items-center justify-between mb-1">
+                                <p class="text-xs font-semibold text-gray-500">Anggota ({{ anggotaAktif.length }})</p>
+                                <button @click="toggleSemua('keluarkan')" type="button" class="text-[11px] font-semibold text-red-500">
+                                    {{ semuaTercentang('keluarkan') ? 'Batal centang' : 'Centang semua' }}
+                                </button>
+                            </div>
                             <input v-model="cariAnggota" placeholder="Cari…" :class="inp" class="mb-2 !py-2" />
                             <div class="border border-gray-100 rounded-xl divide-y divide-gray-50 max-h-72 overflow-y-auto">
                                 <label v-for="s in anggotaFiltered" :key="s.id" class="flex items-center gap-2 px-3 py-2 hover:bg-red-50/40 cursor-pointer">
@@ -136,7 +175,12 @@
                             </div>
                         </div>
                         <div>
-                            <p class="text-xs font-semibold text-gray-500 mb-1">Tambah santri</p>
+                            <div class="flex items-center justify-between mb-1">
+                                <p class="text-xs font-semibold text-gray-500">Tambah santri</p>
+                                <button @click="toggleSemua('tambah')" type="button" class="text-[11px] font-semibold text-indigo-600">
+                                    {{ semuaTercentang('tambah') ? 'Batal centang' : `Centang semua (${kandidatFiltered.length})` }}
+                                </button>
+                            </div>
                             <input v-model="cariKandidat" placeholder="Cari nama/NIS…" :class="inp" class="mb-2 !py-2" />
                             <div class="border border-gray-100 rounded-xl divide-y divide-gray-50 max-h-72 overflow-y-auto">
                                 <label v-for="s in kandidatFiltered" :key="s.id" class="flex items-center gap-2 px-3 py-2 hover:bg-indigo-50/40 cursor-pointer">
@@ -234,12 +278,12 @@ const gradeCls = (g) => ({ A: 'bg-emerald-100 text-emerald-700', B: 'bg-blue-100
 const showForm = ref(false)
 const editTarget = ref(null)
 const saving = ref(false)
-const blank = () => ({ nama: '', deskripsi: '', pembina_id: null, hari: null, jam_mulai: '', jam_selesai: '', lokasi: '', wajib_lokasi: true, tahun_ajaran_id: null, kuota: null, nominal_vakasi: null, batas_isi_hari: null })
+const blank = () => ({ nama: '', deskripsi: '', pembina_id: null, hari: null, jam_mulai: '', jam_selesai: '', lokasi: '', wajib_lokasi: true, pertemuan_per_bulan: 4, tahun_ajaran_id: null, kuota: null, nominal_vakasi: null, batas_isi_hari: null })
 const form = reactive(blank())
 function openCreate() { Object.assign(form, blank()); editTarget.value = null; showForm.value = true }
 function openEdit(e) {
     editTarget.value = e
-    Object.assign(form, { nama: e.nama, deskripsi: e.deskripsi ?? '', pembina_id: e.pembina_id, hari: e.hari, jam_mulai: e.jam_mulai ?? '', jam_selesai: e.jam_selesai ?? '', lokasi: e.lokasi ?? '', wajib_lokasi: e.wajib_lokasi !== false, tahun_ajaran_id: e.tahun_ajaran_id, kuota: e.kuota, nominal_vakasi: e.nominal_vakasi, batas_isi_hari: e.batas_isi_hari })
+    Object.assign(form, { nama: e.nama, deskripsi: e.deskripsi ?? '', pembina_id: e.pembina_id, hari: e.hari, jam_mulai: e.jam_mulai ?? '', jam_selesai: e.jam_selesai ?? '', lokasi: e.lokasi ?? '', wajib_lokasi: e.wajib_lokasi !== false, pertemuan_per_bulan: e.pertemuan_per_bulan ?? 4, tahun_ajaran_id: e.tahun_ajaran_id, kuota: e.kuota, nominal_vakasi: e.nominal_vakasi, batas_isi_hari: e.batas_isi_hari })
     showForm.value = true
 }
 function submit() {
@@ -264,9 +308,53 @@ const keluarkan = ref([])
 const cariAnggota = ref('')
 const cariKandidat = ref('')
 const anggotaFiltered = computed(() => { const q = cariAnggota.value.toLowerCase(); return anggotaAktif.value.filter(s => !q || s.nama.toLowerCase().includes(q)) })
-const kandidatFiltered = computed(() => { const q = cariKandidat.value.toLowerCase(); return q ? kandidat.value.filter(s => s.nama.toLowerCase().includes(q) || String(s.nip || '').includes(q)) : kandidat.value.slice(0, 50) })
+// Tanpa potongan 50: "centang semua" & hasil impor harus benar-benar terlihat.
+const kandidatFiltered = computed(() => {
+    const q = cariKandidat.value.toLowerCase()
+    return q ? kandidat.value.filter(s => s.nama.toLowerCase().includes(q) || String(s.nip || '').includes(q)) : kandidat.value
+})
+// Centang semua bekerja pada daftar yang SEDANG tampil (ikut filter pencarian),
+// agar "centang semua" setelah mencari tidak diam-diam menambah yang tak terlihat.
+function daftarTampil(mode) { return mode === 'tambah' ? kandidatFiltered.value : anggotaFiltered.value }
+function targetRef(mode) { return mode === 'tambah' ? tambah : keluarkan }
+function semuaTercentang(mode) {
+    const l = daftarTampil(mode); const sel = targetRef(mode).value
+    return l.length > 0 && l.every(s => sel.includes(s.id))
+}
+function toggleSemua(mode) {
+    const l = daftarTampil(mode).map(s => s.id); const r = targetRef(mode)
+    r.value = semuaTercentang(mode) ? r.value.filter(id => !l.includes(id)) : [...new Set([...r.value, ...l])]
+}
+
+// Impor daftar nama → dicocokkan server ke data santri (tidak langsung disimpan).
+const imporBuka = ref(false)
+const imporTeks = ref('')
+const imporBusy = ref(false)
+const imporHasil = ref(null)
+async function cocokkanNama() {
+    imporBusy.value = true; imporHasil.value = null
+    try {
+        const res = await fetch(route('admin.smart-education.ekstrakurikuler.anggota.cocokkan', anggotaTarget.value.id), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '' },
+            body: JSON.stringify({ teks: imporTeks.value }),
+        })
+        imporHasil.value = (await res.json()).data
+    } catch (_) { imporHasil.value = null } finally { imporBusy.value = false }
+}
+function terapkanImpor() {
+    const ids = imporHasil.value.cocok.map(c => c.id)
+    tambah.value = [...new Set([...tambah.value, ...ids])]
+    // Pastikan yang dicentang selalu terlihat walau daftar kandidat terpotong.
+    cariKandidat.value = ''
+    imporBuka.value = false
+}
+
 async function openAnggota(e) {
-    anggotaTarget.value = e; tambah.value = []; keluarkan.value = []; cariAnggota.value = ''; cariKandidat.value = ''; anggotaLoading.value = true
+    anggotaTarget.value = e; tambah.value = []; keluarkan.value = []; cariAnggota.value = ''; cariKandidat.value = ''
+    imporTeks.value = ''; imporHasil.value = null; imporBuka.value = false
+    anggotaLoading.value = true
     try { const d = (await (await fetch(route('admin.smart-education.ekstrakurikuler.anggota', e.id), { headers: { Accept: 'application/json' } })).json()).data; anggotaAktif.value = d.anggota; kandidat.value = d.kandidat } catch (_) {} finally { anggotaLoading.value = false }
 }
 function simpanAnggota() {
