@@ -139,11 +139,52 @@ class PenggantiMengajarService
             ]);
         }
 
+        // Kelas digabung = dua rombongan belajar di satu ruang. Piket hari itu
+        // dikabari agar ada yang mengawasi, bukan hanya guru yang merangkap.
+        if ($kelayakan['gabung']) {
+            $this->kabariPiketGabung($jadwal, $tanggal, $pengganti, $kelayakan['gabung']);
+        }
+
         return $absen;
     }
 
-    /** Tipe kelas Quran yang boleh DIGABUNG dalam satu jam oleh satu guru. */
-    public const TIPE_BISA_GABUNG = ['tahfidz', 'tahsin'];
+    /** Kabari guru piket bahwa dua kelas berjalan digabung pada jam tersebut. */
+    private function kabariPiketGabung(JadwalMengajar $jadwal, Carbon $tanggal, TenagaPendidik $pengganti, string $gabung): void
+    {
+        $piket = \App\Models\PiketJadwal::whereDate('tanggal', $tanggal->toDateString())
+            ->with('tenagaPendidik.user:id,name')->get()
+            ->map(fn ($p) => $p->tenagaPendidik?->user)->filter()->unique('id')->values();
+        if ($piket->isEmpty()) return;
+
+        $jadwal->loadMissing(['mataPelajaran:id,nama', 'kelasRel:id,nama']);
+        $kelas = $jadwal->kelasRel?->nama ?? $jadwal->kelas ?? 'kelas';
+
+        \App\Services\NotifikasiService::event('pengganti.ditunjuk', [
+            'judul'     => 'Dua kelas digabung di satu jam',
+            'pesan'     => ($pengganti->user?->name ?? 'Guru pengganti') . ' memegang ' . $kelas
+                . ' sekaligus ' . $gabung . ' pukul ' . substr((string) $jadwal->jam_mulai, 0, 5)
+                . '–' . substr((string) $jadwal->jam_selesai, 0, 5)
+                . '. Absen & jurnal tiap kelas tetap terpisah — mohon dipantau.',
+            'tipe'      => 'tugas_update',
+            'prioritas' => 'tinggi',
+            'data'      => ['route' => '/piket'],
+            'dedup'     => 'gabung-piket-' . $jadwal->id . '-' . $tanggal->toDateString(),
+        ], $piket->all());
+    }
+
+    /**
+     * Tipe kelas yang boleh DIGABUNG dalam satu jam oleh satu guru.
+     * Sejak 23 Sep 2026 semua tipe boleh (kekurangan tenaga pendidik), dengan
+     * penjaga jenjang & jenis kelamin di kelayakanInval.
+     */
+    public const TIPE_BISA_GABUNG = ['tahfidz', 'tahsin', 'reguler'];
+
+    /**
+     * Tipe yang gabungnya SELALU ditawarkan karena kekurangan calonnya struktural
+     * (semua kelas Quran berjalan di 8 slot yang sama). Tipe lain — reguler —
+     * hanya menawarkan gabung bila tidak ada satu pun calon yang jamnya kosong.
+     */
+    public const TIPE_GABUNG_UTAMA = ['tahfidz', 'tahsin'];
 
     /** Jumlah kelas maksimal yang dipegang satu guru pada jam yang sama. */
     public const MAKS_KELAS_BERSAMAAN = 2;
@@ -175,17 +216,17 @@ class PenggantiMengajarService
     public function kelayakanInval(int $tpId, JadwalMengajar $jadwal, Carbon $tanggal): array
     {
         $tgl  = $tanggal->toDateString();
-        $tolak = fn (string $a) => ['alasan' => $a, 'gabung' => null];
+        $tolak = fn (string $a) => ['alasan' => $a, 'gabung' => null, 'peringatan' => null];
 
         $izin = PengajuanIzin::where('tenaga_pendidik_id', $tpId)->where('status', 'disetujui')
             ->where('tanggal_mulai', '<=', $tgl)->where('tanggal_selesai', '>=', $tgl)->exists();
         if ($izin) return $tolak('Guru pengganti sedang izin pada tanggal tersebut.');
 
-        $jadwal->loadMissing(['mataPelajaran:id,tipe', 'kelasRel:id,nama']);
-        $targetQuran = in_array($jadwal->mataPelajaran?->tipe, self::TIPE_BISA_GABUNG, true);
+        $jadwal->loadMissing(['mataPelajaran:id,tipe', 'kelasRel:id,nama,tingkat']);
+        $bolehGabung = in_array($jadwal->mataPelajaran?->tipe, self::TIPE_BISA_GABUNG, true);
 
         // Kelas yang sudah dipegang guru ini pada jam yang sama: jadwal sendiri + inval lain.
-        $sendiri = JadwalMengajar::with(['mataPelajaran:id,tipe', 'kelasRel:id,nama'])
+        $sendiri = JadwalMengajar::with(['mataPelajaran:id,tipe', 'kelasRel:id,nama,tingkat'])
             ->where('tenaga_pendidik_id', $tpId)
             ->where('hari', $jadwal->hari)->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
@@ -197,7 +238,7 @@ class PenggantiMengajarService
             ->whereNotNull('digantikan_oleh')->pluck('jadwal_mengajar_id')->flip();
         $sendiri = $sendiri->reject(fn ($j) => $dialihkan->has($j->id));
 
-        $invalLain = AbsensiMengajar::with(['jadwalMengajar.mataPelajaran:id,tipe', 'jadwalMengajar.kelasRel:id,nama'])
+        $invalLain = AbsensiMengajar::with(['jadwalMengajar.mataPelajaran:id,tipe', 'jadwalMengajar.kelasRel:id,nama,tingkat'])
             ->where('digantikan_oleh', $tpId)->whereDate('tanggal', $tgl)
             ->whereIn('status', ['pengganti', 'tidak_terlaksana'])
             ->where('jadwal_mengajar_id', '!=', $jadwal->id)
@@ -207,27 +248,52 @@ class PenggantiMengajarService
             ->get()->map(fn ($a) => $a->jadwalMengajar);
 
         $dipegang = $sendiri->concat($invalLain)->filter()->values();
-        if ($dipegang->isEmpty()) return ['alasan' => null, 'gabung' => null];
+        if ($dipegang->isEmpty()) return ['alasan' => null, 'gabung' => null, 'peringatan' => null];
 
-        // Ada kelas pada jam yang sama → hanya sah sebagai GABUNG kelas Quran.
-        if (!$targetQuran) {
+        // Ada kelas pada jam yang sama → hanya sah sebagai GABUNG kelas.
+        if (!$bolehGabung) {
             return $tolak('Guru pengganti sudah mengajar kelas lain di jam yang sama.');
         }
         if ($dipegang->contains(fn ($j) => !in_array($j->mataPelajaran?->tipe, self::TIPE_BISA_GABUNG, true))) {
-            return $tolak('Guru pengganti mengajar kelas reguler di jam yang sama — tidak bisa dirangkap.');
+            return $tolak('Guru pengganti memegang kelas yang tidak bisa dirangkap di jam yang sama.');
         }
         if ($dipegang->count() + 1 > self::MAKS_KELAS_BERSAMAAN) {
             return $tolak('Guru pengganti sudah memegang ' . $dipegang->count() . ' kelas di jam yang sama.');
         }
-        $jkTarget = $this->jenisKelaminKelas($jadwal->kelas_id);
+
+        // Dua kelas belajar dalam satu ruang → JENIS KELAMIN wajib sama. Kelas campur
+        // (X, XI, XII) hanya boleh digabung dengan kelas campur: tanpa aturan ini ia
+        // lolos diam-diam karena jenis kelaminnya "tidak bisa dipastikan".
+        //
+        // Jenjang TIDAK dijadikan syarat, melainkan peringatan. Data 23 Sep 2026:
+        // dari 72 pasang kelas reguler yang berjalan bersamaan, 18 pasang berjenis
+        // kelamin sama tapi NOL yang sekaligus setingkat (tiap tingkat hanya punya
+        // satu kelas putra & satu kelas putri). Mensyaratkan jenjang sama = fitur ini
+        // tidak akan pernah bisa dipakai di kelas reguler.
+        $jkTarget      = $this->jenisKelaminKelas($jadwal->kelas_id);
+        $tingkatTarget = $jadwal->kelasRel?->tingkat;
+        $bedaJenjang   = [];
         foreach ($dipegang as $j) {
-            $jk = $this->jenisKelaminKelas($j->kelas_id);
-            if ($jkTarget && $jk && $jkTarget !== $jk) {
-                return $tolak('Kelas putra dan putri tidak bisa digabung (' . ($j->kelasRel?->nama ?? 'kelas') . ').');
+            $jk   = $this->jenisKelaminKelas($j->kelas_id);
+            $nama = $j->kelasRel?->nama ?? 'kelas lain';
+            if ($jkTarget !== $jk) {
+                return $tolak($jkTarget === null || $jk === null
+                    ? "Kelas campur putra-putri tidak bisa digabung dengan kelas terpisah ({$nama})."
+                    : "Kelas putra dan putri tidak bisa digabung ({$nama}).");
+            }
+            $tingkat = $j->kelasRel?->tingkat;
+            if ($tingkatTarget && $tingkat && (string) $tingkatTarget !== (string) $tingkat) {
+                $bedaJenjang[] = "{$nama} (tingkat {$tingkat})";
             }
         }
 
-        return ['alasan' => null, 'gabung' => $dipegang->map(fn ($j) => $j->kelasRel?->nama ?? $j->kelas)->implode(', ')];
+        return [
+            'alasan'     => null,
+            'gabung'     => $dipegang->map(fn ($j) => $j->kelasRel?->nama ?? $j->kelas)->implode(', '),
+            'peringatan' => $bedaJenjang
+                ? 'Beda jenjang dengan ' . implode(', ', $bedaJenjang) . ' — materi tiap kelas tetap terpisah.'
+                : null,
+        ];
     }
 
     /**
@@ -264,7 +330,7 @@ class PenggantiMengajarService
         $jkKelas = $this->jenisKelaminKelas($jadwal->kelas_id);
         $tipe    = $jadwal->mataPelajaran?->tipe;
 
-        return TenagaPendidik::aktif()->where('id', '!=', $guruTpId)->with('user:id,name')->get()
+        $calon = TenagaPendidik::aktif()->where('id', '!=', $guruTpId)->with('user:id,name')->get()
             ->filter(fn ($g) => $g->user)
             ->map(function ($g) use ($jadwal, $tanggal, $jkKelas, $tipe) {
                 $k = $this->kelayakanInval($g->id, $jadwal, $tanggal);
@@ -275,9 +341,10 @@ class PenggantiMengajarService
                     ->whereHas('mataPelajaran', fn ($q) => $q->where('tipe', $tipe))->exists();
 
                 return [
-                    'id'      => $g->id,
-                    'nama'    => $g->user->name,
-                    'gabung'  => $k['gabung'],
+                    'id'         => $g->id,
+                    'nama'       => $g->user->name,
+                    'gabung'     => $k['gabung'],
+                    'peringatan' => $k['peringatan'] ?? null,
                     'mukim'   => (bool) $g->is_mukim,
                     'sejenis' => $sejenis,
                     // Kunci urut: angka kecil = lebih layak.
@@ -288,6 +355,19 @@ class PenggantiMengajarService
             ->filter()->sortBy('_urut')
             ->map(fn ($c) => collect($c)->except('_urut')->all())
             ->values();
+
+        // Calon yang jamnya KOSONG selalu didahulukan. Untuk kelas reguler, guru
+        // yang harus merangkap baru ditawarkan bila tidak ada calon kosong sama
+        // sekali — data 23 Sep 2026: tiap sesi reguler masih punya 3–13 calon
+        // kosong, jadi merangkap memang jalan terakhir, bukan pilihan biasa.
+        // Tahfidz & tahsin tetap menawarkannya langsung: di sana kekurangannya
+        // struktural (semua kelas Quran berjalan di jam yang sama).
+        if (!in_array($tipe, self::TIPE_GABUNG_UTAMA, true)) {
+            $kosong = $calon->whereNull('gabung')->values();
+            if ($kosong->isNotEmpty()) return $kosong;
+        }
+
+        return $calon;
     }
 
     /** Tugas inval AKTIF milik guru ini untuk satu jadwal hari ini (belum/sudah diisi). */

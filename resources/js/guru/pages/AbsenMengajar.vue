@@ -233,6 +233,10 @@ async function kirim() {
                                 </div>
                                 <p v-if="calonTerpilih(j)?.gabung" class="mt-1.5 text-[10px] text-sky-700 leading-snug">
                                     Kelas ini akan <b>digabung</b> dengan kelas {{ calonTerpilih(j).gabung }} yang diajar {{ calonTerpilih(j).nama }} pada jam yang sama.
+                                    Absen &amp; jurnal tiap kelas tetap diisi terpisah, dan guru piket akan dikabari.
+                                </p>
+                                <p v-if="calonTerpilih(j)?.peringatan" class="mt-1 text-[10px] text-amber-700 leading-snug">
+                                    ⚠ {{ calonTerpilih(j).peringatan }}
                                 </p>
                                 <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
                                     class="mt-1.5 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">

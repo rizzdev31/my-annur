@@ -144,6 +144,9 @@ async function batalSementara() {
     } finally { semBatal.value = false }
 }
 
+// Calon yang sedang dipilih — untuk menampilkan catatan gabung & peringatan jenjang.
+const opsiTerpilih = (sesi) => (sesi.opsi || []).find(o => String(o.id) === String(sesi.pengganti_id)) || null
+
 async function tunjukPengganti(sesi) {
     if (!sesi.pengganti_id) return
     sesi.assigning = true
@@ -321,6 +324,12 @@ async function tunjukPengganti(sesi) {
                                     {{ s.assigning ? '…' : 'Tunjuk' }}
                                 </button>
                             </div>
+                            <p v-if="opsiTerpilih(s)?.gabung" class="mt-1.5 text-[10px] text-sky-700 leading-snug">
+                                Kelas digabung dengan {{ opsiTerpilih(s).gabung }} — absen &amp; jurnal tiap kelas tetap terpisah, piket dikabari.
+                            </p>
+                            <p v-if="opsiTerpilih(s)?.peringatan" class="mt-1 text-[10px] text-amber-700 leading-snug">
+                                ⚠ {{ opsiTerpilih(s).peringatan }}
+                            </p>
                         </div>
                     </div>
                 </template>
