@@ -31,6 +31,10 @@ async function load() {
 }
 onMounted(load)
 
+// True bila guru menekan "Saya ajar sendiri" pada sesi yang tercatat izin /
+// sudah ditunjuk pengganti tapi penggantinya belum mengajar.
+const ambilAlih = ref(false)
+
 async function submitAbsen() {
     absenSaving.value = true; msg.value = null
     try {
@@ -38,6 +42,8 @@ async function submitAbsen() {
             jadwal_id: Number(jadwalId),
             absensi: santri.value.map((x) => ({ santri_id: x.santri_id, status: absenStatus[x.santri_id] || 'hadir' })),
             catatan: absenCatatan.value.trim() || null,
+            // Guru asli kembali lebih cepat: minta sesi izin/penunjukan diambil alih.
+            override_izin: ambilAlih.value ? 1 : undefined,
         }
         const res = await api.post('/education/tahsin/absen', payload)
         info.value.absensi_mengajar_id = res.data.data?.absensi_mengajar_id
@@ -223,6 +229,21 @@ const absenColor = (s) => ({
             </p>
 
             <!-- GERBANG ABSEN -->
+            <!-- Ambil alih sesi sendiri: izin / dinas luar selesai lebih cepat -->
+            <div v-if="info.boleh_ambil_alih && !info.wajib_absen && !ambilAlih"
+                class="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 mb-4">
+                <p class="text-sm font-bold text-emerald-800 mb-1">Sudah kembali & ingin mengajar sendiri?</p>
+                <p class="text-[11px] text-emerald-700 mb-3 leading-snug">
+                    Sesi ini tercatat {{ info.diinval_oleh ? `dialihkan ke ${info.diinval_oleh}` : 'izin' }}.
+                    Selama jam kelas masih berjalan, Anda bisa mengambil alih dan mengisi absen sendiri —
+                    <span v-if="info.diinval_oleh">guru pengganti akan dikabari otomatis.</span>
+                </p>
+                <button @click="ambilAlih = true; info.wajib_absen = true"
+                    class="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold active:scale-[0.99] transition">
+                    Saya ajar sendiri
+                </button>
+            </div>
+
             <div v-if="info.wajib_absen" class="rounded-2xl bg-amber-50 border border-amber-200 p-4 mb-4">
                 <p class="text-sm font-bold text-amber-800 mb-1">Absen Kehadiran Dulu</p>
                 <p class="text-[11px] text-amber-600 mb-3">Ketuk status tiap santri (Hadir → Telat → Izin → Sakit → Alpha), lalu simpan. Santri yang punya izin disetujui atau laporan Smart Health aktif sudah terisi otomatis.</p>

@@ -1012,9 +1012,12 @@ class AbsensiApiController extends Controller
             // agar kelas tak kosong — selama sesi belum benar-benar diajar.
             $bolehTunjukPengganti = $isIzinGuru && !$isHariLibur && $sesiBelumDiajar;
 
-            // Override "ajar sendiri" meski izin (mis. izin selesai lebih cepat):
-            // hanya NON-dinas-luar, dalam jam pelajaran, sesi belum diajar.
-            $bolehOverrideIzin = $isIzinGuru && !$isDinasLuar && !$isHariLibur
+            // Override "ajar sendiri" meski izin — berlaku untuk SEMUA jenis izin,
+            // termasuk dinas luar (keputusan 23 Sep 2026: dinas kerap selesai sebelum
+            // jam mengajar, dan tanpa ini JP-nya hangus percuma — 14 sesi / 28 JP).
+            // Penjaganya tetap: dalam jam pelajaran & sesi belum benar-benar diajar,
+            // ditambah foto + jurnal + absensi santri seperti absen biasa.
+            $bolehOverrideIzin = $isIzinGuru && !$isHariLibur
                 && $dalamWindow && $sesiBelumDiajar;
 
             // Pesan blokir untuk kondisi normal
@@ -1553,7 +1556,9 @@ class AbsensiApiController extends Controller
                 && (int) $existing->jp_terlaksana === 0
                 && is_null($existing->jam_selesai_aktual);
             if ($override && ($existing->status === 'izin' || $penggantiMenggantung)) {
-                $existing->delete();
+                // Penggantinya dikabari supaya tidak terlanjur datang ke kelas.
+                (new \App\Services\PenggantiMengajarService())
+                    ->ambilAlihSesi($existing, $user->name ?? 'Guru');
                 $existing = null;
             } else {
                 return response()->json([

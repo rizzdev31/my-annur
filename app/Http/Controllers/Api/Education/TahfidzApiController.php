@@ -167,6 +167,21 @@ class TahfidzApiController extends Controller
             return response()->json(['success' => false, 'message' => 'Jadwal ini tidak berlangsung hari ini.', 'code' => 'WRONG_DAY'], 422);
         }
 
+        // Guru asli mengambil alih sesinya sendiri (izin / dinas luar selesai lebih
+        // cepat): catatan izin otomatis atau penunjukan pengganti yang belum diajar
+        // dihapus dulu, penggantinya dikabari. Aturannya satu pintu di
+        // PenggantiMengajarService — sama dengan kelas reguler.
+        if ($request->boolean('override_izin')) {
+            $svcAmbil = new \App\Services\PenggantiMengajarService();
+            $lama = AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->whereDate('tanggal', $today)->first();
+            if ($lama && !$svcAmbil->bolehDiambilAlih($lama)) {
+                return response()->json(['success' => false,
+                    'message' => 'Sesi ini sudah diajar — tidak bisa diambil alih.',
+                    'code' => 'SUDAH_ABSEN'], 422);
+            }
+            if ($lama) $svcAmbil->ambilAlihSesi($lama, $request->user()->name ?? 'Guru');
+        }
+
         // Sudah absen hari ini → terkunci; kembalikan id agar lanjut setoran.
         $exist = AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->whereDate('tanggal', $today)->first();
         if ($exist && $exist->digantikan_oleh) {
@@ -368,6 +383,10 @@ class TahfidzApiController extends Controller
                 'diinval_oleh'        => $diinval,
                 // GERBANG absen: WAJIB hanya saat dalam jam mengajar sesi ini & belum absen.
                 'wajib_absen'         => $dalamJam && $am === null,
+                // Izin/dinas selesai lebih cepat → guru asli boleh mengambil alih
+                // sesinya sendiri selama jam kelas & belum benar-benar diajar.
+                'boleh_ambil_alih'    => $dalamJam && $am !== null
+                    && (new \App\Services\PenggantiMengajarService())->bolehDiambilAlih($am),
                 'boleh_isi'           => true,
                 'jenis_diizinkan'     => ['ziyadah', 'murojaah_wajib', 'murojaah_tambahan'],
                 'boleh_tasmi'         => true,

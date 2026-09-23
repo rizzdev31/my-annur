@@ -175,7 +175,9 @@ async function kirim() {
                                         class="shrink-0 px-2 py-1.5 rounded-lg text-[11px] font-bold text-red-500 active:bg-red-100/60 disabled:opacity-50 transition">Batalkan</button>
                                 </div>
                                 <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
-                                    class="mt-2 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">Batalkan &amp; ajar sendiri</button>
+                                    class="mt-2 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">
+                                    {{ j.is_dinas_luar ? 'Saya sudah kembali — ajar sendiri' : 'Batalkan &amp; ajar sendiri' }}
+                                </button>
                             </div>
 
                             <!-- Tidak terlaksana: jangan tampil seperti sukses -->
@@ -254,7 +256,7 @@ async function kirim() {
                                 </p>
                                 <button v-if="j.boleh_override_izin" @click="bukaAbsen(j, true)"
                                     class="mt-1.5 w-full py-2.5 rounded-lg bg-emerald-600 text-white text-[12px] font-bold active:scale-[0.98] transition">
-                                    Saya ajar sendiri (izin selesai)
+                                    {{ j.is_dinas_luar ? 'Saya sudah kembali — ajar sendiri' : 'Saya ajar sendiri (izin selesai)' }}
                                 </button>
                             </div>
 

@@ -636,6 +636,58 @@ class PenggantiMengajarService
      * Guru asli membatalkan penunjukan pengganti — selama pengganti BELUM mengajar.
      * Sesi kembali ke "izin tanpa pengganti" (JP tidak dibayar).
      */
+    /**
+     * Sesi masih boleh DIAMBIL ALIH guru aslinya (izin selesai lebih cepat /
+     * dinas luar sudah rampung): belum ada catatan, baru tanda izin otomatis,
+     * atau pengganti ditunjuk tapi belum mengajar.
+     */
+    public function bolehDiambilAlih(?AbsensiMengajar $am): bool
+    {
+        if (!$am) return true;
+        if ($am->status === 'izin') return true;
+
+        return $am->status === 'pengganti'
+            && (int) $am->jp_terlaksana === 0
+            && is_null($am->jam_selesai_aktual);
+    }
+
+    /**
+     * Guru asli mengambil alih sesinya sendiri: catatan izin/penunjukan dihapus
+     * agar ia mengisi dari awal, dan penggantinya DIKABARI supaya tidak terlanjur
+     * datang. Dipakai semua tipe kelas (reguler, tahfidz, tahsin).
+     */
+    public function ambilAlihSesi(AbsensiMengajar $am, string $olehNama): void
+    {
+        $this->kabariPembatalan($am, $olehNama . ' mengajar sendiri (izin/dinas selesai)');
+        $am->delete();
+    }
+
+    /** Beri tahu guru pengganti bahwa tugas invalnya dibatalkan. */
+    private function kabariPembatalan(AbsensiMengajar $am, string $sebab): void
+    {
+        if (!$am->digantikan_oleh) return;
+
+        $user = TenagaPendidik::with('user:id,name')->find($am->digantikan_oleh)?->user;
+        if (!$user) return;
+
+        $j = $am->jadwalMengajar ?? JadwalMengajar::with(['mataPelajaran:id,nama', 'kelasRel:id,nama'])
+            ->find($am->jadwal_mengajar_id);
+
+        \App\Services\NotifikasiService::event('pengganti.ditunjuk', [
+            'user'      => $user,
+            'judul'     => 'Tugas inval dibatalkan',
+            'pesan'     => 'Anda tidak jadi menggantikan ' . ($j?->mataPelajaran?->nama ?? 'sesi')
+                . ' ' . ($j?->kelasRel?->nama ?? $j?->kelas ?? '') . ' pada '
+                . Carbon::parse($am->tanggal)->format('d/m/Y')
+                . ($j ? ' (' . substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5) . ')' : '')
+                . ' — ' . $sebab . '.',
+            'tipe'      => 'tugas_update',
+            'prioritas' => 'tinggi',
+            'data'      => ['route' => '/kelas-pengganti'],
+            'dedup'     => 'inval-batal-' . $am->id . '-' . Carbon::parse($am->tanggal)->toDateString(),
+        ]);
+    }
+
     public function batalkanPengganti(int $absensiId, int $guruTpId): AbsensiMengajar
     {
         $absensi = AbsensiMengajar::findOrFail($absensiId);
@@ -649,6 +701,8 @@ class PenggantiMengajarService
         if (!is_null($absensi->jam_selesai_aktual) || (int) $absensi->jp_terlaksana > 0) {
             throw new \DomainException('Pengganti sudah mengajar — tidak bisa dibatalkan.');
         }
+
+        $this->kabariPembatalan($absensi, 'dibatalkan oleh guru yang bersangkutan');
 
         $absensi->update([
             'digantikan_oleh' => null,
