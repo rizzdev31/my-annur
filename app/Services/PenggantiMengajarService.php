@@ -276,8 +276,9 @@ class PenggantiMengajarService
         foreach ($dipegang as $j) {
             $jk   = $this->jenisKelaminKelas($j->kelas_id);
             $nama = $j->kelasRel?->nama ?? 'kelas lain';
-            if ($jkTarget !== $jk) {
-                return $tolak($jkTarget === null || $jk === null
+            // null = kelas belum punya santri → tak ada yang bisa salah duduk, biarkan.
+            if ($jkTarget !== null && $jk !== null && $jkTarget !== $jk) {
+                return $tolak($jkTarget === self::KELAS_CAMPUR || $jk === self::KELAS_CAMPUR
                     ? "Kelas campur putra-putri tidak bisa digabung dengan kelas terpisah ({$nama})."
                     : "Kelas putra dan putri tidak bisa digabung ({$nama}).");
             }
@@ -296,9 +297,17 @@ class PenggantiMengajarService
         ];
     }
 
+    /** Kelas yang santrinya memang campur putra-putri (mis. X, XI, XII). */
+    public const KELAS_CAMPUR = 'CAMPUR';
+
     /**
      * Jenis kelamin kelas: dari nama (Putra/Putri), bila tidak ada dari mayoritas
-     * ≥80% santri aktif (mis. "Persiapan Tahfidz 3"). null bila tidak bisa dipastikan.
+     * ≥80% santri aktif (mis. "Persiapan Tahfidz 3").
+     *
+     * Tiga kemungkinan, dan bedanya penting untuk aturan gabung kelas:
+     *   'L' / 'P'      → kelas satu jenis kelamin
+     *   KELAS_CAMPUR   → ada santrinya, tapi campur (tak ada mayoritas 80%)
+     *   null           → belum bisa dinilai (kelas belum punya santri aktif)
      */
     public function jenisKelaminKelas(?int $kelasId): ?string
     {
@@ -314,9 +323,9 @@ class PenggantiMengajarService
             ->where('ks.kelas_id', $kelasId)->where('ks.is_aktif', true)
             ->selectRaw('s.jenis_kelamin jk, COUNT(*) n')->groupBy('s.jenis_kelamin')->pluck('n', 'jk');
         $total = $jk->sum();
-        if (!$total) return $memo[$kelasId] = null;
+        if (!$total) return $memo[$kelasId] = null;   // belum ada santri → tak bisa dinilai
         $atas = $jk->sortDesc()->keys()->first();
-        return $memo[$kelasId] = ($jk[$atas] / $total >= 0.8 ? $atas : null);
+        return $memo[$kelasId] = ($jk[$atas] / $total >= 0.8 ? $atas : self::KELAS_CAMPUR);
     }
 
     /**
@@ -336,7 +345,8 @@ class PenggantiMengajarService
                 $k = $this->kelayakanInval($g->id, $jadwal, $tanggal);
                 if ($k['alasan'] !== null) return null;
 
-                $sejenis = !$jkKelas || $g->jenis_kelamin === $jkKelas;
+                // Kelas campur / belum ada santri → tak ada preferensi jenis kelamin guru.
+                $sejenis = !$jkKelas || $jkKelas === self::KELAS_CAMPUR || $g->jenis_kelamin === $jkKelas;
                 $programSama = $k['gabung'] && JadwalMengajar::where('tenaga_pendidik_id', $g->id)->where('is_aktif', true)
                     ->whereHas('mataPelajaran', fn ($q) => $q->where('tipe', $tipe))->exists();
 
