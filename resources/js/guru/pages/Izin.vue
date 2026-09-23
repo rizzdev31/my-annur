@@ -99,8 +99,12 @@ async function loadOpsi(s) {
             params: { jadwal_mengajar_id: s.jadwal_mengajar_id, tanggal: tanggalLokal() },
         })
         s.opsi = o.data.data ?? []
-    } catch (_) { s.opsi = [] }
+        s.opsiMerangkap = o.data.merangkap ?? []
+        s.bukaMerangkap = false
+    } catch (_) { s.opsi = []; s.opsiMerangkap = [] }
 }
+// Guru yang merangkap baru ikut tampil setelah tautannya dibuka.
+const opsiTampil = (s) => s.bukaMerangkap ? [...(s.opsi || []), ...(s.opsiMerangkap || [])] : (s.opsi || [])
 
 function resetSem() {
     showSem.value = false; izinSemDone.value = false; sesiTerdampak.value = []
@@ -145,7 +149,7 @@ async function batalSementara() {
 }
 
 // Calon yang sedang dipilih — untuk menampilkan catatan gabung & peringatan jenjang.
-const opsiTerpilih = (sesi) => (sesi.opsi || []).find(o => String(o.id) === String(sesi.pengganti_id)) || null
+const opsiTerpilih = (sesi) => opsiTampil(sesi).find(o => String(o.id) === String(sesi.pengganti_id)) || null
 
 async function tunjukPengganti(sesi) {
     if (!sesi.pengganti_id) return
@@ -313,17 +317,23 @@ async function tunjukPengganti(sesi) {
                             <div v-if="s.pengganti_nama" class="mt-2 text-xs text-emerald-600 font-semibold flex items-center gap-1">
                                 ✓ Pengganti: {{ s.pengganti_nama }}
                             </div>
-                            <p v-else-if="s.opsi && !s.opsi.length" class="mt-2 text-xs text-red-600">Tidak ada guru yang kosong di jam ini.</p>
+                            <p v-else-if="s.opsi && !s.opsi.length && !(s.opsiMerangkap || []).length" class="mt-2 text-xs text-red-600">Tidak ada guru yang kosong di jam ini.</p>
+                            <p v-else-if="s.opsi && !s.opsi.length" class="mt-2 text-xs text-amber-600">Tidak ada guru yang kosong — tersedia guru yang bisa merangkap di bawah.</p>
                             <div v-else class="mt-2 flex gap-2">
                                 <select v-model="s.pengganti_id" :disabled="!s.opsi" class="flex-1 px-2.5 py-2 rounded-lg border border-gray-200 text-xs outline-none focus:border-amber-500">
                                     <option value="">{{ s.opsi ? '— pilih pengganti —' : 'Memuat…' }}</option>
-                                    <option v-for="o in (s.opsi || [])" :key="o.id" :value="o.id">{{ o.nama + (o.gabung ? ` — gabung ${o.gabung}` : '') + (o.mukim ? ' · mukim' : '') }}</option>
+                                    <option v-for="o in opsiTampil(s)" :key="o.id" :value="o.id">{{ o.nama + (o.gabung ? ` — gabung ${o.gabung}` : '') + (o.mukim ? ' · mukim' : '') }}</option>
                                 </select>
                                 <button @click="tunjukPengganti(s)" :disabled="!s.pengganti_id || s.assigning"
                                     class="px-3 py-2 rounded-lg bg-[#0C78FF] text-white text-xs font-bold disabled:opacity-50">
                                     {{ s.assigning ? '…' : 'Tunjuk' }}
                                 </button>
                             </div>
+                            <button v-if="!s.bukaMerangkap && (s.opsiMerangkap || []).length"
+                                @click="s.bukaMerangkap = true" type="button"
+                                class="mt-1.5 text-[10px] font-semibold text-[#0C78FF] underline underline-offset-2">
+                                Tampilkan juga guru yang merangkap ({{ s.opsiMerangkap.length }})
+                            </button>
                             <p v-if="opsiTerpilih(s)?.gabung" class="mt-1.5 text-[10px] text-sky-700 leading-snug">
                                 Kelas digabung dengan {{ opsiTerpilih(s).gabung }} — absen &amp; jurnal tiap kelas tetap terpisah, piket dikabari.
                             </p>

@@ -333,7 +333,7 @@ class PenggantiMengajarService
      * sesama jenis kelamin dengan kelas → mukim (ada di asrama) → guru yang kosong
      * → gabung kelas dengan program yang sama.
      */
-    public function calonPengganti(JadwalMengajar $jadwal, Carbon $tanggal, int $guruTpId): Collection
+    public function calonPengganti(JadwalMengajar $jadwal, Carbon $tanggal, int $guruTpId, bool $sertakanGabung = false): Collection
     {
         $jadwal->loadMissing('mataPelajaran:id,tipe');
         $jkKelas = $this->jenisKelaminKelas($jadwal->kelas_id);
@@ -367,17 +367,36 @@ class PenggantiMengajarService
             ->values();
 
         // Calon yang jamnya KOSONG selalu didahulukan. Untuk kelas reguler, guru
-        // yang harus merangkap baru ditawarkan bila tidak ada calon kosong sama
-        // sekali — data 23 Sep 2026: tiap sesi reguler masih punya 3–13 calon
-        // kosong, jadi merangkap memang jalan terakhir, bukan pilihan biasa.
-        // Tahfidz & tahsin tetap menawarkannya langsung: di sana kekurangannya
-        // struktural (semua kelas Quran berjalan di jam yang sama).
-        if (!in_array($tipe, self::TIPE_GABUNG_UTAMA, true)) {
+        // yang harus merangkap tidak ikut tampil secara bawaan bila masih ada calon
+        // kosong — data 23 Sep 2026: tiap sesi reguler punya 3–13 calon kosong,
+        // jadi merangkap adalah pengecualian, bukan pilihan biasa. Penunjuk tetap
+        // bisa membukanya sendiri lewat $sertakanGabung (tautan di aplikasi guru).
+        // Tahfidz & tahsin selalu menampilkannya: di sana kekurangannya struktural.
+        if (!$sertakanGabung && !in_array($tipe, self::TIPE_GABUNG_UTAMA, true)) {
             $kosong = $calon->whereNull('gabung')->values();
             if ($kosong->isNotEmpty()) return $kosong;
         }
 
         return $calon;
+    }
+
+    /**
+     * Calon yang hanya bisa mengisi dengan MERANGKAP kelasnya sendiri — daftar
+     * tambahan di balik tautan "tampilkan juga guru yang merangkap".
+     * Kosong bila memang tak ada, atau bila mereka sudah tampil di daftar utama.
+     */
+    public function calonMerangkap(JadwalMengajar $jadwal, Carbon $tanggal, int $guruTpId): Collection
+    {
+        $jadwal->loadMissing('mataPelajaran:id,tipe');
+        if (in_array($jadwal->mataPelajaran?->tipe, self::TIPE_GABUNG_UTAMA, true)) {
+            return collect();   // sudah menyatu di daftar utama
+        }
+
+        $utama = $this->calonPengganti($jadwal, $tanggal, $guruTpId)->pluck('id')->flip();
+
+        return $this->calonPengganti($jadwal, $tanggal, $guruTpId, true)
+            ->filter(fn ($c) => $c['gabung'] !== null && !$utama->has($c['id']))
+            ->values();
     }
 
     /** Tugas inval AKTIF milik guru ini untuk satu jadwal hari ini (belum/sudah diisi). */

@@ -32,11 +32,17 @@ async function loadPengganti(j) {
             params: { jadwal_mengajar_id: j.jadwal_id, tanggal: tanggalLokal() },
         })
         j.opsi = o.data.data ?? []
-    } catch (_) { j.opsi = [] }
+        // Guru yang harus merangkap kelasnya sendiri disimpan terpisah; baru
+        // digabungkan ke daftar bila penunjuk membuka tautannya.
+        j.opsiMerangkap = o.data.merangkap ?? []
+        j.bukaMerangkap = false
+    } catch (_) { j.opsi = []; j.opsiMerangkap = [] }
 }
+// Daftar yang ditampilkan di dropdown.
+const opsiTampil = (j) => j.bukaMerangkap ? [...(j.opsi || []), ...(j.opsiMerangkap || [])] : (j.opsi || [])
 // Label calon: gabung kelas (guru yang juga mengajar di jam itu) & mukim asrama.
 const labelCalon = (o) => o.nama + (o.gabung ? ` — gabung ${o.gabung}` : '') + (o.mukim ? ' · mukim' : '')
-const calonTerpilih = (j) => (j.opsi || []).find(o => o.id == j.pengganti_id)
+const calonTerpilih = (j) => opsiTampil(j).find(o => o.id == j.pengganti_id)
 
 async function tunjukPengganti(j) {
     if (!j.pengganti_id) { msg.value = { ok: false, text: 'Pilih guru pengganti dulu.' }; return }
@@ -224,13 +230,21 @@ async function kirim() {
                                     <select v-model="j.pengganti_id" :disabled="!j.opsi"
                                         class="flex-1 min-w-0 px-2 py-2 rounded-lg border border-gray-200 text-[12px] outline-none bg-white truncate">
                                         <option value="">{{ j.opsi ? `Pilih guru pengganti… (${j.opsi.length} kosong)` : 'Memuat…' }}</option>
-                                        <option v-for="o in (j.opsi || [])" :key="o.id" :value="o.id">{{ labelCalon(o) }}</option>
+                                        <option v-for="o in opsiTampil(j)" :key="o.id" :value="o.id">{{ labelCalon(o) }}</option>
                                     </select>
                                     <button @click="tunjukPengganti(j)" :disabled="!j.pengganti_id || j.assigning"
                                         class="shrink-0 whitespace-nowrap px-3.5 py-2 rounded-lg bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-50 active:scale-[0.98] transition">
                                         {{ j.assigning ? '…' : 'Tunjuk' }}
                                     </button>
                                 </div>
+                                <button v-if="!j.bukaMerangkap && (j.opsiMerangkap || []).length"
+                                    @click="j.bukaMerangkap = true" type="button"
+                                    class="mt-1.5 text-[10px] font-semibold text-[#0C78FF] underline underline-offset-2">
+                                    Tampilkan juga guru yang merangkap ({{ j.opsiMerangkap.length }})
+                                </button>
+                                <p v-else-if="j.bukaMerangkap" class="mt-1.5 text-[10px] text-gray-400">
+                                    Guru yang sedang mengajar ikut ditampilkan — mereka akan memegang 2 kelas sekaligus.
+                                </p>
                                 <p v-if="calonTerpilih(j)?.gabung" class="mt-1.5 text-[10px] text-sky-700 leading-snug">
                                     Kelas ini akan <b>digabung</b> dengan kelas {{ calonTerpilih(j).gabung }} yang diajar {{ calonTerpilih(j).nama }} pada jam yang sama.
                                     Absen &amp; jurnal tiap kelas tetap diisi terpisah, dan guru piket akan dikabari.

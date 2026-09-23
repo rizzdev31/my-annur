@@ -1264,8 +1264,16 @@ class AbsensiApiController extends Controller
             $jadwal = \App\Models\JadwalMengajar::find((int) $request->jadwal_mengajar_id);
             if ($jadwal && $jadwal->tenaga_pendidik_id === $tp->id) {
                 $tgl = $request->filled('tanggal') ? Carbon::parse($request->tanggal) : TimezoneHelper::today();
-                return response()->json(['success' => true, 'data' =>
-                    (new \App\Services\PenggantiMengajarService())->calonPengganti($jadwal, $tgl, $tp->id)]);
+                $svc = new \App\Services\PenggantiMengajarService();
+
+                // `data` = calon yang jamnya kosong (bawaan). `merangkap` = guru yang
+                // harus memegang 2 kelas sekaligus — ditampilkan hanya bila penunjuk
+                // membuka tautannya sendiri, agar merangkap tidak jadi kebiasaan.
+                return response()->json([
+                    'success'   => true,
+                    'data'      => $svc->calonPengganti($jadwal, $tgl, $tp->id),
+                    'merangkap' => $svc->calonMerangkap($jadwal, $tgl, $tp->id),
+                ]);
             }
         }
 
