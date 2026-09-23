@@ -278,12 +278,12 @@ const gradeCls = (g) => ({ A: 'bg-emerald-100 text-emerald-700', B: 'bg-blue-100
 const showForm = ref(false)
 const editTarget = ref(null)
 const saving = ref(false)
-const blank = () => ({ nama: '', deskripsi: '', pembina_id: null, hari: null, jam_mulai: '', jam_selesai: '', lokasi: '', wajib_lokasi: true, pertemuan_per_bulan: 4, tahun_ajaran_id: null, kuota: null, nominal_vakasi: null, batas_isi_hari: null })
+const blank = () => ({ nama: '', deskripsi: '', pembina_id: null, hari: null, jam_mulai: '', jam_selesai: '', lokasi: '', wajib_lokasi: true, pertemuan_per_bulan: 3, tahun_ajaran_id: null, kuota: null, nominal_vakasi: null, batas_isi_hari: null })
 const form = reactive(blank())
 function openCreate() { Object.assign(form, blank()); editTarget.value = null; showForm.value = true }
 function openEdit(e) {
     editTarget.value = e
-    Object.assign(form, { nama: e.nama, deskripsi: e.deskripsi ?? '', pembina_id: e.pembina_id, hari: e.hari, jam_mulai: e.jam_mulai ?? '', jam_selesai: e.jam_selesai ?? '', lokasi: e.lokasi ?? '', wajib_lokasi: e.wajib_lokasi !== false, pertemuan_per_bulan: e.pertemuan_per_bulan ?? 4, tahun_ajaran_id: e.tahun_ajaran_id, kuota: e.kuota, nominal_vakasi: e.nominal_vakasi, batas_isi_hari: e.batas_isi_hari })
+    Object.assign(form, { nama: e.nama, deskripsi: e.deskripsi ?? '', pembina_id: e.pembina_id, hari: e.hari, jam_mulai: e.jam_mulai ?? '', jam_selesai: e.jam_selesai ?? '', lokasi: e.lokasi ?? '', wajib_lokasi: e.wajib_lokasi !== false, pertemuan_per_bulan: e.pertemuan_per_bulan ?? 3, tahun_ajaran_id: e.tahun_ajaran_id, kuota: e.kuota, nominal_vakasi: e.nominal_vakasi, batas_isi_hari: e.batas_isi_hari })
     showForm.value = true
 }
 function submit() {

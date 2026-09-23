@@ -367,22 +367,41 @@ class PayrollCalculationService
     /**
      * Vakasi Ekstrakurikuler — flat per PERTEMUAN yang absensinya diisi & diselesaikan
      * oleh pembina dalam periode. Nominal = snapshot pertemuan (override ekskul / SettingVakasi).
+     *
+     * Jatah ekskul berbasis BULAN KALENDER dan ikut ter-reset tiap bulan, maka yang
+     * dibayar pun dibatasi per (ekskul × bulan) sebanyak jatahnya. Kelebihan tetap
+     * ditampilkan di slip sebagai baris Rp 0 agar terlihat, bukan hilang diam-diam
+     * — penting bila periode penggajian tidak persis sama dengan bulan kalender.
      */
     private function hitungVakasiEkstrakurikuler(TenagaPendidik $guru, Carbon $mulai, Carbon $selesai): array
     {
-        $pertemuan = \App\Models\EkstrakurikulerPertemuan::with('ekstrakurikuler:id,nama')
+        $pertemuan = \App\Models\EkstrakurikulerPertemuan::with('ekstrakurikuler:id,nama,pertemuan_per_bulan')
             ->where('pembina_id', $guru->id)
             ->where('status', 'selesai')->where('vakasi_diberikan', true)
             ->whereBetween('tanggal', [$mulai->toDateString(), $selesai->toDateString()])
             ->orderBy('tanggal')->get();
 
+        $sesi    = app(\App\Services\EkstrakurikulerSesiService::class);
+        $terpakai = [];   // [ekskul_id][YYYY-MM] => jumlah yang sudah dibayar
         $total = 0; $details = [];
+
         foreach ($pertemuan as $p) {
-            $nominal = (float) $p->nominal_vakasi;
+            $ekskul  = $p->ekstrakurikuler;
+            $bulan   = $p->tanggal->format('Y-m');
+            $kuota   = $ekskul ? $sesi->kuotaBulanan($ekskul) : \App\Services\EkstrakurikulerSesiService::KUOTA_BULANAN_DEFAULT;
+            $sudah   = $terpakai[$p->ekstrakurikuler_id][$bulan] ?? 0;
+            $lebih   = $sudah >= $kuota;
+            $nominal = $lebih ? 0.0 : (float) $p->nominal_vakasi;
+
+            $terpakai[$p->ekstrakurikuler_id][$bulan] = $sudah + 1;
             $total += $nominal;
+
+            $labelBulan = $p->tanggal->locale('id')->isoFormat('MMM YYYY');
             $details[] = [
                 'tipe'             => 'vakasi_ekstrakurikuler',
-                'keterangan'       => 'Vakasi Ekskul ' . ($p->ekstrakurikuler?->nama ?? '—') . ' — ' . $p->tanggal->toDateString(),
+                'keterangan'       => 'Vakasi Ekskul ' . ($ekskul?->nama ?? '—') . ' — ' . $p->tanggal->toDateString()
+                    . ' (' . min($sudah + 1, $kuota) . "/{$kuota} {$labelBulan})"
+                    . ($lebih ? ' — melebihi jatah bulan, tidak dibayar' : ''),
                 'jumlah_satuan'    => 1,
                 'satuan'           => 'pertemuan',
                 'nilai_per_satuan' => $nominal,

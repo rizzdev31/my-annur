@@ -26,8 +26,8 @@ use Carbon\Carbon;
  */
 class EkstrakurikulerSesiService
 {
-    /** Jatah pertemuan sebulan bila ekskul belum disetel. */
-    public const KUOTA_BULANAN_DEFAULT = 4;
+    /** Jatah pertemuan sebulan bila ekskul belum disetel (kebijakan 23 Sep 2026: 3×). */
+    public const KUOTA_BULANAN_DEFAULT = 3;
 
     public function __construct(private readonly LokasiAbsensiService $lokasi = new LokasiAbsensiService()) {}
 
