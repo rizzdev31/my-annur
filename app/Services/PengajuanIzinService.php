@@ -232,13 +232,25 @@ class PengajuanIzinService
         $jenis         = $pengajuan->jenisPengajuan;
         $statusAbsensi = $pengajuan->getStatusAbsensi();
 
-        $hariLibur = HariLibur::whereBetween('tanggal', [
-            $pengajuan->tanggal_mulai,
-            $pengajuan->tanggal_selesai,
-        ])->where('pengaruh_gaji', true)
-          ->pluck('tanggal')
-          ->map(fn($t) => Carbon::parse($t)->format('Y-m-d'))
-          ->toArray();
+        // Izin SEMENTARA & DATANG TERLAMBAT tidak membebaskan kehadiran harian —
+        // gurunya tetap masuk kerja. Seluruh bagian lain sistem sudah mengecualikan
+        // keduanya; dulu hanya bagian ini yang belum, sehingga hari itu tertimpa
+        // jadi "izin sehari penuh" bila persetujuan datang sebelum guru check-in
+        // (2 kasus izin sementara + 1 datang terlambat di produksi).
+        if ($pengajuan->is_sementara || $pengajuan->is_datang_terlambat) {
+            $this->catatKeteranganIzinJam($pengajuan);
+            $pengajuan->update(['absensi_sudah_diupdate' => true]);
+            return;
+        }
+
+        // Libur bisa berlangsung beberapa hari — dulu hanya tanggal AWAL yang cocok,
+        // sehingga hari ke-2 dst tetap dibuatkan baris izin.
+        $hariLibur = [];
+        foreach (HariLibur::where('is_aktif', true)->whereNull('dibatalkan_pada')->get() as $hl) {
+            $s = Carbon::parse($hl->tanggal);
+            $e = Carbon::parse($hl->tanggal_selesai ?? $hl->tanggal);
+            while ($s->lte($e)) { $hariLibur[] = $s->format('Y-m-d'); $s->addDay(); }
+        }
 
         $hariKerjaMap = [
             'Monday'    => 'senin',
@@ -250,10 +262,10 @@ class PengajuanIzinService
             'Sunday'    => 'ahad',
         ];
 
-        $settingJamKerja = \App\Models\SettingJamKerja::where('is_default', true)->first();
-        $hariKerja = $settingJamKerja
-            ? ($settingJamKerja->hari_kerja ?? ['senin','selasa','rabu','kamis','jumat','sabtu'])
-            : ['senin','selasa','rabu','kamis','jumat','sabtu'];
+        // Hari kerja mengikuti jam kerja GURU pada tanggal itu (shift satpam/asrama,
+        // libur mingguan sendiri, dan guru yang dibebaskan absen harian) — bukan
+        // jam kerja default global seperti sebelumnya.
+        $guruIzin = $pengajuan->tenagaPendidik;
 
         $period = CarbonPeriod::create($pengajuan->tanggal_mulai, $pengajuan->tanggal_selesai);
 
@@ -261,10 +273,9 @@ class PengajuanIzinService
             $namaHari   = $hariKerjaMap[$tanggal->format('l')];
             $tanggalStr = $tanggal->format('Y-m-d');
 
-            // Skip hari libur & non-hari kerja
-            if (!in_array($namaHari, $hariKerja) || in_array($tanggalStr, $hariLibur)) {
-                continue;
-            }
+            // Skip hari libur & hari yang memang bukan hari kerja guru ini
+            if (in_array($tanggalStr, $hariLibur, true)) continue;
+            if ($guruIzin && !$guruIzin->jadwalHari($namaHari, $tanggalStr)) continue;
 
             AbsensiHarian::updateOrCreate(
                 [
@@ -283,12 +294,77 @@ class PengajuanIzinService
         $pengajuan->update(['absensi_sudah_diupdate' => true]);
     }
 
+    /**
+     * Izin berbasis jam (sementara / datang terlambat): kehadiran harian TIDAK
+     * diubah, tapi jejaknya dicatat agar terbaca di laporan — dan statusnya
+     * dihitung ulang supaya izin yang disetujui SETELAH guru check-in tetap
+     * berlaku (mis. datang terlambat yang disetujui siang hari, dulu tetap
+     * tercatat "terlambat").
+     */
+    private function catatKeteranganIzinJam(PengajuanIzin $pengajuan): void
+    {
+        $jenis = $pengajuan->jenisPengajuan;
+        $jam   = $pengajuan->jam_mulai
+            ? ' ' . substr((string) $pengajuan->jam_mulai, 0, 5)
+                . ($pengajuan->jam_selesai ? '–' . substr((string) $pengajuan->jam_selesai, 0, 5) : '')
+            : '';
+        $ket = "{$jenis->nama}{$jam}: {$pengajuan->alasan} (Pengajuan #{$pengajuan->id})";
+
+        $period = CarbonPeriod::create($pengajuan->tanggal_mulai, $pengajuan->tanggal_selesai);
+        foreach ($period as $tanggal) {
+            $tgl = $tanggal->format('Y-m-d');
+
+            $absensi = AbsensiHarian::where('tenaga_pendidik_id', $pengajuan->tenaga_pendidik_id)
+                ->whereDate('tanggal', $tgl)->first();
+            if (!$absensi) continue;   // belum check-in → biarkan alur absensi biasa
+
+            $data = ['keterangan' => trim(($absensi->keterangan ? $absensi->keterangan . ' | ' : '') . $ket)];
+
+            if ($absensi->jam_masuk && !$absensi->is_koreksi) {
+                $hasil = \App\Services\AbsensiKalkulasiService::hitungStatus(
+                    $absensi->jam_masuk, $tgl, $pengajuan->tenagaPendidik
+                );
+                $data['status']          = $hasil['status'];
+                $data['menit_terlambat'] = $hasil['menit_terlambat'];
+            }
+
+            $absensi->update($data);
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════════════
     // ROLLBACK ABSENSI — jika pengajuan dibatalkan
     // ════════════════════════════════════════════════════════════════════════
 
     private function rollbackAbsensi(PengajuanIzin $pengajuan): void
     {
+        // Izin berbasis jam tidak pernah membuat baris — ia hanya menempelkan
+        // keterangan pada absensi yang sudah ada. Barisnya jangan dihapus
+        // (itu kehadiran asli guru), cukup keterangannya yang dicabut.
+        if ($pengajuan->is_sementara || $pengajuan->is_datang_terlambat) {
+            foreach (AbsensiHarian::where('tenaga_pendidik_id', $pengajuan->tenaga_pendidik_id)
+                ->whereBetween('tanggal', [$pengajuan->tanggal_mulai, $pengajuan->tanggal_selesai])
+                ->where('keterangan', 'like', "%Pengajuan #{$pengajuan->id}%")->get() as $a) {
+
+                $sisa = collect(explode(' | ', (string) $a->keterangan))
+                    ->reject(fn ($b) => str_contains($b, "Pengajuan #{$pengajuan->id}"))
+                    ->implode(' | ');
+
+                $data = ['keterangan' => $sisa ?: null];
+                if ($a->jam_masuk && !$a->is_koreksi) {
+                    $h = \App\Services\AbsensiKalkulasiService::hitungStatus(
+                        $a->jam_masuk, Carbon::parse($a->tanggal)->toDateString(), $pengajuan->tenagaPendidik
+                    );
+                    $data['status']          = $h['status'];
+                    $data['menit_terlambat'] = $h['menit_terlambat'];
+                }
+                $a->update($data);
+            }
+
+            $pengajuan->update(['absensi_sudah_diupdate' => false]);
+            return;
+        }
+
         // Hapus absensi yang dibuat dari pengajuan ini
         AbsensiHarian::where('tenaga_pendidik_id', $pengajuan->tenaga_pendidik_id)
             ->whereBetween('tanggal', [$pengajuan->tanggal_mulai, $pengajuan->tanggal_selesai])

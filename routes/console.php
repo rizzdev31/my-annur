@@ -15,6 +15,12 @@ Schedule::job(new \App\Jobs\SyncVariabelJob)->hourly();
 // sampai shift kerjanya berakhir (overnight-aware). Idempotent + lewati libur.
 Schedule::command('absensi:auto-alfa')->everyFifteenMinutes()->withoutOverlapping();
 
+// Selaraskan status absensi tiap dini hari: hitung ulang dengan jam kerja/shift
+// pada tanggalnya + izin datang terlambat, dan ubah baris alfa menjadi libur bila
+// hari liburnya baru ditetapkan belakangan. Idempoten; melewati koreksi manual.
+Schedule::command('absensi:sinkron-status --dari=' . now()->subDays(7)->toDateString())
+    ->dailyAt('01:15')->withoutOverlapping();
+
 // Auto-Checkout tiap 30 menit: tutup absensi yang sudah check-in tapi tak pernah
 // check-out, SETELAH kesempatan check-out manual habis (window shift berikutnya
 // sudah buka). Jam pulang diisi sesuai jadwal, bukan waktu perintah berjalan.

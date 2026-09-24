@@ -65,7 +65,7 @@ class AbsensiController extends Controller
         $jadwal   = $jamKerja?->getJamUntukHari($namaHari);
 
         // Bangun data per guru (termasuk yang belum absen)
-        $data = $guruAktif->map(function ($guru) use ($absensiAda, $tanggal, $jadwal) {
+        $data = $guruAktif->map(function ($guru) use ($absensiAda, $tanggal, $jadwal, $hariLibur) {
             $absensi = $absensiAda->get($guru->id);
 
             // ── Kalkulasi status & terlambat otomatis ─────────────────────
@@ -75,21 +75,24 @@ class AbsensiController extends Controller
                 ?? ($guru->wajibAbsenHarian() ? 'belum' : 'tanpa_absen');
             $menitTerlambat = (int) ($absensi?->menit_terlambat ?? 0);
 
-            // Hanya kalkulasi ulang jika ada jam masuk dan belum dikoreksi manual
-            if ($absensi && $absensi->jam_masuk && !$absensi->is_koreksi && $jadwal) {
+            // Hitung ulang HANYA untuk tampilan, dan WAJIB dengan konteks gurunya
+            // ($guru → jam kerja/shift miliknya pada tanggal itu + izin datang
+            // terlambat). Dulu dihitung tanpa konteks (jam kerja default) lalu
+            // ditulis balik diam-diam — guru asrama & satpam jadi tercatat telat
+            // ratusan menit hanya karena halaman ini dibuka. Penulisan dipindah ke
+            // perintah `absensi:hitung-ulang` yang memakai aturan yang sama.
+            if ($absensi && $absensi->jam_masuk && !$absensi->is_koreksi) {
                 $hasil          = AbsensiKalkulasiService::hitungStatus(
-                    $absensi->jam_masuk, $tanggal->toDateString()
+                    $absensi->jam_masuk, $tanggal->toDateString(), $guru
                 );
                 $status         = $hasil['status'];
                 $menitTerlambat = $hasil['menit_terlambat'];
+            }
 
-                // Simpan ke DB jika berbeda (sync otomatis)
-                if ($status !== $absensi->status || $menitTerlambat !== ($absensi->menit_terlambat ?? 0)) {
-                    $absensi->updateQuietly([
-                        'status'          => $status,
-                        'menit_terlambat' => $menitTerlambat,
-                    ]);
-                }
+            // Hari libur pesantren: tanpa catatan, tampilkan "libur" — bukan "belum
+            // absen" seolah guru lalai. Rekap per guru sudah begini sejak awal.
+            if (!$absensi && $hariLibur && $guru->wajibAbsenHarian()) {
+                $status = 'libur';
             }
 
             // ── Format jam H:i ─────────────────────────────────────────────

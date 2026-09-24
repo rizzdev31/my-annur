@@ -115,8 +115,11 @@ class LaporanController extends Controller
 
             // Hitung ulang jika ada jam masuk dan belum dikoreksi manual
             if ($a && $a->jam_masuk && !($a->is_koreksi ?? false)) {
+                // Konteks guru WAJIB: jam kerja/shift miliknya pada tanggal itu &
+                // izin datang terlambat. Tanpa ini laporan memakai jam kerja default
+                // dan guru asrama/satpam selalu terbaca terlambat.
                 $hasil          = AbsensiKalkulasiService::hitungStatus(
-                    $a->jam_masuk, $tanggal->toDateString()
+                    $a->jam_masuk, $tanggal->toDateString(), $g
                 );
                 $status         = $hasil['status'];
                 $menitTerlambat = $hasil['menit_terlambat'];
@@ -1029,7 +1032,7 @@ class LaporanController extends Controller
                 // Rekalkulasi keterlambatan hanya utk hadir/terlambat & belum dikoreksi
                 if ($a->jam_masuk && !($a->is_koreksi ?? false)
                     && in_array($a->status, ['hadir', 'terlambat'])) {
-                    $h = AbsensiKalkulasiService::hitungStatus($a->jam_masuk, $tglStr);
+                    $h = AbsensiKalkulasiService::hitungStatus($a->jam_masuk, $tglStr, $guru);
                     $status = $h['status'];
                     $menit  = (int) $h['menit_terlambat'];
                 }

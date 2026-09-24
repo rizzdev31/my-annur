@@ -29,8 +29,11 @@ class AbsensiKalkulasiService
         // yang menyimpan key 'senin','selasa',... bukan 'monday','tuesday',...
         $namaHari = TimezoneHelper::namaHariDB($tgl);
 
-        // Jam kerja per individu tendik (fallback default global bila tak di-assign).
-        $jamKerja = $tp?->jamKerjaAktif() ?? SettingJamKerja::getDefault();
+        // Jam kerja per individu tendik PADA TANGGAL ITU (fallback default global).
+        // Tanggal wajib diteruskan: shift satpam/asrama bergilir per rentang, jadi
+        // menghitung ulang hari lalu dengan shift HARI INI menghasilkan status ngawur
+        // (mis. check-in 21:15 saat shift malam terbaca "terlambat 960 menit").
+        $jamKerja = $tp?->jamKerjaAktif($tanggal) ?? SettingJamKerja::getDefault();
         $jadwal   = $jamKerja?->getJamUntukHari($namaHari);
 
         if (!$jadwal) {
