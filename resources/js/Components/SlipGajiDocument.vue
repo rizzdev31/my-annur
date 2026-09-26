@@ -86,6 +86,22 @@
                     </div>
                     <div v-if="!slip.potongan?.length" class="px-4 py-3 text-sm text-[#434656] italic">Tidak ada potongan.</div>
                 </div>
+                <p v-if="slip.potongan_tidak_terbayar > 0" class="mt-2 text-[11px] text-[#9c1c00] leading-relaxed">
+                    Potongan {{ rupiah(slip.potongan_tidak_terbayar) }} belum dapat dipotong bulan ini karena melebihi
+                    penerimaan. Gaji diterima ditahan pada Rp 0, sisa potongan menjadi catatan bendahara.
+                </p>
+
+                <!-- Rujukan tarif: supaya setiap nominal bisa dicek sendiri -->
+                <div v-if="slip.tarif?.length" class="mt-5">
+                    <h3 class="mono-label mb-2">TARIF YANG BERLAKU</h3>
+                    <div class="rounded-lg border border-[#e2e2e2] divide-y divide-[#e2e2e2]">
+                        <div v-for="(t, i) in slip.tarif" :key="'t' + i"
+                            class="flex justify-between items-baseline px-4 py-2 text-[12px]">
+                            <span class="text-[#434656]">{{ t.label }}</span>
+                            <span class="tabular-nums text-[#1b1b1b] whitespace-nowrap">{{ rupiah(t.nominal) }}<span class="text-[#434656]"> / {{ t.satuan }}</span></span>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Tanda tangan -->
                 <div class="mt-8 text-sm">

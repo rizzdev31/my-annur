@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import { auth } from '../store/auth'
@@ -11,6 +11,20 @@ const loading = ref(true)
 const error = ref('')
 
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+const bukaTarif = ref(false)
+
+// Rincian bisa belum lengkap pada periode lama (dulu tidak semua komponen
+// disimpan per baris). Selisihnya ditampilkan apa adanya supaya jumlah baris
+// selalu pas dengan Total Penerimaan — tidak ada rupiah yang "hilang".
+const jumlah = (rows) => (rows || []).reduce((a, x) => a + Number(x.subtotal || 0), 0)
+const selisihPendapatan = computed(() => {
+    if (!d.value?.breakdown_pendapatan?.length) return 0
+    return Math.max(0, Number(d.value.total_pendapatan || 0) - jumlah(d.value.breakdown_pendapatan))
+})
+const selisihPotongan = computed(() => {
+    if (!d.value?.breakdown_potongan?.length) return 0
+    return Math.max(0, Number(d.value.total_potongan || 0) - jumlah(d.value.breakdown_potongan))
+})
 
 const statusColor = (s) => ({
     dibayar: 'bg-emerald-500', final: 'bg-[#0041c8]', draft: 'bg-gray-400',
@@ -73,10 +87,19 @@ onMounted(load)
                 <div class="divide-y divide-gray-50">
                     <div v-for="(it, i) in d.breakdown_pendapatan" :key="'p'+i" class="py-2 flex items-start justify-between gap-3">
                         <div class="min-w-0">
-                            <p class="text-[13px] text-gray-700">{{ it.label || it.keterangan }}</p>
-                            <p v-if="it.jumlah_satuan" class="text-[10px] text-gray-400">{{ it.jumlah_satuan }} {{ it.satuan }} × {{ rp(it.nilai_per_satuan) }}</p>
+                            <p class="text-[13px] text-gray-700">{{ it.keterangan || it.label }}</p>
+                            <p class="text-[10px] text-gray-400">
+                                <span v-if="it.jumlah_satuan">{{ it.jumlah_satuan }} {{ it.satuan }} × {{ rp(it.nilai_per_satuan) }} · </span>{{ it.label }}
+                            </p>
                         </div>
                         <p class="text-[13px] font-semibold text-gray-800 tabular-nums shrink-0">{{ rp(it.subtotal) }}</p>
+                    </div>
+                    <div v-if="selisihPendapatan > 0" class="py-2 flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-[13px] text-gray-700">Komponen lain</p>
+                            <p class="text-[10px] text-gray-400">Belum dirinci per baris pada periode ini</p>
+                        </div>
+                        <p class="text-[13px] font-semibold text-gray-800 tabular-nums shrink-0">{{ rp(selisihPendapatan) }}</p>
                     </div>
                     <div v-if="!d.breakdown_pendapatan?.length && d.gaji_pokok" class="py-2 flex justify-between">
                         <span class="text-[13px] text-gray-700">Gaji Pokok</span><span class="text-[13px] font-semibold tabular-nums">{{ rp(d.gaji_pokok) }}</span>
@@ -93,10 +116,16 @@ onMounted(load)
                     <div class="divide-y divide-gray-50">
                         <div v-for="(it, i) in d.breakdown_potongan" :key="'x'+i" class="py-2 flex items-start justify-between gap-3">
                             <div class="min-w-0">
-                                <p class="text-[13px] text-gray-700">{{ it.label || it.keterangan }}</p>
-                                <p v-if="it.jumlah_satuan" class="text-[10px] text-gray-400">{{ it.jumlah_satuan }} {{ it.satuan }} × {{ rp(it.nilai_per_satuan) }}</p>
+                                <p class="text-[13px] text-gray-700">{{ it.keterangan || it.label }}</p>
+                                <p class="text-[10px] text-gray-400">
+                                    <span v-if="it.jumlah_satuan">{{ it.jumlah_satuan }} {{ it.satuan }} × {{ rp(it.nilai_per_satuan) }} · </span>{{ it.label }}
+                                </p>
                             </div>
                             <p class="text-[13px] font-semibold text-red-500 tabular-nums shrink-0">− {{ rp(it.subtotal) }}</p>
+                        </div>
+                        <div v-if="selisihPotongan > 0" class="py-2 flex justify-between">
+                            <span class="text-[13px] text-gray-500">Potongan lain</span>
+                            <span class="text-[13px] font-semibold text-red-500 tabular-nums">− {{ rp(selisihPotongan) }}</span>
                         </div>
                         <div v-if="!d.breakdown_potongan?.length" class="py-2 flex justify-between">
                             <span class="text-[13px] text-gray-500">Potongan</span><span class="text-[13px] font-semibold text-red-500 tabular-nums">− {{ rp(d.total_potongan) }}</span>
@@ -114,6 +143,30 @@ onMounted(load)
                     <span class="text-xl font-extrabold tabular-nums">{{ rp(d.gaji_bersih) }}</span>
                 </div>
                 <p v-if="d.dibayar_pada" class="text-[10px] text-gray-400 text-center mt-2">Dibayar pada {{ d.dibayar_pada }}</p>
+
+                <!-- Potongan yang melebihi pendapatan bulan ini -->
+                <p v-if="d.potongan_tidak_terbayar > 0" class="mt-3 text-[11px] text-red-500 leading-relaxed">
+                    Potongan {{ rp(d.potongan_tidak_terbayar) }} belum terpotong bulan ini karena melebihi penerimaan.
+                    Gaji diterima ditahan Rp 0 dan sisanya menjadi catatan bendahara.
+                </p>
+
+                <!-- Tarif berlaku: guru bisa mencocokkan sendiri tiap nominal -->
+                <div v-if="d.tarif?.length" class="mt-4 rounded-2xl border border-gray-100 overflow-hidden">
+                    <button type="button" @click="bukaTarif = !bukaTarif"
+                        class="w-full px-4 py-3 flex items-center justify-between bg-gray-50 active:bg-gray-100 transition">
+                        <span class="text-[12px] font-bold text-gray-600">Tarif yang berlaku</span>
+                        <svg class="w-4 h-4 text-gray-400 transition-transform" :class="bukaTarif ? 'rotate-180' : ''"
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <div v-if="bukaTarif" class="divide-y divide-gray-50">
+                        <div v-for="(t, i) in d.tarif" :key="'t'+i" class="px-4 py-2.5 flex items-center justify-between">
+                            <span class="text-[12px] text-gray-600">{{ t.label }}</span>
+                            <span class="text-[12px] font-semibold text-gray-800 tabular-nums">{{ rp(t.nominal) }}<span class="text-gray-400 font-normal"> / {{ t.satuan }}</span></span>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Statistik -->
                 <div v-if="d.statistik" class="mt-5">

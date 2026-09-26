@@ -120,6 +120,9 @@ class PayrollApiController extends Controller
                     ->filter(fn($d) => $d->isPotongan())
                     ->map(fn($d) => $this->formatDetailItem($d))
                     ->values(),
+                // Tarif vakasi yang berlaku untuk guru ini — supaya ia bisa
+                // mencocokkan sendiri nominal tiap komponen di slipnya.
+                'tarif' => \App\Services\SlipGajiBuilder::tarifBerlaku($tp),
             ],
         ]);
     }
@@ -163,6 +166,11 @@ class PayrollApiController extends Controller
             'vakasi_tugas_jabatan'    => $g->vakasi_tugas_jabatan,
             'vakasi_tugas_tambahan'   => $g->vakasi_tugas_tambahan,
             'vakasi_peserta_kegiatan' => $g->vakasi_peserta_kegiatan,
+            // Komponen yang dulu tidak terkirim ke aplikasi guru sehingga
+            // rincian di slip tidak pernah pas dengan totalnya.
+            'vakasi_piket'            => $g->vakasi_piket ?? 0,
+            'vakasi_ekstrakurikuler'  => $g->vakasi_ekstrakurikuler ?? 0,
+            'vakasi_lembur'           => $g->vakasi_lembur ?? 0,
             'tunjangan_lainnya'       => $g->tunjangan_lainnya,
 
             // Komponen potongan
@@ -172,6 +180,9 @@ class PayrollApiController extends Controller
             'potongan_lainnya'        => $g->potongan_lainnya,
             'potongan_liburan'        => $g->potongan_liburan,
             'keterangan_liburan'      => $g->keterangan_liburan,
+            'potongan_guru'           => $g->potongan_guru ?? 0,
+            // Potongan yang melebihi pendapatan bulan ini (belum terpotong).
+            'potongan_tidak_terbayar' => $g->potongan_tidak_terbayar ?? 0,
 
             // Statistik absensi bulan ini
             'statistik' => [
