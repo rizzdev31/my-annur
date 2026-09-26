@@ -19,36 +19,6 @@ class SlipGajiBuilder
      * Identitas instansi default (dipakai slip gaji & laporan vakasi).
      * Sesuaikan bila kelak ada master data Profil Instansi.
      */
-    /**
-     * Tarif vakasi yang berlaku untuk guru ini (dibaca dari Setting Vakasi dengan
-     * urutan lingkup yang sama seperti perhitungan gaji). Ditampilkan di slip
-     * sebagai keterangan, bukan dipakai menghitung ulang.
-     */
-    public static function tarifBerlaku($guru): array
-    {
-        if (!$guru) return [];
-
-        $ambil = function (string $tipe) use ($guru) {
-            $q = \App\Models\SettingVakasi::where('tipe_aktivitas', $tipe)->where('is_aktif', true);
-            $s = (clone $q)->whereJsonContains('tenaga_pendidik_ids', $guru->id)->first()
-                ?? (clone $q)->orderByDesc('berlaku_mulai')->first();
-            return $s ? ['nominal' => (float) $s->nominal, 'satuan' => $s->satuan] : null;
-        };
-
-        return collect([
-            'absen_harian'     => 'Kehadiran harian',
-            'absen_mengajar'   => 'Mengajar pengganti',
-            'tugas_tambahan'   => 'Tugas tambahan',
-            'piket'            => 'Tugas piket',
-            'ekstrakurikuler'  => 'Pembina ekstrakurikuler',
-            'lembur'           => 'Lembur',
-        ])->map(fn ($label, $tipe) => ($t = $ambil($tipe)) ? [
-            'label'   => $label,
-            'nominal' => $t['nominal'],
-            'satuan'  => str_replace('per_', '', (string) $t['satuan']),
-        ] : null)->filter()->values()->all();
-    }
-
     public static function instansi(): array
     {
         $logoPath = public_path('storage/logo1.png');
@@ -246,9 +216,6 @@ class SlipGajiBuilder
                 // Bila potongan melebihi pendapatan, gaji bersih dibulatkan ke 0.
                 // Sisanya ditulis terbuka di slip supaya guru tahu, bukan hilang.
                 'potongan_tidak_terbayar' => (float) ($penggajian->potongan_tidak_terbayar ?? 0),
-                // Dasar perhitungan yang sedang berlaku — supaya angka di slip bisa
-                // dicek sendiri oleh guru tanpa bertanya ke admin.
-                'tarif' => self::tarifBerlaku($penggajian->tenagaPendidik),
                 'tunjangan_lainnya' => (float) $penggajian->tunjangan_lainnya,
                 'potongan_lainnya'  => (float) $penggajian->potongan_lainnya,
             ],

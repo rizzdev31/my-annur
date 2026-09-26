@@ -11,7 +11,6 @@ const loading = ref(true)
 const error = ref('')
 
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
-const bukaTarif = ref(false)
 
 // Rincian bisa belum lengkap pada periode lama (dulu tidak semua komponen
 // disimpan per baris). Selisihnya ditampilkan apa adanya supaya jumlah baris
@@ -149,24 +148,6 @@ onMounted(load)
                     Potongan {{ rp(d.potongan_tidak_terbayar) }} belum terpotong bulan ini karena melebihi penerimaan.
                     Gaji diterima ditahan Rp 0 dan sisanya menjadi catatan bendahara.
                 </p>
-
-                <!-- Tarif berlaku: guru bisa mencocokkan sendiri tiap nominal -->
-                <div v-if="d.tarif?.length" class="mt-4 rounded-2xl border border-gray-100 overflow-hidden">
-                    <button type="button" @click="bukaTarif = !bukaTarif"
-                        class="w-full px-4 py-3 flex items-center justify-between bg-gray-50 active:bg-gray-100 transition">
-                        <span class="text-[12px] font-bold text-gray-600">Tarif yang berlaku</span>
-                        <svg class="w-4 h-4 text-gray-400 transition-transform" :class="bukaTarif ? 'rotate-180' : ''"
-                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                        </svg>
-                    </button>
-                    <div v-if="bukaTarif" class="divide-y divide-gray-50">
-                        <div v-for="(t, i) in d.tarif" :key="'t'+i" class="px-4 py-2.5 flex items-center justify-between">
-                            <span class="text-[12px] text-gray-600">{{ t.label }}</span>
-                            <span class="text-[12px] font-semibold text-gray-800 tabular-nums">{{ rp(t.nominal) }}<span class="text-gray-400 font-normal"> / {{ t.satuan }}</span></span>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Statistik -->
                 <div v-if="d.statistik" class="mt-5">

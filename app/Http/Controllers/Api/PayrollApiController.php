@@ -120,9 +120,6 @@ class PayrollApiController extends Controller
                     ->filter(fn($d) => $d->isPotongan())
                     ->map(fn($d) => $this->formatDetailItem($d))
                     ->values(),
-                // Tarif vakasi yang berlaku untuk guru ini — supaya ia bisa
-                // mencocokkan sendiri nominal tiap komponen di slipnya.
-                'tarif' => \App\Services\SlipGajiBuilder::tarifBerlaku($tp),
             ],
         ]);
     }
