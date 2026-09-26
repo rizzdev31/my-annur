@@ -220,6 +220,37 @@
                     </div>
 
                     <!-- Tabel -->
+
+        <!-- Notulensi kegiatan (PDF) -->
+        <div class="bg-white rounded-2xl border border-gray-200 p-5 mb-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h3 class="text-sm font-semibold text-gray-900">Notulensi Kegiatan</h3>
+                    <p v-if="kegiatan.ada_notulensi" class="text-xs text-gray-500 mt-0.5">
+                        {{ kegiatan.notulensi_nama }} · diunggah {{ kegiatan.notulensi_diunggah_pada }}
+                    </p>
+                    <p v-else class="text-xs text-amber-600 mt-0.5">
+                        Belum diunggah oleh {{ kegiatan.pengabsen?.nama }} — notulensi diunggah dari aplikasi guru.
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <a v-if="kegiatan.ada_notulensi" :href="kegiatan.notulensi_url" target="_blank"
+                        class="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs font-semibold">Buka PDF</a>
+                    <button v-if="kegiatan.ada_notulensi && !kegiatan.pengumuman_id" @click="terbitkanNotulensi"
+                        :disabled="terbitBusy"
+                        class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50">
+                        {{ terbitBusy ? 'Menerbitkan…' : 'Jadikan Pengumuman' }}
+                    </button>
+                    <button v-if="kegiatan.pengumuman_id" @click="cabutNotulensi" :disabled="terbitBusy"
+                        class="px-3 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 text-xs font-semibold disabled:opacity-50">
+                        Cabut Pengumuman
+                    </button>
+                </div>
+            </div>
+            <p v-if="kegiatan.pengumuman_id" class="mt-2 text-xs text-emerald-700">
+                Sudah tayang sebagai pengumuman untuk semua guru. Pengumuman lain tetap tayang — boleh lebih dari satu.
+            </p>
+        </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
                             <thead class="bg-gray-50">
@@ -442,6 +473,20 @@ import StatusBadge from '@/Components/Monitor/StatusBadge.vue'
 import MonitorIcon from '@/Components/Monitor/MonitorIcon.vue'
 
 const confirm = ref(null)
+
+const terbitBusy = ref(false)
+// Notulensi → pengumuman. Tidak menutup pengumuman lain: sejak 26 Sep 2026
+// pengumuman boleh tayang lebih dari satu sekaligus.
+function terbitkanNotulensi() {
+    terbitBusy.value = true
+    router.post(route('admin.smart-payroll.absensi-kegiatan.jadikan-pengumuman', props.kegiatan.id), {},
+        { preserveScroll: true, onFinish: () => { terbitBusy.value = false } })
+}
+function cabutNotulensi() {
+    terbitBusy.value = true
+    router.post(route('admin.smart-payroll.absensi-kegiatan.batalkan-pengumuman', props.kegiatan.id), {},
+        { preserveScroll: true, onFinish: () => { terbitBusy.value = false } })
+}
 
 const props = defineProps({
     kegiatan: { type: Object, default: () => ({}) },

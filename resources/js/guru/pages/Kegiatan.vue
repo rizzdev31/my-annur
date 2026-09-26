@@ -73,6 +73,42 @@ async function simpanAbsensi() {
 }
 
 // ── Tambah peserta ───────────────────────────────────────────────────────────
+// ── Notulensi PDF ────────────────────────────────────────────────────────────
+// Diunggah guru pengabsen; boleh sebelum maupun sesudah kegiatan diselesaikan,
+// karena berkasnya sering baru rapi setelah acara. Terkunci begitu notulensi
+// sudah diterbitkan admin sebagai pengumuman.
+const notulensiBusy = ref(false)
+const notulensiInput = ref(null)
+async function pilihNotulensi(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf') { toast.error('Notulensi harus berkas PDF.'); return }
+    notulensiBusy.value = true
+    try {
+        const fd = new FormData()
+        fd.append('notulensi', file)
+        const res = await api.post(`/kegiatan/${id}/notulensi`, fd,
+            { headers: { 'Content-Type': 'multipart/form-data' } })
+        k.value = { ...k.value, ...res.data.data }
+        toast.success(res.data.message || 'Notulensi tersimpan.')
+    } catch (err) {
+        toast.error(err.response?.data?.message || 'Gagal mengunggah notulensi.')
+    } finally {
+        notulensiBusy.value = false
+        if (notulensiInput.value) notulensiInput.value.value = ''
+    }
+}
+async function hapusNotulensi() {
+    notulensiBusy.value = true
+    try {
+        await api.delete(`/kegiatan/${id}/notulensi`)
+        k.value = { ...k.value, ada_notulensi: false, notulensi_nama: null, notulensi_url: null }
+        toast.success('Notulensi dihapus.')
+    } catch (err) {
+        toast.error(err.response?.data?.message || 'Gagal menghapus notulensi.')
+    } finally { notulensiBusy.value = false }
+}
+
 const addSheet = ref(false)
 const picked = ref([])
 const cari = ref('')
@@ -163,6 +199,35 @@ async function selesaikan() {
                     </div>
                 </li>
             </ul>
+
+            <!-- Notulensi PDF: wajib secara kebijakan, boleh diunggah sebelum atau
+                 sesudah kegiatan diselesaikan. -->
+            <div class="rounded-2xl border p-4 mb-3"
+                :class="k.ada_notulensi ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'">
+                <p class="text-sm font-bold" :class="k.ada_notulensi ? 'text-emerald-800' : 'text-amber-800'">
+                    {{ k.ada_notulensi ? 'Notulensi sudah diunggah' : 'Notulensi belum diunggah' }}
+                </p>
+                <p class="text-[11px] mt-0.5 leading-snug" :class="k.ada_notulensi ? 'text-emerald-700' : 'text-amber-700'">
+                    <template v-if="k.ada_notulensi">
+                        {{ k.notulensi_nama }}<span v-if="k.notulensi_diunggah_pada"> · {{ k.notulensi_diunggah_pada }}</span>
+                        <span v-if="k.notulensi_terkunci"> · sudah jadi pengumuman</span>
+                    </template>
+                    <template v-else>Unggah notulensi rapat/kegiatan dalam bentuk PDF (maks 8 MB).</template>
+                </p>
+                <input ref="notulensiInput" type="file" accept="application/pdf" class="hidden" @change="pilihNotulensi" />
+                <div class="flex flex-wrap gap-2 mt-3">
+                    <a v-if="k.ada_notulensi" :href="k.notulensi_url" target="_blank"
+                        class="px-3 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-bold text-gray-700">Buka PDF</a>
+                    <button v-if="!k.notulensi_terkunci" @click="notulensiInput?.click()" :disabled="notulensiBusy"
+                        class="px-3 py-2 rounded-xl bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-60">
+                        {{ notulensiBusy ? 'Mengunggah…' : (k.ada_notulensi ? 'Ganti PDF' : 'Unggah PDF') }}
+                    </button>
+                    <button v-if="k.ada_notulensi && !k.notulensi_terkunci" @click="hapusNotulensi" :disabled="notulensiBusy"
+                        class="px-3 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-bold text-rose-600 disabled:opacity-60">
+                        Hapus
+                    </button>
+                </div>
+            </div>
 
             <!-- Aksi -->
             <template v-if="!selesai">

@@ -676,6 +676,10 @@ class TugasApiController extends Controller
             return response()->json(['success' => false, 'message' => 'Kegiatan sudah ' . $kegiatan->status . '.'], 422);
         }
 
+        // Notulensi belum ada → tetap boleh diselesaikan, tetapi diingatkan dan
+        // ditandai agar muncul di daftar tunggakan admin.
+        $tanpaNotulensi = !$kegiatan->adaNotulensi();
+
         DB::transaction(function () use ($kegiatan) {
             $kegiatan->update(['status' => 'selesai']);
 
@@ -728,7 +732,9 @@ class TugasApiController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Kegiatan selesai! Vakasi didistribusikan ke {$hadir} peserta.",
+            'message' => "Kegiatan selesai! Vakasi didistribusikan ke {$hadir} peserta."
+                . ($tanpaNotulensi ? ' Notulensi PDF belum diunggah — mohon segera dilengkapi.' : ''),
+            'perlu_notulensi' => $tanpaNotulensi,
             'data'    => $this->formatKegiatan($kegiatan->fresh()),
         ]);
     }
@@ -776,6 +782,76 @@ class TugasApiController extends Controller
         ];
     }
 
+    /**
+     * POST /kegiatan/{id}/notulensi — guru pengabsen mengunggah notulensi PDF.
+     * Bisa dilakukan sebelum maupun sesudah kegiatan diselesaikan (berkas notulensi
+     * umumnya baru rapi setelah acara). Mengunggah ulang menggantikan berkas lama,
+     * kecuali notulensi itu sudah dijadikan pengumuman.
+     */
+    public function unggahNotulensi(Request $request, $kegiatanId): JsonResponse
+    {
+        $request->validate([
+            'notulensi' => 'required|file|mimes:pdf|max:8192',
+        ], [], ['notulensi' => 'berkas notulensi']);
+
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return $this->notFound();
+
+        $kegiatan = AbsensiKegiatan::where('pengabsen_id', $tp->id)->findOrFail($kegiatanId);
+
+        if ($kegiatan->pengumuman_id) {
+            return response()->json(['success' => false,
+                'message' => 'Notulensi ini sudah dijadikan pengumuman — hubungi admin bila perlu diganti.',
+                'code' => 'TERKUNCI'], 422);
+        }
+
+        $lama = $kegiatan->notulensi_file;
+        $path = $request->file('notulensi')->store("notulensi-kegiatan/{$kegiatan->id}", 'public');
+
+        $kegiatan->update([
+            'notulensi_file'          => $path,
+            'notulensi_nama'          => $request->file('notulensi')->getClientOriginalName(),
+            'notulensi_diunggah_pada' => TimezoneHelper::now(),
+            'notulensi_oleh'          => $request->user()->id,
+        ]);
+
+        if ($lama && $lama !== $path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($lama);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notulensi tersimpan.',
+            'data'    => $this->formatKegiatan($kegiatan->fresh()),
+        ]);
+    }
+
+    /** DELETE /kegiatan/{id}/notulensi — hapus notulensi yang belum jadi pengumuman. */
+    public function hapusNotulensi(Request $request, $kegiatanId): JsonResponse
+    {
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return $this->notFound();
+
+        $kegiatan = AbsensiKegiatan::where('pengabsen_id', $tp->id)->findOrFail($kegiatanId);
+
+        if ($kegiatan->pengumuman_id) {
+            return response()->json(['success' => false,
+                'message' => 'Notulensi sudah dijadikan pengumuman — tidak bisa dihapus dari sini.',
+                'code' => 'TERKUNCI'], 422);
+        }
+        if (!$kegiatan->notulensi_file) {
+            return response()->json(['success' => false, 'message' => 'Belum ada notulensi.'], 422);
+        }
+
+        \Illuminate\Support\Facades\Storage::disk('public')->delete($kegiatan->notulensi_file);
+        $kegiatan->update([
+            'notulensi_file' => null, 'notulensi_nama' => null,
+            'notulensi_diunggah_pada' => null, 'notulensi_oleh' => null,
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Notulensi dihapus.']);
+    }
+
     private function formatKegiatan(AbsensiKegiatan $k, bool $withStats = false): array
     {
         $data = [
@@ -790,6 +866,14 @@ class TugasApiController extends Controller
             'deskripsi'        => $k->deskripsi,
             'status'           => $k->status,
             'vakasi_per_peserta'=> $k->vakasi_per_peserta,
+            // Notulensi: berkas PDF hasil rapat/kegiatan. Wajib secara kebijakan,
+            // tetapi tidak memblokir penyelesaian kegiatan agar guru di lapangan
+            // tidak terkunci saat berkasnya baru bisa dibuat setelah acara.
+            'ada_notulensi'    => $k->adaNotulensi(),
+            'notulensi_nama'   => $k->notulensi_nama,
+            'notulensi_url'    => $k->notulensi_url,
+            'notulensi_diunggah_pada' => $k->notulensi_diunggah_pada?->format('d M Y H:i'),
+            'notulensi_terkunci' => (bool) $k->pengumuman_id,   // sudah jadi pengumuman
         ];
 
         if ($withStats) {

@@ -14,10 +14,17 @@ class PengumumanApiController extends Controller
      */
     public function aktif(): JsonResponse
     {
-        $p = Pengumuman::aktif()->latest('updated_at')->first();
+        $semua = Pengumuman::aktif()->terurut()->get()
+            ->filter(fn ($x) => $x->bisaDitampilkan())->values();
+        $p = $semua->first();
 
         return response()->json([
             'success' => true,
+            // `daftar` = SEMUA pengumuman aktif (bisa lebih dari satu sejak 26 Sep 2026).
+            // `data` tetap berisi satu pengumuman pertama agar aplikasi versi lama
+            // yang membaca objek tunggal tidak rusak.
+            'daftar'  => $semua->map(fn ($x) => $this->bentuk($x))->all(),
+            'total'   => $semua->count(),
             'data'    => $p ? [
                 'id'    => $p->id,
                 'judul' => $p->judul,
@@ -29,5 +36,22 @@ class PengumumanApiController extends Controller
                 'versi'      => $p->updated_at?->timestamp,
             ] : null,
         ]);
+    }
+
+    /** Bentuk satu pengumuman untuk klien (gambar ATAU berkas PDF). */
+    private function bentuk(Pengumuman $p): array
+    {
+        return [
+            'id'         => $p->id,
+            'judul'      => $p->judul,
+            'tipe'       => $p->tipe ?? 'gambar',
+            'isi'        => $p->isi,
+            'gambar_url' => $p->gambar ? url('storage/' . $p->gambar) : null,
+            'file_url'   => $p->file ? url('storage/' . $p->file) : null,
+            'nama_file'  => $p->nama_file,
+            'link_url'   => $p->link_url,
+            'sumber_tipe'=> $p->sumber_tipe,
+            'versi'      => $p->updated_at?->timestamp,
+        ];
     }
 }

@@ -1,31 +1,45 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 
-const p = ref(null)
+// Pengumuman kini bisa LEBIH DARI SATU sekaligus (mis. beberapa notulensi rapat),
+// dan isinya bisa pamflet gambar atau berkas PDF. Ditampilkan satu per satu:
+// tutup yang di depan → lanjut ke berikutnya.
+const daftar = ref([])
+const ke = ref(0)
 const show = ref(false)
 const jangan = ref(false)
 const imgLoaded = ref(false)
 
+const p = computed(() => daftar.value[ke.value] ?? null)
+const sisa = computed(() => Math.max(0, daftar.value.length - ke.value - 1))
 const dismissKey = (x) => `guru_pengumuman_dismiss_${x.id}_${x.versi ?? 0}`
 
 onMounted(async () => {
     try {
         const res = await api.get('/pengumuman/aktif')
-        const data = res.data.data
-        if (!data || !data.gambar_url) return
-        if (localStorage.getItem(dismissKey(data)) === '1') return
-        p.value = data
+        // Klien lama memakai `data` (satu objek); di sini pakai `daftar` bila ada.
+        const semua = res.data.daftar ?? (res.data.data ? [res.data.data] : [])
+        daftar.value = semua
+            .filter((x) => x && (x.gambar_url || x.file_url || x.isi))
+            .filter((x) => localStorage.getItem(dismissKey(x)) !== '1')
+        if (!daftar.value.length) return
         show.value = true
     } catch (_) {/* diamkan */}
 })
 
 function tutup() {
     if (jangan.value && p.value) localStorage.setItem(dismissKey(p.value), '1')
+    jangan.value = false
+    imgLoaded.value = false
+    if (ke.value < daftar.value.length - 1) { ke.value += 1; return }   // lanjut berikutnya
     show.value = false
 }
 function bukaLink() {
     if (p.value?.link_url) window.open(p.value.link_url, '_blank', 'noopener')
+}
+function bukaBerkas() {
+    if (p.value?.file_url) window.open(p.value.file_url, '_blank', 'noopener')
 }
 </script>
 
@@ -69,6 +83,16 @@ function bukaLink() {
                 <!-- Panel bawah (lebar = lebar foto) -->
                 <div class="mt-3 bg-white rounded-2xl p-3.5 shadow-xl">
                     <p v-if="p.judul" class="text-sm font-extrabold text-gray-900 mb-2.5 text-center">{{ p.judul }}</p>
+                    <!-- Pengumuman berkas (mis. notulensi rapat) -->
+                    <div v-if="p.tipe === 'pdf' && p.file_url" class="mb-2.5">
+                        <p v-if="p.isi" class="text-[12px] text-gray-500 text-center mb-2">{{ p.isi }}</p>
+                        <button @click="bukaBerkas"
+                            class="w-full py-3 rounded-xl bg-[#0C78FF] text-white text-sm font-bold active:scale-[0.99] transition">
+                            Buka Notulensi (PDF)
+                        </button>
+                        <p v-if="p.nama_file" class="text-[10px] text-gray-400 text-center mt-1 truncate">{{ p.nama_file }}</p>
+                    </div>
+                    <p v-if="sisa > 0" class="text-[11px] text-gray-400 text-center mb-1.5">{{ sisa }} pengumuman lain menyusul</p>
 
                     <label class="flex items-center justify-center gap-2 cursor-pointer select-none mb-3">
                         <input type="checkbox" v-model="jangan" class="w-4 h-4 rounded accent-[#0C78FF]" />

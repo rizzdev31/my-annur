@@ -132,6 +132,9 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{kegiatanId}/peserta',              [TugasApiController::class, 'tambahPeserta']);
                 Route::patch('/{kegiatanId}/absensi-bulk',        [TugasApiController::class, 'updateAbensiBulk']);
                 Route::post('/{kegiatanId}/selesaikan',           [TugasApiController::class, 'selesaikanKegiatan']);
+                // Notulensi PDF — diunggah guru pengabsen, sebelum/sesudah selesai.
+                Route::post('/{kegiatanId}/notulensi',            [TugasApiController::class, 'unggahNotulensi']);
+                Route::delete('/{kegiatanId}/notulensi',          [TugasApiController::class, 'hapusNotulensi']);
             });
 
             // Ekstrakurikuler (pembina) — absensi per pertemuan (→vakasi) + penilaian A/B/C

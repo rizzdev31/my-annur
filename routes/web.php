@@ -377,6 +377,9 @@ Route::prefix('admin')
                 Route::post('/{absensiKegiatan}/peserta',        [AbsensiKegiatanController::class, 'tambahPeserta'])->name('tambah-peserta');
                 Route::patch('/{absensiKegiatan}/peserta-bulk',  [AbsensiKegiatanController::class, 'updateBulk'])->name('update-bulk');
                 Route::post('/{absensiKegiatan}/selesaikan',     [AbsensiKegiatanController::class, 'selesaikan'])->name('selesaikan');
+                // Notulensi PDF → pengumuman untuk semua guru (boleh lebih dari satu aktif).
+                Route::post('/{absensiKegiatan}/jadikan-pengumuman', [AbsensiKegiatanController::class, 'jadikanPengumuman'])->name('jadikan-pengumuman');
+                Route::post('/{absensiKegiatan}/batalkan-pengumuman', [AbsensiKegiatanController::class, 'batalkanPengumuman'])->name('batalkan-pengumuman');
             });
 
             // ── 5. PENGAJUAN IZIN ─────────────────────────────────────────

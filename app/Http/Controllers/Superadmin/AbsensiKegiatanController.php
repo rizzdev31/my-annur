@@ -46,6 +46,65 @@ class AbsensiKegiatanController extends Controller
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // NOTULENSI → PENGUMUMAN
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Jadikan notulensi kegiatan sebagai pengumuman untuk semua guru.
+     * Pengumuman kini boleh lebih dari satu aktif bersamaan, jadi menerbitkan
+     * notulensi baru tidak menutup pengumuman yang sudah tayang.
+     */
+    public function jadikanPengumuman(AbsensiKegiatan $absensiKegiatan, Request $request)
+    {
+        if (!$absensiKegiatan->notulensi_file) {
+            return back()->with('error', 'Kegiatan ini belum punya notulensi PDF.');
+        }
+        if ($absensiKegiatan->pengumuman_id
+            && \App\Models\Pengumuman::whereKey($absensiKegiatan->pengumuman_id)->exists()) {
+            return back()->with('error', 'Notulensi ini sudah menjadi pengumuman.');
+        }
+
+        $d = $request->validate([
+            'judul' => 'nullable|string|max:150',
+            'isi'   => 'nullable|string|max:1000',
+        ]);
+
+        $tanggal = $absensiKegiatan->tanggal_kegiatan?->locale('id')->isoFormat('D MMMM YYYY');
+
+        $pengumuman = \App\Models\Pengumuman::create([
+            'judul'       => $d['judul'] ?: ('Notulensi: ' . $absensiKegiatan->nama_kegiatan),
+            'tipe'        => 'pdf',
+            'file'        => $absensiKegiatan->notulensi_file,
+            'nama_file'   => $absensiKegiatan->notulensi_nama,
+            'isi'         => $d['isi'] ?: trim(($absensiKegiatan->lokasi ? $absensiKegiatan->lokasi . ' · ' : '') . $tanggal),
+            'aktif'       => true,
+            'urutan'      => 0,
+            'sumber_tipe' => 'notulensi_kegiatan',
+            'sumber_id'   => $absensiKegiatan->id,
+        ]);
+
+        $absensiKegiatan->update(['pengumuman_id' => $pengumuman->id]);
+
+        $jumlah = \App\Models\Pengumuman::aktif()->count();
+
+        return back()->with('success', "Notulensi diterbitkan sebagai pengumuman — kini ada {$jumlah} pengumuman aktif.");
+    }
+
+    /** Batalkan penerbitan: pengumuman dihapus, notulensinya tetap ada di kegiatan. */
+    public function batalkanPengumuman(AbsensiKegiatan $absensiKegiatan)
+    {
+        if (!$absensiKegiatan->pengumuman_id) {
+            return back()->with('error', 'Notulensi ini belum diterbitkan.');
+        }
+
+        // Berkasnya milik kegiatan (dipakai bersama) → jangan dihapus dari storage.
+        \App\Models\Pengumuman::whereKey($absensiKegiatan->pengumuman_id)->delete();
+        $absensiKegiatan->update(['pengumuman_id' => null]);
+
+        return back()->with('success', 'Pengumuman notulensi dicabut. Berkasnya tetap tersimpan di kegiatan.');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // SHOW — detail kegiatan + daftar absensi peserta
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -657,6 +716,13 @@ class AbsensiKegiatanController extends Controller
             'deskripsi'        => $k->deskripsi,
             'status'           => $k->status,
             'vakasi_per_peserta'=> $k->vakasi_per_peserta,
+            // Notulensi PDF yang diunggah guru pengabsen + status penerbitannya
+            // sebagai pengumuman.
+            'ada_notulensi'    => $k->adaNotulensi(),
+            'notulensi_nama'   => $k->notulensi_nama,
+            'notulensi_url'    => $k->notulensi_url,
+            'notulensi_diunggah_pada' => $k->notulensi_diunggah_pada?->locale('id')->isoFormat('D MMM YYYY HH:mm'),
+            'pengumuman_id'    => $k->pengumuman_id,
             'pengabsen' => [
                 'id'      => $k->pengabsen?->id,
                 'nama'    => $k->pengabsen?->user?->name ?? '—',

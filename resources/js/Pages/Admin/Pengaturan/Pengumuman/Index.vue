@@ -67,10 +67,38 @@
                     <div class="px-6 py-5 space-y-4">
                         <!-- Upload gambar + preview -->
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1.5">Jenis Pengumuman</label>
+                                <div class="flex gap-2">
+                                    <button type="button" @click="form.tipe = 'gambar'"
+                                        :class="['px-3 py-2 rounded-xl border text-sm font-semibold', form.tipe === 'gambar' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600']">
+                                        Pamflet Gambar
+                                    </button>
+                                    <button type="button" @click="form.tipe = 'pdf'"
+                                        :class="['px-3 py-2 rounded-xl border text-sm font-semibold', form.tipe === 'pdf' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600']">
+                                        Berkas PDF
+                                    </button>
+                                </div>
+                                <p class="text-[11px] text-gray-400 mt-1.5">
+                                    Beberapa pengumuman boleh aktif bersamaan — guru melihatnya satu per satu.
+                                </p>
+                            </div>
+
+                            <div v-if="form.tipe === 'pdf'" class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1.5">Berkas PDF</label>
+                                <input type="file" accept="application/pdf" @change="pilihBerkas"
+                                    class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100" />
+                                <p class="text-[11px] text-gray-400 mt-2">PDF maks 8MB. {{ namaBerkas ? `Sekarang: ${namaBerkas}` : '' }}</p>
+                                <p v-if="form.errors.file" class="text-xs text-red-600 mt-1">{{ form.errors.file }}</p>
+                                <label class="block text-sm font-medium text-gray-700 mt-3 mb-1.5">Keterangan singkat <span class="text-gray-400">(opsional)</span></label>
+                                <textarea v-model="form.isi" rows="2" :class="inp(form.errors.isi)"
+                                    placeholder="mis. Notulensi Rapat Evaluasi · 29 Agustus 2026"></textarea>
+                            </div>
+
+                            <label v-if="form.tipe === 'gambar'" class="block text-sm font-medium text-gray-700 mb-1.5">
                                 Pamflet <span class="text-gray-400">(rasio mobile disarankan 9:16, mis. 1080×1920 atau lebih kecil)</span>
                             </label>
-                            <div class="flex items-start gap-4">
+                            <div v-if="form.tipe === 'gambar'" class="flex items-start gap-4">
                                 <div class="w-28 shrink-0 rounded-xl border border-dashed border-gray-300 bg-gray-50 overflow-hidden"
                                     style="aspect-ratio: 9 / 16">
                                     <img v-if="preview" :src="preview" class="w-full h-full object-cover" />
@@ -131,19 +159,31 @@ defineProps({
 
 const showModal = ref(false)
 const preview   = ref(null)
-const form = useForm({ id: null, judul: '', link_url: '', gambar: null, aktif: true })
+// Pengumuman bisa pamflet GAMBAR atau berkas PDF (mis. notulensi rapat), dan
+// beberapa boleh aktif bersamaan sejak 26 Sep 2026.
+const form = useForm({ id: null, judul: '', tipe: 'gambar', link_url: '', gambar: null, file: null, isi: '', urutan: 0, aktif: true })
+const namaBerkas = ref(null)
 
 function buka(p = null) {
     if (p) {
         form.id = p.id; form.judul = p.judul || ''; form.link_url = p.link_url || ''
-        form.gambar = null; form.aktif = p.aktif
+        form.tipe = p.tipe || 'gambar'; form.isi = p.isi || ''; form.urutan = p.urutan ?? 0
+        form.gambar = null; form.file = null; form.aktif = p.aktif
         preview.value = p.gambar_url
+        namaBerkas.value = p.nama_file || null
     } else {
-        form.reset(); form.id = null; form.aktif = true
+        form.reset(); form.id = null; form.aktif = true; form.tipe = 'gambar'
         preview.value = null
+        namaBerkas.value = null
     }
     form.clearErrors()
     showModal.value = true
+}
+
+function pilihBerkas(e) {
+    const f = e.target.files?.[0]
+    form.file = f || null
+    namaBerkas.value = f ? f.name : namaBerkas.value
 }
 
 function pilihGambar(e) {

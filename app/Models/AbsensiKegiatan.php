@@ -23,6 +23,11 @@ class AbsensiKegiatan extends Model
         'jam_mulai',
         'jam_selesai',
         'deskripsi',
+        'notulensi_file',
+        'notulensi_nama',
+        'notulensi_diunggah_pada',
+        'notulensi_oleh',
+        'pengumuman_id',
         'lokasi',
         'status',
         'setting_vakasi_id',
@@ -30,10 +35,22 @@ class AbsensiKegiatan extends Model
         'dibuat_oleh',
     ];
 
+    /** URL unduh notulensi (null bila belum diunggah). */
+    public function getNotulensiUrlAttribute(): ?string
+    {
+        return $this->notulensi_file ? asset('storage/' . $this->notulensi_file) : null;
+    }
+
+    public function adaNotulensi(): bool
+    {
+        return (bool) $this->notulensi_file;
+    }
+
     protected function casts(): array
     {
         return [
             'tanggal_kegiatan' => 'date',
+            'notulensi_diunggah_pada' => 'datetime',
             'vakasi_per_peserta' => 'float',
         ];
     }

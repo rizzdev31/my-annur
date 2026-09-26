@@ -19,13 +19,20 @@ class PengumumanController extends Controller
 {
     public function index()
     {
-        $list = Pengumuman::orderByDesc('aktif')->orderByDesc('updated_at')->get()
+        $list = Pengumuman::orderByDesc('aktif')->terurut()->get()
             ->map(fn($p) => [
                 'id'         => $p->id,
                 'judul'      => $p->judul,
+                'tipe'       => $p->tipe ?? 'gambar',
                 'gambar_url' => $p->gambar_url,
+                'file_url'   => $p->file_url,
+                'nama_file'  => $p->nama_file,
+                'isi'        => $p->isi,
                 'link_url'   => $p->link_url,
                 'aktif'      => $p->aktif,
+                'urutan'     => $p->urutan,
+                'sumber_tipe'=> $p->sumber_tipe,
+                'sumber_id'  => $p->sumber_id,
                 'updated_at' => $p->updated_at?->format('d M Y H:i'),
             ]);
 
@@ -36,25 +43,30 @@ class PengumumanController extends Controller
 
     public function store(Request $request)
     {
+        // Pengumuman kini boleh berupa pamflet GAMBAR atau berkas PDF (mis. notulensi
+        // rapat), dan boleh AKTIF bersamaan dengan pengumuman lain — dulu mengaktifkan
+        // satu berarti menonaktifkan semua yang lain.
         $d = $request->validate([
             'judul'    => 'nullable|string|max:150',
-            'gambar'   => 'required|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'tipe'     => 'required|in:gambar,pdf',
+            'gambar'   => 'required_if:tipe,gambar|nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'file'     => 'required_if:tipe,pdf|nullable|file|mimes:pdf|max:8192',
+            'isi'      => 'nullable|string|max:1000',
             'link_url' => 'nullable|url|max:255',
             'aktif'    => 'boolean',
+            'urutan'   => 'nullable|integer|min:0|max:999',
         ]);
 
-        $path  = $this->simpanGambar($request->file('gambar'));
-        $aktif = $request->boolean('aktif');
-
-        if ($aktif) {
-            Pengumuman::where('aktif', true)->update(['aktif' => false]);
-        }
-
         Pengumuman::create([
-            'judul'    => $d['judul'] ?? null,
-            'gambar'   => $path,
-            'link_url' => $d['link_url'] ?? null,
-            'aktif'    => $aktif,
+            'judul'     => $d['judul'] ?? null,
+            'tipe'      => $d['tipe'],
+            'gambar'    => $request->hasFile('gambar') ? $this->simpanGambar($request->file('gambar')) : null,
+            'file'      => $request->hasFile('file') ? $request->file('file')->store('pengumuman-berkas', 'public') : null,
+            'nama_file' => $request->hasFile('file') ? $request->file('file')->getClientOriginalName() : null,
+            'isi'       => $d['isi'] ?? null,
+            'link_url'  => $d['link_url'] ?? null,
+            'aktif'     => $request->boolean('aktif'),
+            'urutan'    => (int) ($d['urutan'] ?? 0),
         ]);
 
         return back()->with('success', 'Pengumuman berhasil dibuat.');
@@ -64,26 +76,32 @@ class PengumumanController extends Controller
     {
         $d = $request->validate([
             'judul'    => 'nullable|string|max:150',
+            'tipe'     => 'nullable|in:gambar,pdf',
             'gambar'   => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'file'     => 'nullable|file|mimes:pdf|max:8192',
+            'isi'      => 'nullable|string|max:1000',
             'link_url' => 'nullable|url|max:255',
             'aktif'    => 'boolean',
+            'urutan'   => 'nullable|integer|min:0|max:999',
         ]);
-
-        $aktif = $request->boolean('aktif');
-        if ($aktif) {
-            Pengumuman::where('aktif', true)->where('id', '!=', $pengumuman->id)
-                ->update(['aktif' => false]);
-        }
 
         $update = [
             'judul'    => $d['judul'] ?? null,
+            'tipe'     => $d['tipe'] ?? $pengumuman->tipe ?? 'gambar',
+            'isi'      => $d['isi'] ?? null,
             'link_url' => $d['link_url'] ?? null,
-            'aktif'    => $aktif,
+            'aktif'    => $request->boolean('aktif'),
+            'urutan'   => (int) ($d['urutan'] ?? $pengumuman->urutan ?? 0),
         ];
 
         if ($request->hasFile('gambar')) {
             if ($pengumuman->gambar) Storage::disk('public')->delete($pengumuman->gambar);
             $update['gambar'] = $this->simpanGambar($request->file('gambar'));
+        }
+        if ($request->hasFile('file')) {
+            if ($pengumuman->file) Storage::disk('public')->delete($pengumuman->file);
+            $update['file']      = $request->file('file')->store('pengumuman-berkas', 'public');
+            $update['nama_file'] = $request->file('file')->getClientOriginalName();
         }
 
         $pengumuman->update($update);
@@ -91,24 +109,25 @@ class PengumumanController extends Controller
         return back()->with('success', 'Pengumuman diperbarui.');
     }
 
-    /** Aktif/nonaktifkan cepat; mengaktifkan satu → nonaktifkan lainnya. */
+    /** Aktif/nonaktifkan cepat. Beberapa pengumuman boleh aktif bersamaan. */
     public function toggle(Pengumuman $pengumuman)
     {
         $baru = !$pengumuman->aktif;
-        if ($baru) {
-            Pengumuman::where('aktif', true)->where('id', '!=', $pengumuman->id)
-                ->update(['aktif' => false]);
-        }
         $pengumuman->update(['aktif' => $baru]);
 
+        $jumlahAktif = Pengumuman::aktif()->count();
+
         return back()->with('success', $baru
-            ? 'Pengumuman diaktifkan (yang lain dinonaktifkan).'
+            ? "Pengumuman diaktifkan — kini ada {$jumlahAktif} pengumuman aktif."
             : 'Pengumuman dinonaktifkan.');
     }
 
     public function destroy(Pengumuman $pengumuman)
     {
         if ($pengumuman->gambar) Storage::disk('public')->delete($pengumuman->gambar);
+        if ($pengumuman->file) Storage::disk('public')->delete($pengumuman->file);
+        // Lepas tautan dari kegiatan agar notulensinya bisa diganti/dipublikasikan lagi.
+        \App\Models\AbsensiKegiatan::where('pengumuman_id', $pengumuman->id)->update(['pengumuman_id' => null]);
         $pengumuman->delete();
 
         return back()->with('success', 'Pengumuman dihapus.');
