@@ -438,18 +438,25 @@ class LaporanController extends Controller
             'detail'       => $detail,
             'guru'         => $guruId ? ['id' => $guruId, 'nama' => TenagaPendidik::with('user:id,name')->find($guruId)?->user?->name] : null,
             'guruOpsi'     => $guruOpsi,
+            // Sesi sebelum tanggal ini tidak pernah ditandai otomatis → jatuh ke
+            // "tanpa catatan". Dikirim agar laporan bisa memperingatkan pembacanya.
+            'batasPencatatan' => \App\Services\SesiMengajarService::BERLAKU_MULAI,
+            'mulaiPeriode'    => $mulai->toDateString(),
         ]));
     }
 
     /** Periode rekap: harian (rentang), mingguan (Senin–Minggu), bulanan. */
     private function periodeRekap(Request $request): array
     {
-        $mode = in_array($request->mode, ['harian', 'mingguan', 'bulanan'], true) ? $request->mode : 'bulanan';
+        // Bawaan = RENTANG TANGGAL 7 hari terakhir. Dulu bawaannya bulanan, sehingga
+        // halaman terbuka dengan rentang yang mencampur dua era pencatatan (sebelum &
+        // sesudah 16 Sep 2026) dan angkanya tampak tidak masuk akal.
+        $mode = in_array($request->mode, ['harian', 'mingguan', 'bulanan'], true) ? $request->mode : 'harian';
         $hariIni = Carbon::today();
 
         if ($mode === 'harian') {
-            $a = $request->filled('dari') ? Carbon::parse($request->dari) : $hariIni->copy();
-            $b = $request->filled('sampai') ? Carbon::parse($request->sampai) : $a->copy();
+            $a = $request->filled('dari') ? Carbon::parse($request->dari) : $hariIni->copy()->subDays(6);
+            $b = $request->filled('sampai') ? Carbon::parse($request->sampai) : $hariIni->copy();
             if ($b->lt($a)) [$a, $b] = [$b, $a];
             if ($a->diffInDays($b) > 92) $b = $a->copy()->addDays(92);
             $label = $a->isSameDay($b)

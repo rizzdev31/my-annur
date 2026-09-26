@@ -60,6 +60,11 @@ class RekapMengajarQuranService
                     'guru_id'          => $f['guru_id'],
                     'guru'             => $f['guru'],
                     'tipe'             => $f['tipe'],
+                    // Tiga angka utama dalam bahasa admin: "seharusnya masuk berapa
+                    // kali, masuk berapa, tidak masuk berapa". Dihitung di sini agar
+                    // laporan tidak menyusun ulang aturannya sendiri.
+                    'seharusnya'       => $dasar,
+                    'tidak_masuk'      => $n('tidak_terlaksana') + $n('tanpa_catatan'),
                     'kelas'            => $g->where('milik_sendiri', true)->pluck('kelas')->unique()->values()->all(),
                     'terjadwal'        => $terjadwal,
                     'mengajar'         => $mengajar,
@@ -85,6 +90,8 @@ class RekapMengajarQuranService
             'baris' => $baris,
             'total' => [
                 'guru'             => $baris->pluck('guru_id')->unique()->count(),
+                'seharusnya'       => $dasar,
+                'tidak_masuk'      => $jumlah('tidak_terlaksana') + $jumlah('tanpa_catatan'),
                 'terjadwal'        => $jumlah('terjadwal'),
                 'mengajar'         => $jumlah('mengajar'),
                 'inval'            => $jumlah('inval'),

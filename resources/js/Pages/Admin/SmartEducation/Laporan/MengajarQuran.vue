@@ -23,9 +23,9 @@
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Periode</label>
                     <select v-model="f.mode" :class="fieldCls">
-                        <option value="harian">Harian</option>
-                        <option value="mingguan">Mingguan</option>
-                        <option value="bulanan">Bulanan</option>
+                        <option value="harian">Rentang Tanggal</option>
+                        <option value="mingguan">Per Minggu</option>
+                        <option value="bulanan">Per Bulan</option>
                     </select>
                 </div>
 
@@ -55,6 +55,15 @@
                     <div>
                         <label class="block text-xs font-medium text-gray-500 mb-1">Sampai</label>
                         <input v-model="f.sampai" type="date" :class="fieldCls" />
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Pilihan cepat</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button v-for="c in rentangCepat" :key="c.label" type="button" @click="pakaiRentang(c)"
+                                class="px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:border-emerald-400 hover:text-emerald-700">
+                                {{ c.label }}
+                            </button>
+                        </div>
                     </div>
                 </template>
 
@@ -94,13 +103,23 @@
             <!-- Cara baca -->
             <div class="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 mb-5 text-xs text-emerald-900/80 leading-relaxed">
                 <p class="font-semibold text-emerald-900 mb-1">Cara baca</p>
-                <p><b>Terjadwal</b> = sesi menurut jadwal yang jamnya sudah lewat (hari libur tidak dihitung).
-                    <b>Mengajar</b> = sesi sendiri yang terlaksana. <b>Inval</b> = menggantikan guru lain (di luar jadwalnya).
-                    <b>Tidak terlaksana</b> = tidak diisi sampai batas waktu, termasuk inval yang tidak datang.
-                    <b>Tanpa catatan</b> = terjadwal tetapi tidak ada catatan sama sekali (umumnya sebelum pencatatan otomatis 16 Sep 2026).</p>
-                <p class="mt-1"><b>Keterlaksanaan</b> = mengajar ÷ (terjadwal − izin − digantikan).
-                    <b>Jurnal kosong</b> = sesi yang diabsen tetapi tanpa satu pun setoran (tahfidz) atau penilaian/materi (tahsin).</p>
+                <p><b>Seharusnya masuk</b> = sesi yang jamnya sudah lewat dan memang tanggung jawabnya
+                    (terjadwal dikurangi hari libur, izin, dan sesi yang dialihkan ke guru pengganti).
+                    <b>Masuk</b> = benar-benar mengajar. <b>Tidak masuk</b> = tidak mengisi absen &amp; jurnal sampai batas waktu.
+                    <b>%</b> = Masuk dibagi Seharusnya masuk.</p>
+                <p class="mt-1">Kolom kecil di kanan hanya pelengkap: <b>Terjadwal</b> (total sesi menurut jadwal),
+                    <b>Izin / Dialihkan</b> (tidak dihitung sebagai kelalaian), <b>Inval</b> (menggantikan guru lain, di luar jadwalnya sendiri),
+                    <b>JP</b>, dan <b>Jurnal kosong</b> (diabsen tetapi tanpa satu pun setoran/penilaian).</p>
             </div>
+        </div>
+
+        <div v-if="peringatanEra" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 text-xs text-amber-900 leading-relaxed print:hidden">
+            <p class="font-semibold mb-0.5">Periode ini mencampur dua cara pencatatan</p>
+            <p>Pencatatan otomatis &quot;tidak mengisi absen &amp; jurnal&quot; baru berlaku
+                {{ tglLabel(batasPencatatan) }}. Sesi sebelum tanggal itu masuk ke
+                <b>{{ total.tanpa_catatan }} sesi tanpa catatan</b> — ikut dihitung sebagai tidak masuk,
+                tetapi bukan berarti gurunya dinyatakan lalai oleh sistem waktu itu.
+                Untuk perbandingan yang adil, pilih rentang mulai {{ tglLabel(batasPencatatan) }}.</p>
         </div>
 
         <div id="laporan-cetak" class="bg-white rounded-2xl border border-gray-200 p-6 sm:p-9 print:p-0 print:border-0 print:rounded-none">
@@ -117,10 +136,10 @@
             <!-- Ringkasan -->
             <div class="grid grid-cols-3 md:grid-cols-6 gap-2 mb-6 text-center">
                 <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Guru</p><p class="text-lg font-bold">{{ total.guru }}</p></div>
-                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Terjadwal</p><p class="text-lg font-bold">{{ total.terjadwal }}</p></div>
-                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Mengajar</p><p class="text-lg font-bold text-emerald-600">{{ total.mengajar }}<span v-if="total.inval" class="text-xs text-sky-600"> +{{ total.inval }} inval</span></p></div>
-                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Tidak Terlaksana</p><p class="text-lg font-bold text-red-600">{{ total.tidak_terlaksana }}</p></div>
-                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Tanpa Catatan</p><p class="text-lg font-bold text-amber-600">{{ total.tanpa_catatan }}</p></div>
+                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Seharusnya Masuk</p><p class="text-lg font-bold">{{ total.seharusnya }}</p></div>
+                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Masuk</p><p class="text-lg font-bold text-emerald-600">{{ total.mengajar }}<span v-if="total.inval" class="text-xs text-sky-600"> +{{ total.inval }} inval</span></p></div>
+                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Tidak Masuk</p><p class="text-lg font-bold text-red-600">{{ total.tidak_masuk }}</p></div>
+                <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Terjadwal</p><p class="text-lg font-bold text-gray-600">{{ total.terjadwal }}</p></div>
                 <div class="border border-gray-300 rounded-lg py-2"><p class="text-[11px] text-gray-500">Keterlaksanaan</p><p class="text-lg font-bold" :class="persenCls(total.persen)">{{ fmtPersen(total.persen) }}</p></div>
             </div>
 
@@ -132,15 +151,15 @@
                         <th class="border border-gray-200 px-2 py-2 text-left">Guru</th>
                         <th class="border border-gray-200 px-2 py-2">Program</th>
                         <th class="border border-gray-200 px-2 py-2 text-left">Kelas</th>
-                        <th class="border border-gray-200 px-2 py-2">Terjadwal</th>
-                        <th class="border border-gray-200 px-2 py-2">Mengajar</th>
-                        <th class="border border-gray-200 px-2 py-2">Inval</th>
-                        <th class="border border-gray-200 px-2 py-2">Tidak Terl.</th>
-                        <th class="border border-gray-200 px-2 py-2">Tanpa Catatan</th>
-                        <th class="border border-gray-200 px-2 py-2">Izin / Digantikan</th>
-                        <th class="border border-gray-200 px-2 py-2">JP</th>
-                        <th class="border border-gray-200 px-2 py-2">Jurnal Kosong</th>
-                        <th class="border border-gray-200 px-2 py-2">Keterlaksanaan</th>
+                        <th class="border border-gray-200 px-2 py-2">Seharusnya<br><span class="font-normal text-[10px] opacity-75">masuk</span></th>
+                        <th class="border border-gray-200 px-2 py-2">Masuk</th>
+                        <th class="border border-gray-200 px-2 py-2">Tidak<br>Masuk</th>
+                        <th class="border border-gray-200 px-2 py-2">%</th>
+                        <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">Terjadwal</th>
+                        <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">Izin /<br>Dialihkan</th>
+                        <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">Inval</th>
+                        <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">JP</th>
+                        <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">Jurnal<br>Kosong</th>
                     </tr></thead>
                     <tbody>
                         <tr v-for="(b, i) in baris" :key="b.guru_id + b.tipe" class="hover:bg-gray-50/60">
@@ -153,15 +172,18 @@
                                 <span class="px-2 py-0.5 rounded text-[11px] font-semibold capitalize" :class="b.tipe === 'tahfidz' ? 'bg-emerald-50 text-emerald-700' : 'bg-violet-50 text-violet-700'">{{ b.tipe }}</span>
                             </td>
                             <td class="border border-gray-200 px-2 py-2 text-xs text-gray-600">{{ b.kelas.join(', ') || '—' }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center">{{ b.terjadwal }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center font-semibold">{{ b.seharusnya }}</td>
                             <td class="border border-gray-200 px-2 py-2 text-center font-semibold text-emerald-700">{{ b.mengajar }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center" :class="b.inval ? 'text-sky-700 font-semibold' : 'text-gray-300'">{{ b.inval }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center" :class="b.tidak_terlaksana ? 'text-red-600 font-semibold' : 'text-gray-300'">{{ b.tidak_terlaksana }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center" :class="b.tanpa_catatan ? 'text-amber-600 font-semibold' : 'text-gray-300'">{{ b.tanpa_catatan }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center text-gray-500">{{ b.izin }} / {{ b.digantikan }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center">{{ b.jp }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center" :class="b.jurnal_kosong ? 'text-amber-600 font-semibold' : 'text-gray-300'">{{ b.jurnal_kosong }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center" :class="b.tidak_masuk ? 'text-red-600 font-semibold' : 'text-gray-300'">
+                                {{ b.tidak_masuk }}
+                                <span v-if="b.tanpa_catatan" class="block text-[10px] font-normal text-amber-600">{{ b.tanpa_catatan }} tanpa catatan</span>
+                            </td>
                             <td class="border border-gray-200 px-2 py-2 text-center font-bold" :class="persenCls(b.persen)">{{ fmtPersen(b.persen) }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.terjadwal }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.izin }} / {{ b.digantikan }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center text-xs" :class="b.inval ? 'text-sky-700 font-semibold' : 'text-gray-300'">{{ b.inval }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.jp }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center text-xs" :class="b.jurnal_kosong ? 'text-amber-600 font-semibold' : 'text-gray-300'">{{ b.jurnal_kosong }}</td>
                         </tr>
                         <tr v-if="!baris.length"><td colspan="13" class="border border-gray-200 py-10 text-center text-gray-400">Tidak ada sesi tahfidz/tahsin pada periode ini.</td></tr>
                     </tbody>
@@ -238,6 +260,8 @@ import KopSurat from './Partials/KopSurat.vue'
 import KopFooter from './Partials/KopFooter.vue'
 
 const props = defineProps({
+    batasPencatatan: { type: String, default: null },
+    mulaiPeriode: { type: String, default: null },
     filter: { type: Object, default: () => ({}) },
     periodeLabel: { type: String, default: '' },
     tanggalCetak: { type: String, default: '' },
@@ -251,7 +275,7 @@ const props = defineProps({
 
 const hariIni = new Date().toISOString().slice(0, 10)
 const f = reactive({
-    mode: props.filter.mode ?? 'bulanan',
+    mode: props.filter.mode ?? 'harian',
     bulan: props.filter.bulan ?? new Date().getMonth() + 1,
     tahun: props.filter.tahun ?? new Date().getFullYear(),
     tanggal: props.filter.tanggal ?? hariIni,
@@ -260,6 +284,31 @@ const f = reactive({
     tipe: props.filter.tipe ?? null,
     guru_id: props.filter.guru_id ?? null,
 })
+
+// Rentang cepat — mengisi Dari/Sampai lalu langsung memuat laporan.
+const iso = (d) => d.toISOString().slice(0, 10)
+const rentangCepat = [
+    { label: '7 hari terakhir', hari: 6 },
+    { label: '30 hari terakhir', hari: 29 },
+    { label: 'Bulan ini', bulanIni: true },
+]
+function pakaiRentang(c) {
+    const kini = new Date()
+    if (c.bulanIni) {
+        f.dari = iso(new Date(kini.getFullYear(), kini.getMonth(), 1))
+        f.sampai = iso(kini)
+    } else {
+        const awal = new Date(kini); awal.setDate(awal.getDate() - c.hari)
+        f.dari = iso(awal); f.sampai = iso(kini)
+    }
+    f.mode = 'harian'
+    terapkan()
+}
+
+// Sesi sebelum pencatatan otomatis berlaku ikut terhitung sebagai "tanpa catatan" —
+// beri tahu pembacanya supaya angkanya tidak disalahartikan.
+const peringatanEra = computed(() => props.batasPencatatan && props.mulaiPeriode
+    && props.mulaiPeriode < props.batasPencatatan && (props.total?.tanpa_catatan ?? 0) > 0)
 
 const kopKey = ref(props.kopOpsi[0]?.key ?? 'smp')
 const kop = computed(() => props.kopOpsi.find(k => k.key === kopKey.value) ?? props.kopOpsi[0] ?? { nama: '', alamat: '' })
