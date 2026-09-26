@@ -109,7 +109,9 @@
                     <b>%</b> = Masuk dibagi Seharusnya masuk.</p>
                 <p class="mt-1">Kolom kecil di kanan hanya pelengkap: <b>Terjadwal</b> (total sesi menurut jadwal),
                     <b>Izin / Dialihkan</b> (tidak dihitung sebagai kelalaian), <b>Inval</b> (menggantikan guru lain, di luar jadwalnya sendiri),
-                    <b>JP</b>, dan <b>Jurnal kosong</b> (diabsen tetapi tanpa satu pun setoran/penilaian).</p>
+                    <b>JP</b>, dan <b>Jurnal kosong</b> (diabsen tetapi tanpa satu pun setoran/penilaian).
+                    Tugas inval yang tidak dikerjakan muncul di bawah angka Inval — tidak ikut kolom
+                    Tidak Masuk karena bukan bagian dari jadwalnya sendiri.</p>
             </div>
         </div>
 
@@ -181,7 +183,10 @@
                             <td class="border border-gray-200 px-2 py-2 text-center font-bold" :class="persenCls(b.persen)">{{ fmtPersen(b.persen) }}</td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.terjadwal }}</td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.izin }} / {{ b.digantikan }}</td>
-                            <td class="border border-gray-200 px-2 py-2 text-center text-xs" :class="b.inval ? 'text-sky-700 font-semibold' : 'text-gray-300'">{{ b.inval }}</td>
+                            <td class="border border-gray-200 px-2 py-2 text-center text-xs" :class="b.inval ? 'text-sky-700 font-semibold' : 'text-gray-300'">
+                                {{ b.inval }}
+                                <span v-if="b.inval_tidak_datang" class="block text-[10px] text-red-600">{{ b.inval_tidak_datang }} tak datang</span>
+                            </td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.jp }}</td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs" :class="b.jurnal_kosong ? 'text-amber-600 font-semibold' : 'text-gray-300'">{{ b.jurnal_kosong }}</td>
                         </tr>

@@ -50,6 +50,10 @@ class RekapMengajarQuranService
             ->map(function (Collection $g) {
                 $f = $g->first();
                 $n = fn (string $k) => $g->where('kategori', $k)->count();
+                // Kegagalan pada sesi SENDIRI dan pada tugas INVAL harus dipisah:
+                // inval berada di luar jadwal guru ini, jadi tak boleh ikut penyebut
+                // "seharusnya masuk" (dulu ikut → angkanya tidak pernah rekonsiliasi).
+                $nSendiri = fn (string $k) => $g->where('milik_sendiri', true)->where('kategori', $k)->count();
 
                 $terjadwal = $g->where('milik_sendiri', true)->count();
                 $netral    = $n('izin') + $n('digantikan');
@@ -64,7 +68,9 @@ class RekapMengajarQuranService
                     // kali, masuk berapa, tidak masuk berapa". Dihitung di sini agar
                     // laporan tidak menyusun ulang aturannya sendiri.
                     'seharusnya'       => $dasar,
-                    'tidak_masuk'      => $n('tidak_terlaksana') + $n('tanpa_catatan'),
+                    'tidak_masuk'      => $nSendiri('tidak_terlaksana') + $nSendiri('tanpa_catatan'),
+                    'inval_tidak_datang' => $g->where('milik_sendiri', false)
+                        ->where('kategori', 'tidak_terlaksana')->count(),
                     'kelas'            => $g->where('milik_sendiri', true)->pluck('kelas')->unique()->values()->all(),
                     'terjadwal'        => $terjadwal,
                     'mengajar'         => $mengajar,
@@ -90,8 +96,9 @@ class RekapMengajarQuranService
             'baris' => $baris,
             'total' => [
                 'guru'             => $baris->pluck('guru_id')->unique()->count(),
-                'seharusnya'       => $dasar,
-                'tidak_masuk'      => $jumlah('tidak_terlaksana') + $jumlah('tanpa_catatan'),
+                'seharusnya'         => $dasar,
+                'tidak_masuk'        => $jumlah('tidak_masuk'),
+                'inval_tidak_datang' => $jumlah('inval_tidak_datang'),
                 'terjadwal'        => $jumlah('terjadwal'),
                 'mengajar'         => $jumlah('mengajar'),
                 'inval'            => $jumlah('inval'),
