@@ -72,11 +72,11 @@ class AbsensiKegiatanController extends Controller
         $tanggal = $absensiKegiatan->tanggal_kegiatan?->locale('id')->isoFormat('D MMMM YYYY');
 
         $pengumuman = \App\Models\Pengumuman::create([
-            'judul'       => $d['judul'] ?: ('Notulensi: ' . $absensiKegiatan->nama_kegiatan),
+            'judul'       => ($d['judul'] ?? null) ?: ('Notulensi: ' . $absensiKegiatan->nama_kegiatan),
             'tipe'        => 'pdf',
             'file'        => $absensiKegiatan->notulensi_file,
             'nama_file'   => $absensiKegiatan->notulensi_nama,
-            'isi'         => $d['isi'] ?: trim(($absensiKegiatan->lokasi ? $absensiKegiatan->lokasi . ' · ' : '') . $tanggal),
+            'isi'         => ($d['isi'] ?? null) ?: trim(($absensiKegiatan->lokasi ? $absensiKegiatan->lokasi . ' · ' : '') . $tanggal),
             'aktif'       => true,
             'urutan'      => 0,
             'sumber_tipe' => 'notulensi_kegiatan',
