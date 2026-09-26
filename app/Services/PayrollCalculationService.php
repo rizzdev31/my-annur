@@ -265,6 +265,11 @@ class PayrollCalculationService
             'total_alfa'        => $rekapAbsen['alfa'],
             'total_terlambat'   => $rekapAbsen['terlambat'],
             'total_jp_mengajar' => $rekapMengajar['total_jp'],
+            // Rincian JP yang benar-benar diampu — hanya untuk ditampilkan
+            // (total_jp_mengajar tetap JP yang dibayar vakasi).
+            'total_jp_sendiri'    => (int) ($rekapMengajar['jp_aktual'] ?? 0),
+            'total_jp_pengganti'  => (int) ($rekapMengajar['jp_pengganti'] ?? 0),
+            'total_jp_libur_izin' => (int) (($rekapMengajar['jp_libur'] ?? 0) + ($rekapMengajar['jp_izin'] ?? 0)),
 
             // Detail untuk audit trail & slip gaji
             '_detail' => [

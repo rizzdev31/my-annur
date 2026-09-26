@@ -151,7 +151,8 @@ class PayrollApiController extends Controller
 
     private function formatDetail(Penggajian $g): array
     {
-        $p = $g->periodePenggajian;
+        $p  = $g->periodePenggajian;
+        $jp = $this->jpRincian($g);
         return [
             ...$this->formatRingkasan($g),
             'jabatan' => $g->jabatan?->nama_jabatan,
@@ -189,7 +190,13 @@ class PayrollApiController extends Controller
                 'sakit'       => $g->total_sakit,
                 'alfa'        => $g->total_alfa,
                 'terlambat'   => $g->total_terlambat,
-                'jp_mengajar' => $g->total_jp_mengajar,
+                // JP total yang diampu (jadwal sendiri + pengganti + libur/izin),
+                // bukan hanya JP yang dibayar vakasi — lihat jpRincian().
+                'jp_mengajar'   => $jp['total'],
+                'jp_sendiri'    => $jp['sendiri'],
+                'jp_pengganti'  => $jp['pengganti'],
+                'jp_libur_izin' => $jp['libur_izin'],
+                'jp_dibayar'    => (int) $g->total_jp_mengajar,
             ],
 
             // Periode info
@@ -199,6 +206,53 @@ class PayrollApiController extends Controller
                 'tanggal_mulai'   => $p?->tanggal_mulai?->toDateString(),
                 'tanggal_selesai' => $p?->tanggal_selesai?->toDateString(),
             ],
+        ];
+    }
+
+    /**
+     * Rincian JP mengajar untuk ditampilkan di slip.
+     *
+     * Dipakai kolom hasil generate bila ada. Periode lama (kolomnya masih NULL)
+     * dihitung langsung dari absensi mengajar dengan aturan yang sama seperti
+     * PayrollCalculationService::hitungRekapMengajar, supaya guru tidak melihat
+     * "0 JP" hanya karena periodenya belum di-generate ulang.
+     */
+    private function jpRincian(Penggajian $g): array
+    {
+        $sendiri   = $g->total_jp_sendiri;
+        $pengganti = $g->total_jp_pengganti;
+        $liburIzin = $g->total_jp_libur_izin;
+
+        if ($sendiri === null || $pengganti === null || $liburIzin === null) {
+            $periode = $g->periodePenggajian;
+            $mulai   = $periode?->tanggal_mulai?->toDateString();
+            $selesai = $periode?->tanggal_selesai?->toDateString();
+
+            if (!$mulai || !$selesai) {
+                return [
+                    'sendiri' => 0, 'pengganti' => (int) $g->total_jp_mengajar,
+                    'libur_izin' => 0, 'total' => (int) $g->total_jp_mengajar,
+                ];
+            }
+
+            $milik = \App\Models\AbsensiMengajar::where('tenaga_pendidik_id', $g->tenaga_pendidik_id)
+                ->whereBetween('tanggal', [$mulai, $selesai])
+                ->whereIn('status', ['hadir', 'terlaksana', 'libur', 'izin'])
+                ->get(['status', 'jp_terlaksana']);
+
+            $sendiri   = (int) $milik->whereIn('status', ['hadir', 'terlaksana'])->sum('jp_terlaksana');
+            $liburIzin = (int) $milik->whereIn('status', ['libur', 'izin'])->sum('jp_terlaksana');
+            $pengganti = (int) \App\Models\AbsensiMengajar::where('digantikan_oleh', $g->tenaga_pendidik_id)
+                ->whereBetween('tanggal', [$mulai, $selesai])
+                ->where('status', 'pengganti')
+                ->sum('jp_terlaksana');
+        }
+
+        return [
+            'sendiri'    => (int) $sendiri,
+            'pengganti'  => (int) $pengganti,
+            'libur_izin' => (int) $liburIzin,
+            'total'      => (int) $sendiri + (int) $pengganti + (int) $liburIzin,
         ];
     }
 

@@ -158,6 +158,16 @@ onMounted(load)
                         <div class="rounded-xl bg-gray-50 py-2"><p class="text-base font-extrabold text-red-500">{{ d.statistik.alfa }}</p><p class="text-[9px] text-gray-400">Alfa</p></div>
                         <div class="rounded-xl bg-gray-50 py-2"><p class="text-base font-extrabold text-[#0041c8]">{{ d.statistik.jp_mengajar }}</p><p class="text-[9px] text-gray-400">JP</p></div>
                     </div>
+                    <!-- JP total = jadwal sendiri + menggantikan guru lain + JP yang
+                         tetap diakui saat libur/izin resmi -->
+                    <p v-if="d.statistik.jp_mengajar > 0" class="mt-2 text-[10px] text-gray-400 leading-relaxed">
+                        {{ d.statistik.jp_sendiri }} JP jadwal sendiri
+                        <template v-if="d.statistik.jp_pengganti"> · {{ d.statistik.jp_pengganti }} JP menggantikan guru lain</template>
+                        <template v-if="d.statistik.jp_libur_izin"> · {{ d.statistik.jp_libur_izin }} JP libur/izin resmi</template>
+                        <template v-if="d.statistik.jp_pengganti"> — yang dibayar vakasi {{ d.statistik.jp_pengganti }} JP,
+                            mengajar jadwal sendiri sudah termasuk gaji pokok</template>
+                        <template v-else> — mengajar jadwal sendiri sudah termasuk gaji pokok</template>
+                    </p>
                 </div>
             </div>
         </div>

@@ -40,6 +40,9 @@ class Penggajian extends Model
         'total_alfa',
         'total_terlambat',
         'total_jp_mengajar',
+        'total_jp_sendiri',      // JP jadwal sendiri yang benar-benar diampu
+        'total_jp_pengganti',    // JP menggantikan guru lain (yang dibayar vakasi)
+        'total_jp_libur_izin',   // JP tetap diakui walau libur/izin resmi
         'status',
         'dibayar_pada',
         'catatan',
