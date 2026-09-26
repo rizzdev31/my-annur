@@ -82,7 +82,8 @@ const notulensiInput = ref(null)
 async function pilihNotulensi(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.type !== 'application/pdf') { toast.error('Notulensi harus berkas PDF.'); return }
+    const bolehkan = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+    if (!bolehkan.includes(file.type)) { toast.error('Notulensi harus PDF atau foto (JPG/PNG).'); return }
     notulensiBusy.value = true
     try {
         const fd = new FormData()
@@ -212,15 +213,15 @@ async function selesaikan() {
                         {{ k.notulensi_nama }}<span v-if="k.notulensi_diunggah_pada"> · {{ k.notulensi_diunggah_pada }}</span>
                         <span v-if="k.notulensi_terkunci"> · sudah jadi pengumuman</span>
                     </template>
-                    <template v-else>Unggah notulensi rapat/kegiatan dalam bentuk PDF (maks 8 MB).</template>
+                    <template v-else>Unggah notulensi rapat/kegiatan: berkas PDF atau foto tulisan tangan (maks 8 MB).</template>
                 </p>
-                <input ref="notulensiInput" type="file" accept="application/pdf" class="hidden" @change="pilihNotulensi" />
+                <input ref="notulensiInput" type="file" accept="application/pdf,image/*" class="hidden" @change="pilihNotulensi" />
                 <div class="flex flex-wrap gap-2 mt-3">
                     <a v-if="k.ada_notulensi" :href="k.notulensi_url" target="_blank"
-                        class="px-3 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-bold text-gray-700">Buka PDF</a>
+                        class="px-3 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-bold text-gray-700">Buka Notulensi</a>
                     <button v-if="!k.notulensi_terkunci" @click="notulensiInput?.click()" :disabled="notulensiBusy"
                         class="px-3 py-2 rounded-xl bg-[#0C78FF] text-white text-[12px] font-bold disabled:opacity-60">
-                        {{ notulensiBusy ? 'Mengunggah…' : (k.ada_notulensi ? 'Ganti PDF' : 'Unggah PDF') }}
+                        {{ notulensiBusy ? 'Mengunggah…' : (k.ada_notulensi ? 'Ganti Notulensi' : 'Unggah PDF / Foto') }}
                     </button>
                     <button v-if="k.ada_notulensi && !k.notulensi_terkunci" @click="hapusNotulensi" :disabled="notulensiBusy"
                         class="px-3 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-bold text-rose-600 disabled:opacity-60">

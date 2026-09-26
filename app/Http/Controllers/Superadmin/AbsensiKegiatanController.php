@@ -57,7 +57,7 @@ class AbsensiKegiatanController extends Controller
     public function jadikanPengumuman(AbsensiKegiatan $absensiKegiatan, Request $request)
     {
         if (!$absensiKegiatan->notulensi_file) {
-            return back()->with('error', 'Kegiatan ini belum punya notulensi PDF.');
+            return back()->with('error', 'Kegiatan ini belum punya notulensi (PDF/foto).');
         }
         if ($absensiKegiatan->pengumuman_id
             && \App\Models\Pengumuman::whereKey($absensiKegiatan->pengumuman_id)->exists()) {
@@ -71,10 +71,14 @@ class AbsensiKegiatanController extends Controller
 
         $tanggal = $absensiKegiatan->tanggal_kegiatan?->locale('id')->isoFormat('D MMMM YYYY');
 
+        // Notulensi foto diterbitkan sebagai pamflet gambar; PDF sebagai berkas.
+        $pdf = $absensiKegiatan->notulensiAdalahPdf();
+
         $pengumuman = \App\Models\Pengumuman::create([
             'judul'       => ($d['judul'] ?? null) ?: ('Notulensi: ' . $absensiKegiatan->nama_kegiatan),
-            'tipe'        => 'pdf',
-            'file'        => $absensiKegiatan->notulensi_file,
+            'tipe'        => $pdf ? 'pdf' : 'gambar',
+            'gambar'      => $pdf ? null : $absensiKegiatan->notulensi_file,
+            'file'        => $pdf ? $absensiKegiatan->notulensi_file : null,
             'nama_file'   => $absensiKegiatan->notulensi_nama,
             'isi'         => ($d['isi'] ?? null) ?: trim(($absensiKegiatan->lokasi ? $absensiKegiatan->lokasi . ' · ' : '') . $tanggal),
             'aktif'       => true,

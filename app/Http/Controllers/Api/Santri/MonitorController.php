@@ -291,15 +291,36 @@ class MonitorController extends Controller
         ]]);
     }
 
-    /** GET /api/santri/pengumuman — pamflet/pengumuman aktif (satu, untuk pop-up). */
+    /**
+     * GET /api/santri/pengumuman — pengumuman aktif untuk wali/santri.
+     *
+     * Sejak 26 Sep 2026 pengumuman boleh lebih dari satu dan bisa berupa berkas PDF
+     * (mis. notulensi rapat yang diterbitkan admin). `daftar` berisi semuanya;
+     * `data` tetap satu pengumuman pertama agar klien versi lama tidak rusak.
+     */
     public function pengumuman(Request $request): JsonResponse
     {
-        $p = \App\Models\Pengumuman::aktif()->latest('updated_at')->first();
-        return response()->json(['success' => true, 'data' => $p ? [
-            'id' => $p->id, 'judul' => $p->judul,
+        $semua = \App\Models\Pengumuman::aktif()->terurut()->get()
+            ->filter(fn ($x) => $x->bisaDitampilkan())->values();
+
+        $bentuk = fn ($p) => [
+            'id'         => $p->id,
+            'judul'      => $p->judul,
+            'tipe'       => $p->tipe ?? 'gambar',
+            'isi'        => $p->isi,
             'gambar_url' => $p->gambar ? url('storage/' . $p->gambar) : null,
-            'link_url' => $p->link_url, 'versi' => $p->updated_at?->timestamp,
-        ] : null]);
+            'file_url'   => $p->file ? url('storage/' . $p->file) : null,
+            'nama_file'  => $p->nama_file,
+            'link_url'   => $p->link_url,
+            'versi'      => $p->updated_at?->timestamp,
+        ];
+
+        return response()->json([
+            'success' => true,
+            'daftar'  => $semua->map($bentuk)->all(),
+            'total'   => $semua->count(),
+            'data'    => $semua->first() ? $bentuk($semua->first()) : null,
+        ]);
     }
 
     private function predikat(float $n): string

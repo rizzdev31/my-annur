@@ -733,7 +733,7 @@ class TugasApiController extends Controller
         return response()->json([
             'success' => true,
             'message' => "Kegiatan selesai! Vakasi didistribusikan ke {$hadir} peserta."
-                . ($tanpaNotulensi ? ' Notulensi PDF belum diunggah — mohon segera dilengkapi.' : ''),
+                . ($tanpaNotulensi ? ' Notulensi (PDF/foto) belum diunggah — mohon segera dilengkapi.' : ''),
             'perlu_notulensi' => $tanpaNotulensi,
             'data'    => $this->formatKegiatan($kegiatan->fresh()),
         ]);
@@ -791,7 +791,8 @@ class TugasApiController extends Controller
     public function unggahNotulensi(Request $request, $kegiatanId): JsonResponse
     {
         $request->validate([
-            'notulensi' => 'required|file|mimes:pdf|max:8192',
+            // PDF atau FOTO: notulensi sering ditulis tangan lalu difoto di tempat.
+            'notulensi' => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:8192',
         ], [], ['notulensi' => 'berkas notulensi']);
 
         $tp = $request->user()->tenagaPendidik;
@@ -871,6 +872,7 @@ class TugasApiController extends Controller
             // tidak terkunci saat berkasnya baru bisa dibuat setelah acara.
             'ada_notulensi'    => $k->adaNotulensi(),
             'notulensi_nama'   => $k->notulensi_nama,
+            'notulensi_tipe'   => $k->adaNotulensi() ? ($k->notulensiAdalahPdf() ? 'pdf' : 'gambar') : null,
             'notulensi_url'    => $k->notulensi_url,
             'notulensi_diunggah_pada' => $k->notulensi_diunggah_pada?->format('d M Y H:i'),
             'notulensi_terkunci' => (bool) $k->pengumuman_id,   // sudah jadi pengumuman

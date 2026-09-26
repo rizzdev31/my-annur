@@ -46,6 +46,12 @@ class AbsensiKegiatan extends Model
         return (bool) $this->notulensi_file;
     }
 
+    /** Notulensi bisa berupa PDF atau foto hasil jepretan guru. */
+    public function notulensiAdalahPdf(): bool
+    {
+        return strtolower(pathinfo((string) $this->notulensi_file, PATHINFO_EXTENSION)) === 'pdf';
+    }
+
     protected function casts(): array
     {
         return [

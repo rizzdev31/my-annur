@@ -230,12 +230,12 @@
                         {{ kegiatan.notulensi_nama }} · diunggah {{ kegiatan.notulensi_diunggah_pada }}
                     </p>
                     <p v-else class="text-xs text-amber-600 mt-0.5">
-                        Belum diunggah oleh {{ kegiatan.pengabsen?.nama }} — notulensi diunggah dari aplikasi guru.
+                        Belum diunggah oleh {{ kegiatan.pengabsen?.nama }} — notulensi (PDF atau foto) diunggah dari aplikasi guru.
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <a v-if="kegiatan.ada_notulensi" :href="kegiatan.notulensi_url" target="_blank"
-                        class="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs font-semibold">Buka PDF</a>
+                        class="px-3 py-2 rounded-xl bg-gray-100 text-gray-700 text-xs font-semibold">Buka Notulensi</a>
                     <button v-if="kegiatan.ada_notulensi && !kegiatan.pengumuman_id" @click="terbitkanNotulensi"
                         :disabled="terbitBusy"
                         class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50">
