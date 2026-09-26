@@ -98,12 +98,41 @@
                             <span class="text-gray-400">Jabatan</span>
                             <span class="font-medium">{{ kegiatan.pengabsen.jabatan }}</span>
                         </div>
-                        <div class="flex justify-between">
+                        <div class="flex justify-between items-start gap-2">
                             <span class="text-gray-400">Vakasi/Peserta</span>
-                            <span class="font-bold text-indigo-700">
-                                {{ kegiatan.vakasi_per_peserta ? formatRp(kegiatan.vakasi_per_peserta) : 'Belum diset'
-                                }}
-                            </span>
+                            <div class="text-right">
+                                <span v-if="kegiatan.vakasi_per_peserta > 0" class="font-bold text-indigo-700">
+                                    {{ formatRp(kegiatan.vakasi_per_peserta) }}
+                                </span>
+                                <span v-else class="font-semibold text-gray-400">Tanpa vakasi</span>
+                                <button v-if="!aturVakasi" @click="mulaiAturVakasi"
+                                    class="block ml-auto mt-0.5 text-xs font-semibold text-indigo-600 hover:underline">
+                                    Ubah
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Atur vakasi: tugas tambahan ada yang bervakasi, ada yang tidak -->
+                        <div v-if="aturVakasi" class="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2">
+                            <div class="flex gap-1 p-1 bg-white rounded-lg border border-indigo-100">
+                                <button @click="modeVakasi = 'tanpa'" :class="['flex-1 py-1.5 rounded-md text-xs font-semibold transition',
+                                    modeVakasi === 'tanpa' ? 'bg-gray-700 text-white' : 'text-gray-500']">Tanpa vakasi</button>
+                                <button @click="modeVakasi = 'ada'" :class="['flex-1 py-1.5 rounded-md text-xs font-semibold transition',
+                                    modeVakasi === 'ada' ? 'bg-indigo-600 text-white' : 'text-gray-500']">Bervakasi</button>
+                            </div>
+                            <input v-if="modeVakasi === 'ada'" v-model.number="formVakasi" type="number" min="0" step="1000"
+                                placeholder="Nominal per orang"
+                                class="w-full px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:border-indigo-400" />
+                            <p class="text-[11px] text-gray-500 leading-relaxed">
+                                Nominal ini dipakai untuk pengabsen dan tiap peserta hadir.
+                                <template v-if="kegiatan.status === 'selesai'">Peserta yang sudah tercatat hadir ikut disesuaikan.</template>
+                            </p>
+                            <div class="flex gap-2">
+                                <button @click="aturVakasi = false"
+                                    class="flex-1 py-2 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-600">Batal</button>
+                                <button @click="simpanVakasi" :disabled="loading"
+                                    class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50">Simpan</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -133,6 +162,15 @@
                             Vakasi pengabsen dicairkan setelah admin verifikasi penugasan
                         </p>
                     </div>
+                </div>
+
+                <!-- Kegiatan tanpa vakasi — keadaan yang sah, bukan data kurang -->
+                <div v-else class="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                    <p class="text-xs text-gray-500 leading-relaxed">
+                        Kegiatan ini <strong class="text-gray-700">tanpa vakasi</strong>: tidak ada pembayaran ke
+                        pengabsen maupun peserta. Kehadirannya tetap tercatat dan tetap muncul di slip gaji sebagai
+                        keterangan bernilai Rp 0. Tekan <em>Ubah</em> di atas bila seharusnya bervakasi.
+                    </p>
                 </div>
 
                 <!-- Statistik -->
@@ -514,6 +552,30 @@ const tambahIds = ref([])
 const modeTambah = ref('semua') // 'semua' | 'manual'
 
 // Edit kegiatan
+// Vakasi per peserta — nominalnya mengikuti inputan admin, boleh dikosongkan.
+const aturVakasi = ref(false)
+const modeVakasi = ref('ada')
+const formVakasi = ref(null)
+
+function mulaiAturVakasi() {
+    const kini = Number(props.kegiatan.vakasi_per_peserta || 0)
+    modeVakasi.value = kini > 0 ? 'ada' : 'tanpa'
+    formVakasi.value = kini > 0 ? kini : null
+    aturVakasi.value = true
+}
+
+function simpanVakasi() {
+    loading.value = true
+    router.post(
+        route('admin.smart-payroll.absensi-kegiatan.vakasi', props.kegiatan.id),
+        { vakasi_per_peserta: modeVakasi.value === 'ada' ? (formVakasi.value ?? 0) : null },
+        {
+            preserveScroll: true,
+            onFinish: () => { loading.value = false; aturVakasi.value = false },
+        },
+    )
+}
+
 const showEdit = ref(false)
 const editForm = reactive({
     nama_kegiatan:    props.kegiatan.nama_kegiatan ?? '',

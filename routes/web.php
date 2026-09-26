@@ -372,6 +372,8 @@ Route::prefix('admin')
                 // /{absensiKegiatan} routes
                 Route::get('/{absensiKegiatan}/edit',            [AbsensiKegiatanController::class, 'edit'])->name('edit');
                 Route::patch('/{absensiKegiatan}',               [AbsensiKegiatanController::class, 'update'])->name('update');
+                // Vakasi per peserta: boleh diatur/dikosongkan walau sudah selesai
+                Route::post('/{absensiKegiatan}/vakasi',         [AbsensiKegiatanController::class, 'aturVakasi'])->name('vakasi');
                 Route::post('/{absensiKegiatan}/hapus',          [AbsensiKegiatanController::class, 'destroy'])->name('destroy');
                 Route::get('/{absensiKegiatan}',                 [AbsensiKegiatanController::class, 'show'])->name('show');
                 Route::post('/{absensiKegiatan}/peserta',        [AbsensiKegiatanController::class, 'tambahPeserta'])->name('tambah-peserta');

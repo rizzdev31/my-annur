@@ -190,7 +190,25 @@
                 <div class="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
                     <p class="text-sm font-semibold text-gray-800 border-b border-gray-100 pb-3">Vakasi</p>
 
-                    <div class="grid grid-cols-2 gap-4">
+                    <!-- Pilihan tegas: ada tugas tambahan yang bervakasi, ada yang tidak -->
+                    <div class="flex gap-2 p-1 bg-gray-100 rounded-xl">
+                        <button type="button" @click="setAdaVakasi(false)"
+                            :class="['flex-1 py-2 rounded-lg text-sm font-semibold transition',
+                                !adaVakasi ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-700']">
+                            Tanpa Vakasi
+                        </button>
+                        <button type="button" @click="setAdaVakasi(true)"
+                            :class="['flex-1 py-2 rounded-lg text-sm font-semibold transition',
+                                adaVakasi ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-700']">
+                            Bervakasi
+                        </button>
+                    </div>
+                    <p v-if="!adaVakasi" class="text-xs text-gray-500 leading-relaxed">
+                        Tugas ini tidak dibayar. Pelaksanaannya tetap tercatat dan tetap tampil di slip gaji
+                        sebagai keterangan bernilai Rp 0.
+                    </p>
+
+                    <div v-if="adaVakasi" class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1.5">Setting Vakasi</label>
                             <!-- Gunakan :value="null" agar setting_vakasi_id tetap null (bukan '') saat dipilih -->
@@ -218,7 +236,7 @@
                     </div>
 
                     <!-- Info vakasi mandiri -->
-                    <div v-if="form.tipe_pengerjaan === 'mandiri' && form.setting_vakasi_id"
+                    <div v-if="form.tipe_pengerjaan === 'mandiri' && nominalEfektif > 0"
                         class="flex items-start gap-3 p-3.5 bg-blue-50 border border-blue-100 rounded-xl">
                         <span class="text-blue-500 shrink-0">💰</span>
                         <p class="text-xs text-blue-700 leading-relaxed">
@@ -242,9 +260,10 @@
                                         Vakasi masuk ke slip gaji otomatis saat kegiatan diselesaikan
                                         — masuk kolom <strong>Vakasi Tugas Tambahan</strong>
                                     </p>
-                                    <p v-if="form.setting_vakasi_id" class="text-xs font-bold text-violet-700 mt-1">
-                                        Default: {{ vakasiDipilihNominal }} (dapat di-override per penerima)
+                                    <p v-if="nominalEfektif > 0" class="text-xs font-bold text-violet-700 mt-1">
+                                        Default: {{ nominalEfektifRp }} (dapat di-override per penerima)
                                     </p>
+                                    <p v-else class="text-xs text-violet-400 mt-1 italic">Tanpa vakasi</p>
                                 </div>
                             </div>
                             <div class="h-px bg-violet-200" />
@@ -256,11 +275,11 @@
                                         Vakasi masuk ke slip gaji otomatis saat kegiatan diselesaikan
                                         — masuk kolom <strong>Vakasi Peserta Kegiatan</strong>
                                     </p>
-                                    <p v-if="form.setting_vakasi_id" class="text-xs font-bold text-violet-700 mt-1">
-                                        {{ vakasiDipilihNominal }} per orang
+                                    <p v-if="nominalEfektif > 0" class="text-xs font-bold text-violet-700 mt-1">
+                                        {{ nominalEfektifRp }} per orang
                                     </p>
                                     <p v-else class="text-xs text-violet-400 mt-1 italic">
-                                        Pilih template vakasi di atas untuk menetapkan nominal
+                                        Tanpa vakasi — nominal per kegiatan masih bisa diisi saat kegiatan dibuat
                                     </p>
                                 </div>
                             </div>
@@ -291,7 +310,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
@@ -323,6 +342,27 @@ const form = useForm({
 })
 
 // Computed: vakasi yang dipilih
+// Bervakasi/tidak = keputusan admin yang ditulis eksplisit. Mematikannya
+// mengosongkan kedua field supaya payroll benar-benar menghitung Rp 0.
+const adaVakasi = ref(
+    props.tugas?.setting_vakasi_id != null || props.tugas?.vakasi_override != null,
+)
+function setAdaVakasi(nilai) {
+    adaVakasi.value = nilai
+    if (!nilai) {
+        form.setting_vakasi_id = null
+        form.vakasi_override = null
+    }
+}
+
+// Nominal yang benar-benar berlaku: override menang atas template.
+const nominalEfektif = computed(() => {
+    if (!adaVakasi.value) return 0
+    if (form.vakasi_override != null && form.vakasi_override !== '') return Number(form.vakasi_override)
+    return Number(props.vakasi.find(v => v.id == form.setting_vakasi_id)?.nominal ?? 0)
+})
+const nominalEfektifRp = computed(() => 'Rp ' + nominalEfektif.value.toLocaleString('id-ID'))
+
 const vakasiDipilih = computed(() => props.vakasi.find(v => v.id == form.setting_vakasi_id))
 const vakasiDipilihNominal = computed(() => {
     if (!vakasiDipilih.value) return '—'

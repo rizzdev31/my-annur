@@ -206,9 +206,11 @@ class AbsensiKegiatanController extends Controller
 
         $kegiatanBaru = null;
         DB::transaction(function () use ($data, $request, &$kegiatanBaru) {
-            // Auto-set vakasi_per_peserta dari tugas jika belum diset
+            // Nominal vakasi MURNI ikut inputan: hanya bila admin tidak mengisi
+            // apa pun (null) nominalnya diwarisi dari tugas. Angka 0 yang
+            // diinput sengaja berarti "kegiatan ini tanpa vakasi".
             $vakasiPeserta = $data['vakasi_per_peserta'] ?? null;
-            if (!$vakasiPeserta && isset($data['sumber_tipe'], $data['sumber_id'])) {
+            if ($vakasiPeserta === null && isset($data['sumber_tipe'], $data['sumber_id'])) {
                 $vakasiPeserta = $this->getVakasiDariTugas(
                     $data['sumber_tipe'], $data['sumber_id']
                 );
@@ -515,11 +517,92 @@ class AbsensiKegiatanController extends Controller
             'setting_vakasi_id' => 'nullable|exists:setting_vakasi,id',
         ]);
 
+        $nominalLama = $absensiKegiatan->vakasi_per_peserta;
         $absensiKegiatan->update($data);
+
+        // Bila nominalnya berubah, distribusi ke peserta ikut disesuaikan agar
+        // tidak ada selisih antara inputan admin dan yang masuk ke gaji.
+        if (array_key_exists('vakasi_per_peserta', $data)
+            && (float) $nominalLama !== (float) $data['vakasi_per_peserta']) {
+            $this->terapkanVakasiPeserta($absensiKegiatan->fresh(), $data['vakasi_per_peserta']);
+        }
 
         return redirect()
             ->route('admin.smart-payroll.absensi-kegiatan.show', $absensiKegiatan->id)
             ->with('success', 'Data kegiatan berhasil diperbarui.');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ATUR VAKASI — nominal per peserta, boleh juga setelah kegiatan selesai
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * POST /{kegiatan}/vakasi
+     *
+     * Tugas tambahan ada yang bervakasi dan ada yang tidak, jadi nominalnya
+     * sepenuhnya mengikuti inputan admin: kosong atau 0 = kegiatan tanpa vakasi.
+     * Boleh diubah walau kegiatan sudah selesai — distribusi ke peserta hadir
+     * langsung disesuaikan — kecuali periode gajinya sudah dikunci.
+     */
+    public function aturVakasi(Request $request, AbsensiKegiatan $absensiKegiatan)
+    {
+        if ($request->input('vakasi_per_peserta') === '') {
+            $request->merge(['vakasi_per_peserta' => null]);
+        }
+        $data = $request->validate(['vakasi_per_peserta' => 'nullable|numeric|min:0']);
+        $nominal = $data['vakasi_per_peserta'] !== null ? (float) $data['vakasi_per_peserta'] : null;
+
+        $tanggal = $absensiKegiatan->tanggal_kegiatan;
+        $periode = $tanggal
+            ? \App\Models\PeriodePenggajian::where('bulan', $tanggal->month)
+                ->where('tahun', $tanggal->year)->first()
+            : null;
+
+        if ($periode?->isKunci()) {
+            return back()->with('error',
+                'Periode gaji ' . $periode->nama_bulan . ' sudah dikunci — vakasi kegiatan ini tidak dapat diubah.');
+        }
+
+        $jumlahPeserta = 0;
+        DB::transaction(function () use ($absensiKegiatan, $nominal, &$jumlahPeserta) {
+            $absensiKegiatan->update(['vakasi_per_peserta' => $nominal]);
+            $jumlahPeserta = $this->terapkanVakasiPeserta($absensiKegiatan->fresh(), $nominal);
+        });
+
+        $pesan = ($nominal === null || $nominal <= 0)
+            ? 'Kegiatan ini ditandai TANPA vakasi — tidak ada pembayaran ke pengabsen maupun peserta.'
+            : 'Vakasi diatur Rp ' . number_format($nominal, 0, ',', '.') . ' per orang'
+                . ($jumlahPeserta > 0 ? " ({$jumlahPeserta} peserta hadir disesuaikan)." : '.');
+
+        if ($periode) {
+            $pesan .= ' Generate ulang penggajian ' . $periode->nama_bulan . ' agar ikut terhitung.';
+        }
+
+        return back()->with('success', $pesan);
+    }
+
+    /**
+     * Sebarkan (atau kosongkan) vakasi peserta sesuai nominal terbaru.
+     * Hanya kegiatan yang sudah selesai yang dibagi sekarang; yang masih
+     * berlangsung dibagi saat diselesaikan. Pengabsen dikecualikan — vakasinya
+     * lewat PenugasanTambahan.
+     */
+    private function terapkanVakasiPeserta(AbsensiKegiatan $kegiatan, $nominal): int
+    {
+        if ($kegiatan->status !== 'selesai') {
+            return 0;
+        }
+
+        $kegiatan->peserta()->update(['vakasi_diberikan' => false, 'nominal_vakasi' => null]);
+
+        if ($nominal === null || (float) $nominal <= 0) {
+            return 0;
+        }
+
+        return $kegiatan->peserta()
+            ->whereIn('status_kehadiran', ['hadir', 'terlambat'])
+            ->where('tenaga_pendidik_id', '!=', $kegiatan->pengabsen_id)
+            ->update(['vakasi_diberikan' => true, 'nominal_vakasi' => (float) $nominal]);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

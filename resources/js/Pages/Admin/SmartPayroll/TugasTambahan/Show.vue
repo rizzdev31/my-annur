@@ -511,6 +511,15 @@
                                 <input v-model="formKegiatan.lokasi" type="text" placeholder="cth: Aula Pesantren"
                                     class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-violet-400" />
                             </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Vakasi per Peserta</label>
+                                <input v-model="formKegiatan.vakasi_per_peserta" type="number" min="0" step="1000"
+                                    :placeholder="tugas.nominal_vakasi > 0 ? `Kosongkan = ikut tugas (${formatRp(tugas.nominal_vakasi)})` : 'Kosongkan = tanpa vakasi'"
+                                    class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-violet-400" />
+                                <p class="text-xs text-gray-400 mt-1">
+                                    Isi <strong>0</strong> bila kegiatan ini memang tanpa vakasi; masih bisa diubah nanti.
+                                </p>
+                            </div>
                         </div>
 
                         <!-- ── Peserta Kegiatan ── -->
@@ -828,6 +837,7 @@ function bukaPilihKegiatan(penugasanRow) {
         tanggal_kegiatan: new Date().toISOString().split('T')[0],
         jam_mulai:        '',
         lokasi:           '',
+        vakasi_per_peserta: '',
     }
     showModalKegiatan.value = true
 }
@@ -845,6 +855,8 @@ const formKegiatan = ref({
     tanggal_kegiatan: new Date().toISOString().split('T')[0],
     jam_mulai:        '',
     lokasi:           '',
+    // Kosong = warisi nominal tugas; 0 = sengaja tanpa vakasi.
+    vakasi_per_peserta: '',
 })
 
 function buatKegiatan() {
@@ -866,6 +878,8 @@ function buatKegiatan() {
         tanggal_kegiatan: formKegiatan.value.tanggal_kegiatan,
         jam_mulai:        formKegiatan.value.jam_mulai  || null,
         lokasi:           formKegiatan.value.lokasi     || null,
+        vakasi_per_peserta: formKegiatan.value.vakasi_per_peserta === '' || formKegiatan.value.vakasi_per_peserta === null
+            ? null : Number(formKegiatan.value.vakasi_per_peserta),
         semua_guru:       pesertaMode.value === 'semua',
         peserta_ids:      pesertaMode.value === 'manual' ? selectedPesertaIds.value : [],
     }, {
