@@ -20,12 +20,15 @@ class Penggajian extends Model
         'vakasi_peserta_kegiatan',  // FIX Bug 1: komponen baru
         'vakasi_lembur',            // komponen lembur
         'vakasi_piket',             // komponen guru piket
+        'vakasi_ekstrakurikuler',   // vakasi pembina ekskul per pertemuan
         'tunjangan_lainnya',
         'potongan_keterlambatan',
         'potongan_alfa',
         'potongan_tetap',
         'potongan_lainnya',
+        'potongan_guru',         // potongan per-guru (voucher/simpanan/LAZISMU)
         'potongan_liburan',      // penyesuaian liburan manual
+        'potongan_tidak_terbayar', // sisa potongan saat melebihi pendapatan
         'keterangan_liburan',
         'total_pendapatan',
         'total_potongan',

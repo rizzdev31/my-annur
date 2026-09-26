@@ -205,6 +205,14 @@ class PayrollCalculationService
             + $potonganManualGuru;       // potongan gaji per-guru (murni)
 
         $gajiBersih = max(0, $totalPendapatan - $totalPotongan);
+        // Bila potongan melebihi pendapatan, gaji bersih dipangkas ke 0. Sisanya
+        // dicatat agar terlihat admin — dulu hilang diam-diam dan membuat jumlah
+        // kolom di layar tidak pernah cocok dengan total periode.
+        $potonganTidakTerbayar = max(0, $totalPotongan - $totalPendapatan);
+        if ($potonganTidakTerbayar > 0) {
+            $errors[] = 'Potongan melebihi pendapatan sebesar ' . $this->rupiah($potonganTidakTerbayar)
+                . ' — gaji bersih dibulatkan ke 0, sisa potongan belum terbayar.';
+        }
 
         // ── 8. Build detail breakdown ─────────────────────────────────────────
         $detailGajiPokok = $detailGajiPokokList->map(fn($d) => [
@@ -231,6 +239,7 @@ class PayrollCalculationService
             'vakasi_peserta_kegiatan'   => $vakasiPesertaKegiatan['total'], // FIX Bug 1: kolom baru
             'vakasi_lembur'             => $vakasiLembur['total'],
             'vakasi_piket'              => $vakasiPiket['total'],
+            'vakasi_ekstrakurikuler'    => $vakasiEkskul['total'],
             'tunjangan_lainnya'         => 0,
 
             // Potongan
@@ -238,7 +247,9 @@ class PayrollCalculationService
             'potongan_alfa'          => $potongan['alfa'],
             'potongan_tetap'         => $potongan['tetap'],
             'potongan_lainnya'       => $potonganLainnyaTotal, // potongan lain + punishment kinerja
+            'potongan_guru'          => $potonganManualGuru,   // voucher/simpanan/LAZISMU per guru
             'potongan_liburan'       => $potonganLiburan,      // dipertahankan dari input manual
+            'potongan_tidak_terbayar'=> $potonganTidakTerbayar,
             'keterangan_liburan'     => $keteranganLiburan,
 
             // Total
@@ -509,8 +520,11 @@ class PayrollCalculationService
      */
     private function hitungVakasiPiket(TenagaPendidik $guru, Carbon $mulai, Carbon $selesai, ?int $periodeId = null): array
     {
-        $nominal = (float) (\App\Models\SettingVakasi::where('tipe_aktivitas', 'piket')
-            ->where('is_aktif', true)->value('nominal') ?? 0);
+        // Resolver yang sama dengan komponen lain (per-guru → per-jabatan → semua,
+        // berlaku_mulai terbaru). Dulu query langsung `->value('nominal')` sehingga
+        // mengambil baris pertama begitu saja saat ada lebih dari satu setting aktif.
+        $setting = $this->getVakasiUntukGuru('piket', $guru);
+        $nominal = (float) ($setting->nominal ?? 0);
 
         $jadwal = \App\Models\PiketJadwal::where('tenaga_pendidik_id', $guru->id)
             ->whereBetween('tanggal', [$mulai->copy()->startOfDay(), $selesai->copy()->endOfDay()])
@@ -1019,6 +1033,8 @@ class PayrollCalculationService
             'tunjangan',
             'potongan_terlambat', 'potongan_alfa', 'potongan_bpjs', 'potongan_lain',
             'penyesuaian_liburan', 'lainnya',
+            // Ditambah 26 Sep 2026 — sebelumnya jatuh ke 'lainnya' di slip.
+            'vakasi_piket', 'vakasi_ekstrakurikuler', 'potongan_guru',
         ];
 
         if (in_array($tipe, $valid, true)) {

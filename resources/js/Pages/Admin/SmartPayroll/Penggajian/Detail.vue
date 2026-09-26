@@ -83,6 +83,23 @@
 
         <!-- Tabel gaji -->
         <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div class="flex flex-wrap items-center gap-2 px-5 py-3 border-b border-gray-100">
+                <input v-model="cari" @keyup.enter="terapkanFilter" type="text" placeholder="Cari nama, jabatan, atau NIP…"
+                    class="flex-1 min-w-[200px] px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-teal-500" />
+                <select v-model.number="perHalaman" @change="terapkanFilter"
+                    class="px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-teal-500">
+                    <option :value="25">25 baris</option>
+                    <option :value="50">50 baris</option>
+                    <option :value="100">100 baris</option>
+                    <option :value="500">Tampilkan semua</option>
+                </select>
+                <button @click="terapkanFilter" class="px-3 py-2 rounded-xl bg-teal-600 text-white text-sm font-semibold">Cari</button>
+                <button v-if="cari" @click="cari = ''; terapkanFilter()" class="px-3 py-2 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">Reset</button>
+                <p class="ml-auto text-xs text-gray-500">
+                    Menampilkan {{ penggajian.from ?? 0 }}–{{ penggajian.to ?? 0 }} dari {{ penggajian.total ?? 0 }} guru
+                </p>
+            </div>
+
             <table class="w-full">
                 <thead>
                     <tr class="bg-gray-50/50 border-b border-gray-100">
@@ -125,14 +142,17 @@
                         </td>
                         <td class="px-5 py-3.5 text-right hidden md:table-cell">
                             <p class="text-sm font-medium text-teal-700">
-                                +{{ formatRp(pg.vakasi_absen_harian + pg.vakasi_mengajar + pg.vakasi_tugas_jabatan +
-                                pg.vakasi_tugas_tambahan) }}
+                                +{{ formatRp(totalTunjangan(pg)) }}
                             </p>
                         </td>
                         <td class="px-5 py-3.5 text-right hidden lg:table-cell">
-                            <p v-if="pg.total_potongan > 0" class="text-sm font-medium text-red-600">
-                                -{{ formatRp(pg.total_potongan) }}
-                            </p>
+                            <template v-if="pg.total_potongan > 0">
+                                <p class="text-sm font-medium text-red-600">-{{ formatRp(pg.total_potongan) }}</p>
+                                <p class="text-[11px] text-gray-400 leading-snug">{{ rincianPotongan(pg) }}</p>
+                                <p v-if="pg.potongan_tidak_terbayar > 0" class="text-[11px] font-semibold text-amber-600">
+                                    sisa {{ formatRp(pg.potongan_tidak_terbayar) }} belum terbayar
+                                </p>
+                            </template>
                             <p v-else class="text-xs text-gray-300">—</p>
                         </td>
                         <td class="px-5 py-3.5 text-right">
@@ -187,12 +207,11 @@
                 <tfoot v-if="penggajian.data?.length" class="border-t border-gray-200 bg-gray-50/50">
                     <tr>
                         <td class="px-5 py-3.5 text-xs font-semibold text-gray-600" colspan="2">
-                            Total {{ stats.total_guru }} guru
+                            Total seluruh periode — {{ stats.total_guru }} guru
                         </td>
                         <td class="px-5 py-3.5 text-right hidden md:table-cell">
                             <p class="text-xs font-semibold text-teal-700">
-                                +{{formatRp(stats.grand_total_kotor - penggajian.data?.reduce((s, p) => s + p.gaji_pokok, 0))
-                                }}
+                                +{{ formatRp(stats.grand_total_tunjangan ?? 0) }}
                             </p>
                         </td>
                         <td class="px-5 py-3.5 text-right hidden lg:table-cell">
@@ -207,6 +226,18 @@
                     </tr>
                 </tfoot>
             </table>
+
+            <!-- Navigasi halaman: sebelumnya tidak ada sama sekali, sehingga baris
+                 ke-26 dan seterusnya tidak pernah bisa dibuka dari layar. -->
+            <div v-if="(penggajian.last_page ?? 1) > 1" class="flex flex-wrap items-center justify-center gap-1 px-5 py-4 border-t border-gray-100">
+                <template v-for="(l, i) in penggajian.links" :key="i">
+                    <Link v-if="l.url" :href="l.url" preserve-scroll
+                        class="px-3 py-1.5 rounded-lg text-sm border"
+                        :class="l.active ? 'bg-teal-600 text-white border-teal-600 font-semibold' : 'border-gray-200 text-gray-600 hover:border-teal-400'"
+                        v-html="l.label" />
+                    <span v-else class="px-3 py-1.5 rounded-lg text-sm text-gray-300" v-html="l.label" />
+                </template>
+            </div>
         </div>
 
         <!-- Konfirmasi: Finalisasi Semua -->
@@ -252,6 +283,7 @@ import ConfirmDialog from '@/Components/ConfirmDialog.vue'
 const props = defineProps({
     periode: { type: Object, required: true },
     penggajian: { type: Object, default: () => ({ data: [] }) },
+    filter: { type: Object, default: () => ({ cari: '', per_halaman: 25 }) },
     stats: { type: Object, default: () => ({}) },
     belumGenerate: { type: Array, default: () => [] },
 })
@@ -270,6 +302,32 @@ function badgeStatus(s) {
 }
 
 function formatRp(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID') }
+
+// Tunjangan = seluruh pendapatan di luar gaji pokok (piket, ekskul, kegiatan &
+// lembur ikut) — dulu hanya 4 komponen yang dijumlahkan sehingga angkanya tidak
+// pernah sama dengan total pendapatan.
+const totalTunjangan = (pg) => Math.max(0, (pg.total_pendapatan ?? 0) - (pg.gaji_pokok ?? 0))
+
+// Rincian potongan agar totalnya bisa ditelusuri langsung dari tabel.
+function rincianPotongan(pg) {
+    const bagian = []
+    if (pg.potongan_guru > 0) bagian.push(`rutin ${formatRp(pg.potongan_guru)}`)
+    if (pg.potongan_keterlambatan > 0) bagian.push(`terlambat ${formatRp(pg.potongan_keterlambatan)}`)
+    if (pg.potongan_alfa > 0) bagian.push(`alfa ${formatRp(pg.potongan_alfa)}`)
+    if (pg.potongan_tetap > 0) bagian.push(`tetap ${formatRp(pg.potongan_tetap)}`)
+    if (pg.potongan_lainnya > 0) bagian.push(`lainnya ${formatRp(pg.potongan_lainnya)}`)
+    if (pg.potongan_liburan > 0) bagian.push(`liburan ${formatRp(pg.potongan_liburan)}`)
+    return bagian.join(' · ')
+}
+
+// Pencarian & jumlah baris — dikirim ke server agar paginasi tetap konsisten.
+const cari = ref(props.filter?.cari ?? '')
+const perHalaman = ref(props.filter?.per_halaman ?? 25)
+function terapkanFilter() {
+    router.get(route('admin.smart-payroll.penggajian.detail', props.periode.id),
+        { cari: cari.value || undefined, per_halaman: perHalaman.value },
+        { preserveState: true, preserveScroll: true, replace: true })
+}
 
 function generate() {
     showGenerate.value = true

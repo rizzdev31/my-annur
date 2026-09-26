@@ -52,16 +52,27 @@ class PenggajianController extends Controller
     // DETAIL — data gaji dalam 1 periode
     // ══════════════════════════════════════════════════════════════════════════
 
-    public function detail(PeriodePenggajian $periode)
+    public function detail(PeriodePenggajian $periode, Request $request)
     {
+        // Pencarian & jumlah baris: dulu terkunci 25/halaman TANPA navigasi apa pun
+        // di layar, sehingga guru ke-26 dan seterusnya tidak pernah bisa dilihat.
+        $cari    = trim((string) $request->get('cari', ''));
+        $perHal  = (int) $request->get('per_halaman', 25);
+        $perHal  = in_array($perHal, [25, 50, 100, 500], true) ? $perHal : 25;
+
         $penggajian = Penggajian::with([
                 'tenagaPendidik.user',
                 'tenagaPendidik.jabatan',
                 'detailPenggajian',
             ])
             ->where('periode_penggajian_id', $periode->id)
+            ->when($cari !== '', fn ($q) => $q->whereHas('tenagaPendidik', fn ($tp) => $tp
+                ->whereHas('user', fn ($u) => $u->where('name', 'like', "%{$cari}%"))
+                ->orWhereHas('jabatan', fn ($j) => $j->where('nama_jabatan', 'like', "%{$cari}%"))
+                ->orWhere('nip', 'like', "%{$cari}%")))
             ->orderBy('gaji_bersih', 'desc')
-            ->paginate(25)
+            ->paginate($perHal)
+            ->withQueryString()
             ->through(fn($pg) => $this->formatPenggajian($pg));
 
         $stats = $this->buildStats($periode->id);
@@ -84,6 +95,7 @@ class PenggajianController extends Controller
             'penggajian'    => $penggajian,
             'stats'         => $stats,
             'belumGenerate' => $belumGenerate,
+            'filter'        => ['cari' => $cari, 'per_halaman' => $perHal],
         ]);
     }
 
@@ -399,7 +411,13 @@ class PenggajianController extends Controller
             'potongan_keterlambatan' => $pg->potongan_keterlambatan,
             'potongan_alfa'          => $pg->potongan_alfa,
             'potongan_tetap'         => $pg->potongan_tetap,
+            'vakasi_piket'           => $pg->vakasi_piket,
+            'vakasi_ekstrakurikuler' => $pg->vakasi_ekstrakurikuler,
+            'vakasi_peserta_kegiatan'=> $pg->vakasi_peserta_kegiatan,
+            'vakasi_lembur'          => $pg->vakasi_lembur,
             'potongan_lainnya'       => $pg->potongan_lainnya,
+            'potongan_guru'          => $pg->potongan_guru,
+            'potongan_tidak_terbayar'=> $pg->potongan_tidak_terbayar,
             'potongan_liburan'       => $pg->potongan_liburan,
             'keterangan_liburan'     => $pg->keterangan_liburan,
             'total_pendapatan'       => $pg->total_pendapatan,
@@ -432,7 +450,12 @@ class PenggajianController extends Controller
             'total_dibayar'      => (clone $q)->where('status', 'dibayar')->count(),
             'grand_total_bersih' => (clone $q)->sum('gaji_bersih'),
             'grand_total_kotor'  => (clone $q)->sum('total_pendapatan'),
+            // Tunjangan/vakasi = pendapatan di luar gaji pokok. Dulu footer tabel
+            // menghitungnya dari baris yang TAMPIL saja, jadi ikut berubah tiap
+            // pindah halaman dan tak pernah cocok dengan total periode.
+            'grand_total_tunjangan' => (clone $q)->sum('total_pendapatan') - (clone $q)->sum('gaji_pokok'),
             'total_potongan'     => (clone $q)->sum('total_potongan'),
+            'total_tidak_terbayar' => (clone $q)->sum('potongan_tidak_terbayar'),
         ];
     }
 }
