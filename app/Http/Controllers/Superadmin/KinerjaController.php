@@ -588,6 +588,12 @@ class KinerjaController extends Controller
                 // PIKET = penyesuaian (+/−) di atas skor dasar, bukan komponen berbobot.
                 'piket' => [
                     'penyesuaian' => $r->skor_piket ?? 0,
+                    // Rincian dua sumber diambil dari faktor yang tersimpan saat
+                    // penghitungan, supaya sama dengan yang dilihat guru.
+                    'rincian'     => collect($r->faktor_penurunan ?? [])
+                        ->whereIn('komponen', ['Kedisiplinan kegiatan wajib', 'Catatan guru piket'])
+                        ->values()->all(),
+                    'batas_total' => $s->maks_adj_total ?? 10,
                 ],
             ],
             // backward compat

@@ -120,33 +120,72 @@ const gradeColor = (g) => ({
                 </div>
             </div>
 
-            <!-- Penyesuaian Guru Piket (penunjang +/−) -->
+            <!-- Penyesuaian penunjang: kegiatan wajib + catatan guru piket -->
             <div v-if="d.piket" class="rounded-2xl bg-white border border-gray-100 p-4 mt-4">
-                <div class="flex items-center justify-between mb-2">
-                    <h2 class="text-sm font-bold text-gray-800">Penilaian Guru Piket</h2>
+                <div class="flex items-center justify-between mb-1">
+                    <h2 class="text-sm font-bold text-gray-800">Penyesuaian Penunjang</h2>
                     <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full"
                         :class="d.piket.penyesuaian >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-500 bg-red-50'">
                         {{ d.piket.penyesuaian > 0 ? '+' : '' }}{{ d.piket.penyesuaian }} poin
                     </span>
                 </div>
-                <div class="flex items-center gap-2 text-[11px] text-gray-500 flex-wrap">
+                <p class="text-[10px] text-gray-400 mb-3">
+                    Menambah atau mengurangi skor dasar, dibatasi maksimal ±{{ d.piket.maks_total }} poin.
+                </p>
+
+                <!-- A. Kedisiplinan kegiatan wajib -->
+                <div class="rounded-xl bg-gray-50 p-3">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="text-[13px] font-semibold text-gray-800">Kedisiplinan Kegiatan Wajib</p>
+                            <p v-if="d.piket.kegiatan_total" class="text-[11px] text-gray-600 mt-0.5">
+                                Hadir {{ d.piket.kegiatan_hadir }} dari {{ d.piket.kegiatan_total }} kegiatan
+                                ({{ d.piket.kegiatan_persen }}%) — {{ d.piket.kegiatan_band }}
+                            </p>
+                            <p v-else class="text-[11px] text-gray-500 mt-0.5">Belum ada kegiatan wajib tercatat bulan ini.</p>
+                            <p class="text-[10px] text-gray-400 mt-0.5">
+                                Dinilai dari persentase kehadiran, bukan jumlah kejadian · batas ±{{ d.piket.maks_kegiatan }}
+                            </p>
+                        </div>
+                        <span class="shrink-0 text-[12px] font-bold tabular-nums"
+                            :class="d.piket.adj_kegiatan >= 0 ? 'text-emerald-600' : 'text-red-500'">
+                            {{ d.piket.adj_kegiatan > 0 ? '+' : '' }}{{ d.piket.adj_kegiatan }}
+                        </span>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-gray-200 overflow-hidden mt-2">
+                        <div class="h-full rounded-full bg-[#0C78FF]" :style="{ width: Math.min(100, d.piket.kegiatan_persen || 0) + '%' }"></div>
+                    </div>
+                </div>
+
+                <!-- B. Catatan guru piket -->
+                <div class="rounded-xl bg-gray-50 p-3 mt-2">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="text-[13px] font-semibold text-gray-800">Catatan Guru Piket</p>
+                            <p class="text-[11px] text-gray-600 mt-0.5">
+                                {{ d.piket.apresiasi }} apresiasi · {{ d.piket.catatan }} catatan
+                            </p>
+                            <p class="text-[10px] text-gray-400 mt-0.5">
+                                1 poin per kejadian · batas ±{{ d.piket.maks_piket }} · catatan bisa disanggah
+                            </p>
+                        </div>
+                        <span class="shrink-0 text-[12px] font-bold tabular-nums"
+                            :class="d.piket.adj_piket >= 0 ? 'text-emerald-600' : 'text-red-500'">
+                            {{ d.piket.adj_piket > 0 ? '+' : '' }}{{ d.piket.adj_piket }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Alur skor -->
+                <div class="flex items-center gap-2 text-[11px] text-gray-500 flex-wrap mt-3 pt-3 border-t border-gray-100">
                     <span>Skor dasar <b class="text-gray-700">{{ Math.round(d.skor_dasar ?? d.skor_total) }}</b></span>
                     <span>→</span>
-                    <span :class="d.piket.penyesuaian >= 0 ? 'text-emerald-600 font-semibold' : 'text-red-500 font-semibold'">{{ d.piket.penyesuaian > 0 ? '+' : '' }}{{ d.piket.penyesuaian }} piket</span>
+                    <span :class="d.piket.penyesuaian >= 0 ? 'text-emerald-600 font-semibold' : 'text-red-500 font-semibold'">
+                        {{ d.piket.penyesuaian > 0 ? '+' : '' }}{{ d.piket.penyesuaian }} penyesuaian
+                    </span>
                     <span>→</span>
                     <span>Total <b class="text-gray-800">{{ Math.round(d.skor_total) }}</b></span>
                 </div>
-                <div class="flex gap-2 mt-3">
-                    <div class="flex-1 rounded-xl bg-emerald-50 p-2 text-center">
-                        <p class="text-lg font-extrabold text-emerald-600">{{ d.piket.apresiasi }}</p>
-                        <p class="text-[10px] text-gray-400">Apresiasi <span v-if="d.piket.poin_apresiasi">(+{{ d.piket.poin_apresiasi }})</span></p>
-                    </div>
-                    <div class="flex-1 rounded-xl bg-red-50 p-2 text-center">
-                        <p class="text-lg font-extrabold text-red-500">{{ d.piket.catatan }}</p>
-                        <p class="text-[10px] text-gray-400">Catatan <span v-if="d.piket.poin_catatan">(−{{ d.piket.poin_catatan }})</span></p>
-                    </div>
-                </div>
-                <p class="text-[10px] text-gray-400 mt-2">Guru piket menambah (apresiasi) / mengurangi (catatan) kinerja di luar 3 komponen inti.</p>
             </div>
         </template>
     </div>

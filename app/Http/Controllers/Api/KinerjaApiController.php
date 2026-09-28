@@ -85,6 +85,19 @@ class KinerjaApiController extends Controller
                     'poin_catatan'   => $preview['komponen']['piket']['poin_catatan'] ?? 0,
                     'apresiasi'      => $preview['komponen']['piket']['apresiasi'] ?? 0,
                     'catatan'        => $preview['komponen']['piket']['catatan'] ?? 0,
+                    // Dua sumber penyesuaian dipisah: kedisiplinan kegiatan wajib
+                    // (berbasis persentase) dan catatan guru piket. Kunci lama di
+                    // atas tetap dikirim agar APK Flutter versi lama tidak rusak.
+                    'adj_kegiatan'   => $preview['komponen']['piket']['adj_kegiatan'] ?? 0,
+                    'adj_piket'      => $preview['komponen']['piket']['adj_piket'] ?? 0,
+                    'kegiatan_hadir' => $preview['komponen']['piket']['kegiatan_hadir'] ?? 0,
+                    'kegiatan_total' => $preview['komponen']['piket']['kegiatan_total'] ?? 0,
+                    'kegiatan_persen'=> $preview['komponen']['piket']['kegiatan_persen'] ?? null,
+                    'kegiatan_band'  => $preview['komponen']['piket']['kegiatan_band'] ?? null,
+                    'maks_kegiatan'  => $preview['komponen']['piket']['maks_kegiatan'] ?? 0,
+                    'maks_piket'     => $preview['komponen']['piket']['maks_piket'] ?? 0,
+                    'maks_total'     => $preview['komponen']['piket']['maks_total'] ?? 0,
+                    'min_kesempatan' => $preview['komponen']['piket']['min_kesempatan'] ?? 0,
                 ],
 
                 // ── Bobot setting ─────────────────────────────────────────

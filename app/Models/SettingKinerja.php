@@ -24,7 +24,10 @@ class SettingKinerja extends Model
         'target_log_per_hari',
         // Piket (komponen ke-4)
         'bobot_piket',
-        'skor_min_piket',   // floor sub-skor piket (batas bawah, adil)
+        'skor_min_piket',   // WARISAN: floor lama, tidak dipakai rumus baru
+        // Penyesuaian berbatas (lihat migration 2026_09_28_140000)
+        'maks_adj_kegiatan', 'maks_adj_piket', 'maks_adj_total', 'min_kesempatan_kegiatan',
+        'ambang_kegiatan_baik', 'ambang_kegiatan_cukup', 'ambang_kegiatan_netral', 'ambang_kegiatan_kurang',
         // Grade
         'grade_a', 'grade_b', 'grade_c', 'grade_d',
         'keterangan', 'dibuat_oleh',
@@ -53,6 +56,14 @@ class SettingKinerja extends Model
             'bobot_administrasi'       => 'float',
             'bobot_piket'              => 'float',
             'skor_min_piket'           => 'integer',
+            'maks_adj_kegiatan'        => 'float',
+            'maks_adj_piket'           => 'float',
+            'maks_adj_total'           => 'float',
+            'min_kesempatan_kegiatan'  => 'integer',
+            'ambang_kegiatan_baik'     => 'integer',
+            'ambang_kegiatan_cukup'    => 'integer',
+            'ambang_kegiatan_netral'   => 'integer',
+            'ambang_kegiatan_kurang'   => 'integer',
             'bobot_laporan_mengajar'   => 'float',
             'bobot_log_kerja'          => 'float',
             'target_log_per_hari'      => 'float',
@@ -86,7 +97,10 @@ class SettingKinerja extends Model
 
     public function isBobotValid(): bool
     {
-        return abs(($this->bobot_absensi + $this->bobot_tugas + $this->bobot_administrasi + ($this->bobot_piket ?? 0)) - 100) < 0.01;
+        // Piket BUKAN komponen berbobot (hanya penyesuaian berbatas), jadi
+        // bobot_piket tidak ikut dijumlahkan — dulu ikut sehingga 3 komponen
+        // inti "wajib" berjumlah 85 dan mudah tertukar dengan bobot sebenarnya.
+        return abs(($this->bobot_absensi + $this->bobot_tugas + $this->bobot_administrasi) - 100) < 0.01;
     }
 
     // ─── Grade ───────────────────────────────────────────────────────────────
@@ -145,7 +159,11 @@ class SettingKinerja extends Model
                 // tidak menopang skor administrasi (lihat migration 2026_09_28_120000).
                 'bobot_administrasi' => 20, 'bobot_laporan_mengajar' => 100, 'bobot_log_kerja' => 0,
                 'target_log_per_hari' => 1,
-                'bobot_piket' => 15, 'skor_min_piket' => 50,
+                'bobot_piket' => 0, 'skor_min_piket' => 50,
+                'maks_adj_kegiatan' => 6, 'maks_adj_piket' => 4, 'maks_adj_total' => 10,
+                'min_kesempatan_kegiatan' => 5,
+                'ambang_kegiatan_baik' => 90, 'ambang_kegiatan_cukup' => 75,
+                'ambang_kegiatan_netral' => 60, 'ambang_kegiatan_kurang' => 40,
                 'grade_a' => 90, 'grade_b' => 75, 'grade_c' => 60, 'grade_d' => 40,
             ]);
     }

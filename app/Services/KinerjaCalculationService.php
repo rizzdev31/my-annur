@@ -28,7 +28,9 @@ use Illuminate\Support\Facades\DB;
  * SKOR_DASAR = (Skor_Absensi × bobot%) + (Skor_Tugas × bobot%) + (Skor_Admin × bobot%)   // Σbobot = 100
  * SKOR_TOTAL = clamp( SKOR_DASAR + PENYESUAIAN_PIKET , 0 , 100 )
  *
- * PENYESUAIAN_PIKET = Σpoin_apresiasi − Σpoin_catatan (dibatasi −(100−skor_min_piket)).
+ * PENYESUAIAN = kedisiplinan kegiatan wajib (band persentase, ±maks_adj_kegiatan)
+ *             + catatan/apresiasi guru piket (±1 per kejadian, ±maks_adj_piket),
+ *               keduanya dibatasi lagi oleh ±maks_adj_total.
  *   → Guru piket TIDAK punya bobot; ia hanya PENUNJANG (+/−) di atas skor dasar:
  *     apresiasi menaikkan, catatan menurunkan kinerja bulan itu.
  *
@@ -102,7 +104,7 @@ class KinerjaCalculationService
         $k1 = $this->komponenAbsensi($guru, $bulan, $tahun, $hariKerja, $setting);
         $k2 = $this->komponenTugas($guru, $mulai, $selesai, $setting, $batas);
         $k3 = $this->komponenAdministrasi($guru, $bulan, $tahun, $hariKerja, $mulai, $selesai, $setting);
-        $kp = $this->komponenPiket($guru, $bulan, $tahun, (float) ($setting->skor_min_piket ?? 50));
+        $kp = $this->komponenPiket($guru, $bulan, $tahun, $setting);
 
         // Skor DASAR = rata-rata TERBOBOT 3 komponen inti, DINORMALISASI ke jumlah
         // bobotnya sendiri → guru sempurna selalu 100 walau bobot inti ≠ 100.
@@ -574,6 +576,17 @@ class KinerjaCalculationService
                 // PIKET sebagai penyesuaian (+/−), bukan komponen berbobot.
                 'piket' => [
                     'penyesuaian'    => $kp['penyesuaian'],   // signed, langsung ditambahkan ke skor
+                    // Rincian dua sumber + batas yang berlaku (transparansi)
+                    'adj_kegiatan'   => $kp['adj_kegiatan'],
+                    'adj_piket'      => $kp['adj_piket'],
+                    'kegiatan_hadir' => $kp['kegiatan_hadir'],
+                    'kegiatan_total' => $kp['kegiatan_total'],
+                    'kegiatan_persen'=> $kp['kegiatan_persen'],
+                    'kegiatan_band'  => $kp['kegiatan_band'],
+                    'maks_kegiatan'  => $kp['maks_kegiatan'],
+                    'maks_piket'     => $kp['maks_piket'],
+                    'maks_total'     => $kp['maks_total'],
+                    'min_kesempatan' => $kp['min_kesempatan'],
                     'poin_apresiasi' => $kp['poin_apresiasi'],
                     'poin_catatan'   => $kp['poin_catatan'],
                     'apresiasi'      => $kp['apresiasi'],
@@ -693,21 +706,31 @@ class KinerjaCalculationService
             ];
         }
 
-        // ── Penilaian guru piket (penyesuaian, bukan bobot) ───────────────
-        if ((float) $kp['penyesuaian'] < 0) {
+        // ── Kedisiplinan kegiatan wajib (penyesuaian berbatas) ────────────
+        if ((float) ($kp['adj_kegiatan'] ?? 0) < 0) {
+            $tidakHadir = max(0, (int) $kp['kegiatan_total'] - (int) $kp['kegiatan_hadir']);
             $f[] = [
-                'komponen' => 'Penilaian guru piket',
+                'komponen' => 'Kedisiplinan kegiatan wajib',
+                'sebab'    => "kehadiran {$kp['kegiatan_persen']}% tergolong {$kp['kegiatan_band']}"
+                    . " ({$tidakHadir} kali tidak hadir)",
+                'angka'    => "hadir {$kp['kegiatan_hadir']} dari {$kp['kegiatan_total']} kegiatan"
+                    . " · batas penyesuaian ±{$kp['maks_kegiatan']}",
+                'saran'    => 'Ikuti kegiatan wajib (sholat berjamaah dll); penilaian memakai persentase, bukan jumlah kejadian.',
+                'dampak'   => round(abs((float) $kp['adj_kegiatan']), 2),
+            ];
+        }
+
+        // ── Catatan guru piket (penyesuaian berbatas) ─────────────────────
+        if ((float) ($kp['adj_piket'] ?? 0) < 0) {
+            $f[] = [
+                'komponen' => 'Catatan guru piket',
                 // Poin catatan datang dari DUA sumber: penilaian guru piket dan
                 // ketidakhadiran di kegiatan wajib. Jadi jumlah catatan piket bisa 0
                 // sementara poinnya tetap besar — sebabnya ditulis apa adanya.
-                'sebab'    => 'pengurangan ' . $kp['poin_catatan'] . ' poin dari catatan piket & ketidakhadiran kegiatan wajib',
-                // Jumlah baris penilaian hanya mencakup penilaian guru piket, sedangkan
-                // poin juga berasal dari kegiatan wajib — jadi yang ditampilkan POIN-nya
-                // agar tidak terbaca "0 catatan tapi −38 poin".
-                'angka'    => "apresiasi +{$kp['poin_apresiasi']} · catatan −{$kp['poin_catatan']} · penyesuaian akhir {$kp['penyesuaian']}"
-                    . ($kp['catatan'] > 0 ? " (termasuk {$kp['catatan']} catatan dari guru piket)" : ''),
-                'saran'    => 'Ikuti kegiatan wajib (mis. sholat berjamaah) dan hindari catatan piket.',
-                'dampak'   => round(abs((float) $kp['penyesuaian']), 2),
+                'sebab'    => "{$kp['catatan']} catatan dari guru piket",
+                'angka'    => "{$kp['apresiasi']} apresiasi · {$kp['catatan']} catatan · batas penyesuaian ±{$kp['maks_piket']}",
+                'saran'    => 'Catatan piket bisa disanggah bila tidak sesuai; sanggahan yang diterima membatalkan catatan.',
+                'dampak'   => round(abs((float) $kp['adj_piket']), 2),
             ];
         }
 
@@ -723,40 +746,74 @@ class KinerjaCalculationService
      * Skor penilaian piket: mulai baseline 100, lalu ± poin dari penilaian piket
      * (apresiasi +, catatan −), di-clamp [0,100]. Poin disimpan positif; jenis menentukan tanda.
      */
-    private function komponenPiket(TenagaPendidik $guru, int $bulan, int $tahun, float $floor = 0): array
+    private function komponenPiket(TenagaPendidik $guru, int $bulan, int $tahun, SettingKinerja $s): array
     {
+        // ── A. Kedisiplinan kegiatan wajib (sholat berjamaah dll) ────────────
+        // Dinilai dari PERSENTASE kehadiran bulan itu, bukan jumlah kejadian,
+        // supaya guru dengan 10 kesempatan dan 42 kesempatan sebanding.
+        $kegiatan = \App\Models\AbsensiKegiatanPenting::where('tenaga_pendidik_id', $guru->id)
+            ->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)
+            ->get(['status']);
+
+        $kesempatan = $kegiatan->count();
+        $hadir      = $kegiatan->where('status', 'hadir')->count();
+        $rasio      = $kesempatan > 0 ? $hadir / $kesempatan : null;
+        $maksKeg    = (float) ($s->maks_adj_kegiatan ?? 6);
+        $minSampel  = (int) ($s->min_kesempatan_kegiatan ?? 5);
+
+        // Sampel terlalu kecil → jangan menilai. Satu-dua catatan tidak cukup
+        // untuk menyimpulkan kedisiplinan sebulan.
+        $adjKegiatan = 0.0;
+        $bandKegiatan = 'belum dinilai';
+        if ($rasio !== null && $kesempatan >= $minSampel) {
+            $persen = $rasio * 100;
+            [$adjKegiatan, $bandKegiatan] = match (true) {
+                $persen >= (int) ($s->ambang_kegiatan_baik   ?? 90) => [ $maksKeg * 0.5,  'sangat baik'],
+                $persen >= (int) ($s->ambang_kegiatan_cukup  ?? 75) => [ $maksKeg * 0.25, 'baik'],
+                $persen >= (int) ($s->ambang_kegiatan_netral ?? 60) => [ 0.0,             'cukup'],
+                $persen >= (int) ($s->ambang_kegiatan_kurang ?? 40) => [-$maksKeg * 0.5,  'kurang'],
+                default                                             => [-$maksKeg,        'sangat kurang'],
+            };
+            $adjKegiatan = round($adjKegiatan, 2);
+        }
+
+        // ── B. Catatan / apresiasi guru piket ────────────────────────────────
+        // Satu kejadian = 1 poin (bukan nilai rubrik), lalu dibatasi. Besar-kecil
+        // pengaruhnya diatur lewat maks_adj_piket, bukan lewat poin per kejadian,
+        // agar satu catatan tidak langsung memakan seluruh batas.
         $penilaian = PiketPenilaian::where('guru_dinilai_id', $guru->id)
-            ->where('status_sanggah', '!=', 'diterima') // sanggahan diterima = penilaian dibatalkan
-            ->whereHas('jadwal', fn($q) => $q->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun))
+            ->where('status_sanggah', '!=', 'diterima') // sanggahan diterima = dibatalkan
+            ->whereHas('jadwal', fn ($q) => $q->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun))
             ->get(['jenis', 'poin', 'status_sanggah']);
 
-        $apresiasi     = $penilaian->where('jenis', 'apresiasi');
-        $catatan       = $penilaian->where('jenis', 'catatan');
-        $poinApresiasi = (float) $apresiasi->sum('poin');
-        $poinCatatan   = (float) $catatan->sum('poin');
+        $apresiasi = $penilaian->where('jenis', 'apresiasi')->count();
+        $catatan   = $penilaian->where('jenis', 'catatan')->count();
+        $maksPiket = (float) ($s->maks_adj_piket ?? 4);
+        $adjPiket  = round(max(-$maksPiket, min($maksPiket, $apresiasi - $catatan)), 2);
 
-        // Kegiatan Penting Guru (Sholat Dzuhur dll): hadir=+poin_hadir (apresiasi),
-        // tidak_hadir=+poin_absen (catatan). Ikut penyesuaian piket.
-        $kegiatan = \App\Models\AbsensiKegiatanPenting::where('absensi_kegiatan_penting.tenaga_pendidik_id', $guru->id)
-            ->whereMonth('absensi_kegiatan_penting.tanggal', $bulan)
-            ->whereYear('absensi_kegiatan_penting.tanggal', $tahun)
-            ->join('kegiatan_penting', 'kegiatan_penting.id', '=', 'absensi_kegiatan_penting.kegiatan_penting_id')
-            ->get(['absensi_kegiatan_penting.status', 'kegiatan_penting.poin_hadir', 'kegiatan_penting.poin_absen']);
-        $poinApresiasi += (float) $kegiatan->where('status', 'hadir')->sum('poin_hadir');
-        $poinCatatan   += (float) $kegiatan->where('status', 'tidak_hadir')->sum('poin_absen');
-
-        // PIKET = PENYESUAIAN (+/−) di atas skor dasar (BUKAN komponen berbobot).
-        // Guru piket "menunjang": apresiasi menambah, catatan mengurangi kinerja.
-        // Pengurangan dari piket dibatasi maks (100 − skor_min_piket) agar tetap adil.
-        $maxPotong   = max(0, 100 - min(100, $floor)); // $floor = skor_min_piket
-        $penyesuaian = round(max(-$maxPotong, $poinApresiasi - $poinCatatan), 2);
+        // ── C. Gabungan, tetap berbatas ──────────────────────────────────────
+        $maksTotal   = (float) ($s->maks_adj_total ?? 10);
+        $penyesuaian = round(max(-$maksTotal, min($maksTotal, $adjKegiatan + $adjPiket)), 2);
 
         return [
-            'penyesuaian'    => $penyesuaian,
-            'poin_apresiasi' => round($poinApresiasi, 2),
-            'poin_catatan'   => round($poinCatatan, 2),
-            'apresiasi'      => $apresiasi->count(),
-            'catatan'        => $catatan->count(),
+            'penyesuaian'     => $penyesuaian,
+            // Rincian per sumber — ditampilkan terpisah ke guru & admin supaya
+            // jelas mana soal kehadiran kegiatan dan mana penilaian guru piket.
+            'adj_kegiatan'    => $adjKegiatan,
+            'adj_piket'       => $adjPiket,
+            'kegiatan_hadir'  => $hadir,
+            'kegiatan_total'  => $kesempatan,
+            'kegiatan_persen' => $rasio !== null ? round($rasio * 100, 1) : null,
+            'kegiatan_band'   => $bandKegiatan,
+            'apresiasi'       => $apresiasi,
+            'catatan'         => $catatan,
+            'maks_kegiatan'   => $maksKeg,
+            'maks_piket'      => $maksPiket,
+            'maks_total'      => $maksTotal,
+            'min_kesempatan'  => $minSampel,
+            // Warisan agar pemakai lama tidak pecah (dulu berisi jumlah poin).
+            'poin_apresiasi'  => $apresiasi,
+            'poin_catatan'    => $catatan,
         ];
     }
 

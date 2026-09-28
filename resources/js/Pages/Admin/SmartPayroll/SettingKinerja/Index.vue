@@ -109,7 +109,7 @@
                     </div>
                     <div v-if="(s.bobot_piket ?? 0) > 0" :style="{ width: s.bobot_piket + '%' }"
                         class="bg-amber-500 flex items-center justify-center text-white text-xs font-bold">
-                        {{ s.bobot_piket }}%
+                        ±{{ s.maks_adj_total ?? 10 }} poin
                     </div>
                 </div>
 
@@ -451,23 +451,67 @@
                         </div>
                     </div>
 
-                    <!-- ── KOMPONEN PIKET ── -->
-                    <div class="bg-amber-50/40 border border-amber-100 rounded-2xl p-4 space-y-2">
-                        <p class="text-sm font-bold text-amber-800">🧭 Komponen Piket</p>
-                        <div class="grid grid-cols-3 gap-3">
+                    <!-- ── PENYESUAIAN PENUNJANG (piket & kegiatan wajib) ── -->
+                    <div class="bg-amber-50/40 border border-amber-100 rounded-2xl p-4 space-y-3">
+                        <div>
+                            <p class="text-sm font-bold text-amber-800">🧭 Penyesuaian Penunjang</p>
+                            <p class="text-xs text-gray-500 mt-0.5">
+                                Bukan komponen berbobot — hanya menambah/mengurangi skor dasar, dan dibatasi.
+                                Kedisiplinan kegiatan wajib dinilai dari <strong>persentase kehadiran</strong> bulan itu
+                                (bukan jumlah kejadian) agar sebanding antar guru.
+                            </p>
+                        </div>
+                        <div class="grid grid-cols-4 gap-3">
                             <div>
-                                <label class="block text-xs font-medium text-gray-600 mb-1.5">Bobot Total (%)</label>
-                                <input v-model.number="form.bobot_piket" type="number" min="0" max="100" step="5"
-                                    class="w-full px-3 py-2 rounded-xl border border-amber-200 text-sm focus:outline-none bg-white font-bold text-amber-700" />
+                                <label class="block text-xs font-medium text-gray-600 mb-1.5">Batas Kegiatan Wajib (±)</label>
+                                <input v-model.number="form.maks_adj_kegiatan" type="number" min="0" max="50" step="1"
+                                    class="w-full px-3 py-2 rounded-xl border border-amber-200 text-sm bg-white font-bold text-amber-700" />
                             </div>
                             <div>
-                                <label class="block text-xs font-medium text-gray-600 mb-1.5">Skor Min. Piket (floor)</label>
-                                <input v-model.number="form.skor_min_piket" type="number" min="0" max="100" step="5"
-                                    class="w-full px-3 py-2 rounded-xl border border-amber-200 text-sm focus:outline-none bg-white font-bold text-amber-700" />
+                                <label class="block text-xs font-medium text-gray-600 mb-1.5">Batas Catatan Piket (±)</label>
+                                <input v-model.number="form.maks_adj_piket" type="number" min="0" max="50" step="1"
+                                    class="w-full px-3 py-2 rounded-xl border border-amber-200 text-sm bg-white font-bold text-amber-700" />
                             </div>
-                            <div class="flex items-end">
-                                <p class="text-xs text-gray-400">Sub-skor piket = 100 − Σcatatan + Σapresiasi, dibatasi [floor..100]. Poin rubrik skala 1–10. Floor melindungi guru agar catatan tak menjatuhkan skor ke 0. Isi bobot 0 = netral.</p>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1.5">Batas Gabungan (±)</label>
+                                <input v-model.number="form.maks_adj_total" type="number" min="0" max="50" step="1"
+                                    class="w-full px-3 py-2 rounded-xl border border-amber-200 text-sm bg-white font-bold text-amber-700" />
                             </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1.5">Min. Kesempatan</label>
+                                <input v-model.number="form.min_kesempatan_kegiatan" type="number" min="0" max="60" step="1"
+                                    class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white" />
+                                <p class="text-xs text-gray-400 mt-1">Di bawah ini tidak dinilai</p>
+                            </div>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-600 mb-1.5">Ambang Kehadiran Kegiatan Wajib (%)</p>
+                            <div class="grid grid-cols-4 gap-3">
+                                <div>
+                                    <label class="block text-xs text-emerald-600 mb-1">Sangat baik ≥</label>
+                                    <input v-model.number="form.ambang_kegiatan_baik" type="number" min="0" max="100" step="5"
+                                        class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-blue-600 mb-1">Baik ≥</label>
+                                    <input v-model.number="form.ambang_kegiatan_cukup" type="number" min="0" max="100" step="5"
+                                        class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Cukup (netral) ≥</label>
+                                    <input v-model.number="form.ambang_kegiatan_netral" type="number" min="0" max="100" step="5"
+                                        class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-orange-600 mb-1">Kurang ≥</label>
+                                    <input v-model.number="form.ambang_kegiatan_kurang" type="number" min="0" max="100" step="5"
+                                        class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white" />
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1.5">
+                                Sangat baik = +setengah batas · Baik = +seperempat batas · Cukup = 0 ·
+                                Kurang = −setengah batas · Sangat kurang = −batas penuh.
+                            </p>
                         </div>
                     </div>
 
@@ -570,6 +614,8 @@ const defaultForm = () => ({
     bobot_tugas: 30, bobot_tugas_tambahan: 60, bobot_tugas_jabatan: 40,
     jika_tidak_ada_tugas: 'sempurna',
     bobot_administrasi: 20, bobot_laporan_mengajar: 100, bobot_log_kerja: 0,
+    maks_adj_kegiatan: 6, maks_adj_piket: 4, maks_adj_total: 10, min_kesempatan_kegiatan: 5,
+    ambang_kegiatan_baik: 90, ambang_kegiatan_cukup: 75, ambang_kegiatan_netral: 60, ambang_kegiatan_kurang: 40,
     target_log_per_hari: 1,
     bobot_piket: 0, skor_min_piket: 50,
     grade_a: 90, grade_b: 75, grade_c: 60, grade_d: 40,
