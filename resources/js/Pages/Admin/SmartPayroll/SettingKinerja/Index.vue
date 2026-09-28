@@ -606,14 +606,14 @@ const gradeFields = [
 
 const defaultForm = () => ({
     nama: '', is_aktif: true, is_default: false,
-    bobot_absensi: 50, bobot_absensi_harian: 70, bobot_absensi_mengajar: 30,
+    bobot_absensi: 41.18, bobot_absensi_harian: 70, bobot_absensi_mengajar: 30,
     nilai_hadir: 100, nilai_terlambat: 75, nilai_izin: 70,
     nilai_sakit: 80, nilai_dinas_luar: 100, nilai_alfa: 0,
     hitung_penalty_terlambat: false, toleransi_terlambat_menit: 0,
     penalty_per_terlambat: 5, max_penalty_terlambat: 20,
-    bobot_tugas: 30, bobot_tugas_tambahan: 60, bobot_tugas_jabatan: 40,
+    bobot_tugas: 35.29, bobot_tugas_tambahan: 60, bobot_tugas_jabatan: 40,
     jika_tidak_ada_tugas: 'sempurna',
-    bobot_administrasi: 20, bobot_laporan_mengajar: 100, bobot_log_kerja: 0,
+    bobot_administrasi: 23.53, bobot_laporan_mengajar: 100, bobot_log_kerja: 0,
     maks_adj_kegiatan: 6, maks_adj_piket: 4, maks_adj_total: 10, min_kesempatan_kegiatan: 5,
     ambang_kegiatan_baik: 90, ambang_kegiatan_cukup: 75, ambang_kegiatan_netral: 60, ambang_kegiatan_kurang: 40,
     target_log_per_hari: 1,
