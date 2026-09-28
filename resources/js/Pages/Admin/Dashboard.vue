@@ -2,74 +2,134 @@
     <AdminLayout title="Dashboard" subtitle="Monitoring">
         <Head title="Dashboard" />
 
-        <!-- ══ HERO ══════════════════════════════════════════════════════════ -->
-        <div class="relative overflow-hidden rounded-2xl sm:rounded-3xl mb-5 px-5 py-5 sm:px-8 sm:py-7 text-white"
-            style="background: linear-gradient(120deg,#1E1B4B 0%,#3730A3 55%,#4F46E5 100%)">
-            <!-- dekorasi -->
-            <div class="absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10"></div>
-            <div class="absolute -bottom-20 right-24 w-44 h-44 rounded-full bg-white/5"></div>
-            <div class="relative flex flex-wrap items-center justify-between gap-4">
-                <div>
-                    <p class="text-indigo-200 text-sm">{{ greeting }}, Admin 👋</p>
-                    <h1 class="text-xl sm:text-2xl font-extrabold mt-1">Dashboard Monitoring</h1>
-                    <p class="text-indigo-200 text-xs mt-1">{{ hariIni }}</p>
-                    <p class="text-sm mt-3 text-white/90">
-                        <b class="text-white">{{ stats.hadir_hari_ini }}</b> dari
-                        <b class="text-white">{{ stats.total_guru }}</b> guru hadir hari ini
-                        <span class="inline-flex items-center gap-1 ml-1 px-2 py-0.5 rounded-full bg-white/15 text-xs font-semibold">
-                            {{ stats.persen_hadir }}%
+        <!-- ══ RINGKASAN UTAMA ═══════════════════════════════════════════════
+             Satu baris pembuka: sapaan, angka kunci hari ini, dan status
+             penyegaran. Persentase hadir cukup muncul SEKALI di sini (dulu
+             ada di hero dan diulang lagi di kartu donut). ──────────────────── -->
+        <div class="relative overflow-hidden rounded-2xl sm:rounded-3xl mb-4 px-5 py-5 sm:px-7 sm:py-6 text-white"
+            style="background: linear-gradient(120deg,#1E1B4B 0%,#312E81 55%,#4338CA 100%)">
+            <div class="absolute -top-16 -right-8 w-52 h-52 rounded-full bg-white/10"></div>
+            <div class="relative flex flex-wrap items-start justify-between gap-5">
+                <div class="min-w-0">
+                    <p class="text-indigo-200 text-sm">{{ greeting }}, Admin</p>
+                    <h1 class="text-xl sm:text-2xl font-extrabold mt-0.5">Dashboard Monitoring</h1>
+                    <p class="text-indigo-200/90 text-xs mt-1">{{ hariIni }}</p>
+
+                    <!-- Status data: penanda kesegaran yang sebelumnya tidak ada -->
+                    <div class="flex flex-wrap items-center gap-2 mt-3">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                            :class="gagal ? 'bg-red-500/25 text-red-100' : 'bg-emerald-400/20 text-emerald-100'">
+                            <span class="relative flex w-2 h-2">
+                                <span v-if="!gagal" class="absolute inline-flex w-full h-full rounded-full bg-emerald-300 opacity-75 animate-ping"></span>
+                                <span class="relative inline-flex w-2 h-2 rounded-full" :class="gagal ? 'bg-red-300' : 'bg-emerald-300'"></span>
+                            </span>
+                            {{ gagal ? 'Gagal menyegarkan' : (menyegarkan ? 'Menyegarkan…' : 'Data langsung') }}
                         </span>
-                    </p>
-                </div>
-                <!-- ring hadir -->
-                <div class="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
-                    <svg viewBox="0 0 36 36" class="w-full h-full -rotate-90">
-                        <circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="3" />
-                        <circle cx="18" cy="18" r="15.915" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"
-                            :stroke-dasharray="`${show ? stats.persen_hadir : 0} 100`" style="transition:stroke-dasharray 1s ease-out" />
-                    </svg>
-                    <div class="absolute inset-0 flex flex-col items-center justify-center">
-                        <span class="text-lg font-extrabold">{{ stats.persen_hadir }}%</span>
-                        <span class="text-[9px] text-indigo-200">HADIR</span>
+                        <span class="text-[11px] text-indigo-200" aria-live="polite">{{ labelSegar }}</span>
+                        <button @click="muatLive(true)" :disabled="menyegarkan"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/25
+                                   text-[11px] font-semibold transition disabled:opacity-50"
+                            style="min-height:32px" title="Segarkan sekarang">
+                            <svg style="width:13px;height:13px" :class="menyegarkan ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 006.3 5.7M4 15a8 8 0 0013.7 3.3" />
+                            </svg>
+                            Segarkan
+                        </button>
                     </div>
                 </div>
+
+                <!-- Angka kunci hari ini -->
+                <div class="flex items-center gap-4 sm:gap-6">
+                    <div class="text-right">
+                        <p class="text-[11px] text-indigo-200 uppercase tracking-wide">Hadir hari ini</p>
+                        <p class="text-2xl sm:text-3xl font-extrabold tabular-nums leading-tight">
+                            {{ live.absensi.hadir_total }}<span class="text-indigo-300 text-lg">/{{ live.absensi.wajib_absen }}</span>
+                        </p>
+                        <p class="text-[11px] text-indigo-200">
+                            {{ live.absensi.belum }} belum absen · {{ live.absensi.terlambat }} terlambat
+                        </p>
+                    </div>
+                    <div class="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
+                        <svg viewBox="0 0 36 36" class="w-full h-full -rotate-90">
+                            <circle cx="18" cy="18" r="15.915" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="3.2" />
+                            <circle cx="18" cy="18" r="15.915" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"
+                                :stroke-dasharray="`${show ? live.absensi.persen_hadir : 0} 100`" style="transition:stroke-dasharray .9s ease-out" />
+                        </svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <span class="text-lg font-extrabold">{{ live.absensi.persen_hadir }}%</span>
+                            <span class="text-[9px] text-indigo-200 uppercase tracking-wider">hadir</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Periode gaji berjalan: konteks penting yang dulu tersembunyi -->
+            <div v-if="live.periode" class="relative mt-4 pt-3 border-t border-white/15 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-indigo-100">
+                <span>Periode berjalan <b class="text-white">{{ live.periode.nama }}</b></span>
+                <span>{{ live.periode.mulai }} – {{ live.periode.sampai }}</span>
+                <span class="px-2 py-0.5 rounded-full bg-white/15 font-semibold uppercase tracking-wide">{{ live.periode.status }}</span>
+                <span v-if="live.periode.sisa_hari !== null">{{ live.periode.sisa_hari }} hari lagi menuju tutup periode</span>
+            </div>
+        </div>
+
+        <!-- ══ ANTRIAN TINDAKAN ══════════════════════════════════════════════
+             Paling sering dicek admin, jadi ditaruh paling atas. Yang bernilai 0
+             tetap tampil tenang (abu) agar tidak menimbulkan rasa darurat. ──── -->
+        <div class="mb-4">
+            <div class="flex items-baseline justify-between mb-2">
+                <h2 class="text-sm font-bold text-gray-700">Menunggu Tindakan</h2>
+                <span class="text-[11px] text-gray-500">{{ totalAntrian }} item perlu diproses</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5">
+                <Link v-for="a in live.antrian" :key="a.label" :href="a.url"
+                    class="group rounded-2xl border p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                    :class="a.value > 0 ? antrianCls(a.tone) : 'bg-white border-gray-100'">
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-2xl font-extrabold tabular-nums leading-none"
+                            :class="a.value > 0 ? '' : 'text-gray-300'">{{ a.value }}</span>
+                        <svg class="w-3.5 h-3.5 ml-auto text-gray-300 group-hover:translate-x-0.5 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </div>
+                    <p class="text-[11.5px] font-semibold mt-1" :class="a.value > 0 ? '' : 'text-gray-500'">{{ a.label }}</p>
+                </Link>
             </div>
         </div>
 
         <!-- ══ KPI ROW ═══════════════════════════════════════════════════════ -->
         <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-5">
             <div v-for="(k, i) in kpis" :key="k.label"
-                class="group bg-white rounded-2xl border border-gray-100 shadow-sm p-3.5 sm:p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+                class="group bg-white rounded-2xl border border-gray-100 shadow-sm p-3.5 sm:p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
                 :style="{ transitionDelay: (i * 40) + 'ms', opacity: show ? 1 : 0, transform: show ? 'none' : 'translateY(8px)' }">
                 <div class="flex items-center justify-between mb-2.5">
-                    <div :class="['w-9 h-9 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform', k.bg]">
-                        <svg class="w-4.5 h-4.5" style="width:18px;height:18px" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div :class="['w-9 h-9 rounded-xl flex items-center justify-center', k.bg]">
+                        <svg style="width:18px;height:18px" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="k.icon" />
                         </svg>
                     </div>
                     <span v-if="k.trend"
-                        :class="['text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5',
-                            k.trend.dir === 'up' ? 'bg-emerald-50 text-emerald-600' : k.trend.dir === 'down' ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-400']">
+                        :class="['text-[10px] font-bold px-1.5 py-0.5 rounded-md',
+                            k.trend.dir === 'up' ? 'bg-emerald-50 text-emerald-700' : k.trend.dir === 'down' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500']">
                         <span v-if="k.trend.dir === 'up'">▲</span><span v-else-if="k.trend.dir === 'down'">▼</span>
                         {{ k.trend.text }}
                     </span>
                 </div>
                 <div class="flex items-baseline gap-1">
-                    <span class="text-xl sm:text-2xl font-extrabold text-gray-800 tabular-nums leading-none">{{ k.value }}</span>
-                    <span v-if="k.sub" class="text-xs text-gray-400">{{ k.sub }}</span>
+                    <span class="text-xl sm:text-2xl font-extrabold text-gray-900 tabular-nums leading-none">{{ k.value }}</span>
+                    <span v-if="k.sub" class="text-xs text-gray-500">{{ k.sub }}</span>
                 </div>
-                <p class="text-[11px] font-medium text-gray-400 mt-1">{{ k.label }}</p>
+                <p class="text-[11.5px] font-medium text-gray-500 mt-1">{{ k.label }}</p>
             </div>
         </div>
 
         <!-- ══ MONITORING FITUR PESANTREN ════════════════════════════════════ -->
-        <div v-if="monitoringFitur.length" class="mb-5">
+        <div v-if="live.monitoringFitur.length" class="mb-5">
             <div class="flex items-center justify-between mb-2.5">
-                <h2 class="text-sm font-bold text-gray-700">Monitoring Fitur</h2>
-                <span class="text-[11px] text-gray-400">Real-time hari ini · klik untuk kelola</span>
+                <h2 class="text-sm font-bold text-gray-700">Monitoring Fitur Hari Ini</h2>
+                <span class="text-[11px] text-gray-500">Disegarkan tiap {{ jedaDetik }} detik · klik untuk kelola</span>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                <Link v-for="(f, i) in monitoringFitur" :key="f.label" :href="f.url"
+                <Link v-for="(f, i) in live.monitoringFitur" :key="f.label" :href="f.url"
                     class="group bg-white rounded-2xl border border-gray-100 shadow-sm p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
                     :style="{ transitionDelay: (i * 40) + 'ms', opacity: show ? 1 : 0, transform: show ? 'none' : 'translateY(8px)' }">
                     <div class="flex items-center justify-between mb-2">
@@ -79,13 +139,13 @@
                             </svg>
                         </div>
                         <span v-if="f.alert > 0"
-                            class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600">
+                            class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700">
                             {{ f.alert }}<span v-if="f.alert_label" class="font-medium"> {{ f.alert_label }}</span>
                         </span>
                     </div>
                     <div class="flex items-baseline gap-1">
                         <span class="text-2xl font-extrabold text-gray-800 tabular-nums leading-none">{{ f.value }}</span>
-                        <span class="text-[11px] text-gray-400">{{ f.satuan }}</span>
+                        <span class="text-[11px] text-gray-500">{{ f.satuan }}</span>
                     </div>
                     <p class="text-xs font-semibold text-gray-600 mt-1 flex items-center gap-1">
                         {{ f.label }}
@@ -99,7 +159,7 @@
 
         <!-- ══ ROW: Donut + Tren Kehadiran + Kinerja ════════════════════════ -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-            <Card title="Absensi Hari Ini" icon="check">
+            <Card title="Absensi Hari Ini" icon="check" :hint="`dari ${live.absensi.wajib_absen} guru yang wajib absen hari ini`">
                 <div class="flex items-center gap-5">
                     <div class="relative w-32 h-32 shrink-0">
                         <svg viewBox="0 0 36 36" class="w-full h-full -rotate-90">
@@ -110,16 +170,16 @@
                                 style="transition:stroke-dasharray .9s ease-out" />
                         </svg>
                         <div class="absolute inset-0 flex flex-col items-center justify-center">
-                            <span class="text-2xl font-extrabold text-gray-800">{{ stats.persen_hadir }}%</span>
-                            <span class="text-[10px] text-gray-400 uppercase tracking-wide">Hadir</span>
+                            <span class="text-2xl font-extrabold text-gray-900">{{ live.absensi.persen_hadir }}%</span>
+                            <span class="text-[10px] text-gray-500 uppercase tracking-wide">Hadir</span>
                         </div>
                     </div>
                     <div class="flex-1 space-y-2">
-                        <div v-for="d in donutAbsensi" :key="d.label"
+                        <div v-for="d in live.absensi.donut" :key="d.label"
                             class="flex items-center gap-2 text-xs rounded-lg px-1.5 py-1 hover:bg-gray-50 transition-colors">
                             <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: d.color }"></span>
-                            <span class="text-gray-500 flex-1">{{ d.label }}</span>
-                            <span class="font-bold text-gray-800 tabular-nums">{{ d.value }}</span>
+                            <span class="text-gray-600 flex-1">{{ d.label }}</span>
+                            <span class="font-bold text-gray-900 tabular-nums">{{ d.value }}</span>
                         </div>
                     </div>
                 </div>
@@ -130,18 +190,18 @@
                     <div v-for="(t, i) in trenKehadiran" :key="i"
                         class="flex-1 flex flex-col items-center gap-1.5 group"
                         :title="`${t.tanggal || t.label}: ${t.hadir} hadir dari ${stats.total_guru} guru (${t.persen}%)`">
-                        <span class="text-[10px] font-bold text-gray-400 group-hover:text-indigo-600 transition-colors">{{ t.hadir }}</span>
+                        <span class="text-[11px] font-bold text-gray-500 group-hover:text-indigo-600 transition-colors">{{ t.hadir }}</span>
                         <div class="w-full bg-gray-100 rounded-lg overflow-hidden flex items-end" style="height:100px">
                             <div class="w-full rounded-lg transition-all duration-700 ease-out"
                                 :class="i === trenKehadiran.length - 1 ? 'bg-gradient-to-t from-indigo-600 to-indigo-400' : 'bg-indigo-200 group-hover:bg-indigo-300'"
                                 :style="{ height: (show ? t.persen : 0) + '%' }"></div>
                         </div>
-                        <span class="text-[10px]" :class="i === trenKehadiran.length - 1 ? 'text-indigo-600 font-bold' : 'text-gray-400'">{{ t.label }}</span>
+                        <span class="text-[11px]" :class="i === trenKehadiran.length - 1 ? 'text-indigo-600 font-bold' : 'text-gray-500'">{{ t.label }}</span>
                     </div>
                 </div>
             </Card>
 
-            <Card title="Distribusi Kinerja" icon="trophy">
+            <Card title="Distribusi Kinerja" icon="trophy" :hint="stats.periode_aktif ? `periode ${stats.periode_aktif}` : null">
                 <div class="space-y-2.5 pt-1">
                     <div v-for="g in kinerjaDistribusi" :key="g.grade" class="flex items-center gap-2"
                         :title="`Grade ${g.grade}: ${g.jumlah} guru`">
@@ -153,7 +213,7 @@
                         <span class="w-5 text-xs font-bold text-gray-700 text-right tabular-nums">{{ g.jumlah }}</span>
                     </div>
                     <div class="flex items-center justify-between pt-2 mt-1 border-t border-gray-50">
-                        <span class="text-[11px] text-gray-400">Rata-rata skor</span>
+                        <span class="text-[11px] text-gray-500">Rata-rata skor</span>
                         <span class="text-sm font-extrabold text-indigo-600">{{ stats.rata_kinerja }}</span>
                     </div>
                 </div>
@@ -185,13 +245,13 @@
                         </defs>
                     </svg>
                     <div class="flex justify-between mt-1">
-                        <span v-for="(p, i) in trenGaji" :key="i" class="text-[10px] text-gray-400">{{ p.label }}</span>
+                        <span v-for="(p, i) in trenGaji" :key="i" class="text-[11px] text-gray-500">{{ p.label }}</span>
                     </div>
                 </div>
-                <p v-else class="text-sm text-gray-400 py-10 text-center">Belum ada data penggajian.</p>
+                <p v-else class="text-sm text-gray-500 py-10 text-center">Belum ada data penggajian.</p>
             </Card>
 
-            <Card title="Perlu Perhatian" icon="alert">
+            <Card title="Perlu Perhatian" icon="alert" hint="5 skor terendah periode ini">
                 <div v-if="kinerjaRendah.length" class="space-y-1.5">
                     <Link v-for="k in kinerjaRendah" :key="k.guru_id"
                         :href="route('admin.smart-payroll.kinerja.detail-guru', k.guru_id)"
@@ -204,7 +264,7 @@
                 </div>
                 <div v-else class="py-10 text-center">
                     <div class="text-3xl mb-1">🎉</div>
-                    <p class="text-sm text-gray-400">Semua kinerja baik bulan ini.</p>
+                    <p class="text-sm text-gray-500">Semua kinerja baik pada periode ini.</p>
                 </div>
             </Card>
         </div>
@@ -219,7 +279,7 @@
                         <div class="flex-1 relative h-5">
                             <div v-for="w in gantt.weekends" :key="'w' + w" class="absolute top-0 bottom-0 bg-slate-100/70"
                                 :style="{ left: ((w - 1) / gantt.hari * 100) + '%', width: (1 / gantt.hari * 100) + '%' }"></div>
-                            <span v-for="d in dayTicks" :key="d" class="absolute text-[9px] text-gray-400 -translate-x-1/2"
+                            <span v-for="d in dayTicks" :key="d" class="absolute text-[10px] text-gray-500 -translate-x-1/2"
                                 :style="{ left: ((d - 0.5) / gantt.hari * 100) + '%' }">{{ d }}</span>
                         </div>
                     </div>
@@ -228,7 +288,7 @@
                         <div v-for="(it, i) in gantt.items" :key="i" class="flex items-center">
                             <div class="w-44 shrink-0 pr-3">
                                 <p class="text-xs font-semibold text-gray-700 truncate">{{ it.label }}</p>
-                                <p class="text-[10px] text-gray-400">{{ it.kategori }}</p>
+                                <p class="text-[10.5px] text-gray-500">{{ it.kategori }}</p>
                             </div>
                             <div class="flex-1 relative h-8 rounded-lg overflow-hidden bg-gray-50/80">
                                 <!-- weekend shading -->
@@ -256,14 +316,14 @@
                     </div>
                 </div>
             </div>
-            <p v-else class="text-sm text-gray-400 py-10 text-center">Tidak ada kegiatan terjadwal bulan ini.</p>
+            <p v-else class="text-sm text-gray-500 py-10 text-center">Tidak ada kegiatan terjadwal bulan ini.</p>
         </Card>
 
     </AdminLayout>
 </template>
 
 <script setup>
-import { computed, h, ref, onMounted } from 'vue'
+import { computed, h, ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
@@ -277,7 +337,100 @@ const props = defineProps({
     kinerjaRendah: { type: Array, default: () => [] },
     periodeTerkini: { type: Object, default: null },
     monitoringFitur: { type: Array, default: () => [] },
+    live: { type: Object, default: () => ({}) },
 })
+
+// ── Penyegaran berkala ────────────────────────────────────────────────────────
+// Dashboard dulu hanya memuat data saat halaman dibuka meski kartunya menulis
+// "real-time" — admin harus menekan F5. Sekarang bagian yang benar-benar berubah
+// (absensi hari ini, monitoring, antrian) ditarik berkala dari endpoint ringan.
+const jedaDetik = 30
+const live = reactive({
+    absensi: props.live.absensi ?? { donut: [], wajib_absen: 0, hadir_total: 0, persen_hadir: 0, belum: 0, terlambat: 0 },
+    monitoringFitur: props.live.monitoringFitur ?? props.monitoringFitur ?? [],
+    antrian: props.live.antrian ?? [],
+    periode: props.live.periode ?? null,
+    diperbarui_iso: props.live.diperbarui_iso ?? new Date().toISOString(),
+})
+
+const menyegarkan = ref(false)
+const gagal = ref(false)
+const sekarang = ref(Date.now())
+let timerMuat = null
+let timerLabel = null
+
+const labelSegar = computed(() => {
+    const t = new Date(live.diperbarui_iso).getTime()
+    const detik = Math.max(0, Math.round((sekarang.value - t) / 1000))
+    if (gagal.value) return 'terakhir berhasil ' + (detik < 60 ? `${detik} detik lalu` : `${Math.round(detik / 60)} menit lalu`)
+    if (detik < 10) return 'baru saja diperbarui'
+    if (detik < 60) return `diperbarui ${detik} detik lalu`
+    return `diperbarui ${Math.round(detik / 60)} menit lalu`
+})
+
+const totalAntrian = computed(() => (live.antrian || []).reduce((a, b) => a + (b.value || 0), 0))
+
+async function muatLive(manual = false) {
+    if (menyegarkan.value) return
+    menyegarkan.value = true
+    try {
+        const r = await fetch(route('admin.dashboard.live'), {
+            headers: { Accept: 'application/json' }, credentials: 'same-origin',
+        })
+        const d = await r.json()
+        if (d?.success) {
+            live.absensi = d.absensi
+            live.monitoringFitur = d.monitoringFitur
+            live.antrian = d.antrian
+            live.periode = d.periode
+            live.diperbarui_iso = d.diperbarui_iso
+            gagal.value = false
+        } else { gagal.value = true }
+    } catch (e) {
+        // Jaringan putus: biarkan angka terakhir tampil, tandai statusnya saja —
+        // lebih baik daripada mengosongkan dashboard.
+        gagal.value = true
+    } finally {
+        menyegarkan.value = false
+        sekarang.value = Date.now()
+        if (manual) mulaiTimer()   // hitung ulang jeda setelah segarkan manual
+    }
+}
+
+function mulaiTimer() {
+    if (timerMuat) clearInterval(timerMuat)
+    timerMuat = setInterval(() => {
+        // Hemat: jangan menarik data saat tab tidak terlihat.
+        if (document.visibilityState === 'visible') muatLive()
+    }, jedaDetik * 1000)
+}
+
+function saatKembali() {
+    if (document.visibilityState === 'visible') muatLive()
+}
+
+onMounted(() => {
+    mulaiTimer()
+    timerLabel = setInterval(() => { sekarang.value = Date.now() }, 5000)
+    document.addEventListener('visibilitychange', saatKembali)
+})
+onBeforeUnmount(() => {
+    if (timerMuat) clearInterval(timerMuat)
+    if (timerLabel) clearInterval(timerLabel)
+    document.removeEventListener('visibilitychange', saatKembali)
+})
+
+/** Warna kartu antrian saat ada yang menunggu (0 tetap netral). */
+function antrianCls(t) {
+    return {
+        blue:    'bg-blue-50 border-blue-100 text-blue-800',
+        violet:  'bg-violet-50 border-violet-100 text-violet-800',
+        amber:   'bg-amber-50 border-amber-100 text-amber-800',
+        rose:    'bg-rose-50 border-rose-100 text-rose-800',
+        emerald: 'bg-emerald-50 border-emerald-100 text-emerald-800',
+        gray:    'bg-slate-50 border-slate-200 text-slate-700',
+    }[t] ?? 'bg-slate-50 border-slate-200 text-slate-700'
+}
 
 function toneCls(t) {
     return {
@@ -334,7 +487,7 @@ const gajiTrend = computed(() => {
 
 const kpis = computed(() => [
     { label: 'Total Guru', value: props.stats.total_guru, icon: ICONS.users, bg: 'bg-indigo-50 text-indigo-600' },
-    { label: 'Hadir Hari Ini', value: `${props.stats.hadir_hari_ini}/${props.stats.total_guru}`, sub: `${props.stats.persen_hadir}%`, icon: ICONS.check, bg: 'bg-emerald-50 text-emerald-600', trend: hadirTrend.value },
+    { label: 'Hadir Hari Ini', value: `${live.absensi.hadir_total}/${live.absensi.wajib_absen}`, sub: `${live.absensi.persen_hadir}%`, icon: ICONS.check, bg: 'bg-emerald-50 text-emerald-600', trend: hadirTrend.value },
     { label: 'Rata Kinerja', value: props.stats.rata_kinerja, sub: '/100', icon: ICONS.trophy, bg: 'bg-amber-50 text-amber-600' },
     { label: 'Gaji Periode', value: rpShort(props.periodeTerkini?.gaji_bersih ?? 0), icon: ICONS.wallet, bg: 'bg-sky-50 text-sky-600', trend: gajiTrend.value },
     { label: 'Lembur', value: props.stats.lembur_bulan_ini, sub: 'bln ini', icon: ICONS.moon, bg: 'bg-violet-50 text-violet-600' },
@@ -343,9 +496,10 @@ const kpis = computed(() => [
 
 // ── Donut ──────────────────────────────────────────────────────────────────
 const donutSegments = computed(() => {
-    const total = props.donutAbsensi.reduce((a, b) => a + (b.value || 0), 0)
+    const sumber = live.absensi.donut ?? props.donutAbsensi
+    const total = sumber.reduce((a, b) => a + (b.value || 0), 0)
     let acc = 0
-    return props.donutAbsensi.filter(s => s.value > 0).map(s => {
+    return sumber.filter(s => s.value > 0).map(s => {
         const pct = total ? (s.value / total) * 100 : 0
         const seg = { color: s.color, dash: `${pct} ${100 - pct}`, offset: 100 - acc + 25 }
         acc += pct
@@ -401,12 +555,16 @@ const CARD_ICONS = ICONS
 const Card = (p, { slots }) => h('div',
     { class: 'bg-white rounded-2xl border border-gray-100 shadow-sm p-5 transition-shadow hover:shadow-md' },
     [
-        p.title ? h('div', { class: 'flex items-center gap-2 mb-3' }, [
-            p.icon ? h('svg', { class: 'w-4 h-4 text-indigo-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+        p.title ? h('div', { class: 'flex items-start gap-2 mb-3' }, [
+            p.icon ? h('svg', { class: 'w-4 h-4 text-indigo-500 mt-0.5 shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                 [h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: CARD_ICONS[p.icon] || '' })]) : null,
-            h('h3', { class: 'text-sm font-semibold text-gray-700' }, p.title),
+            h('div', { class: 'min-w-0' }, [
+                h('h3', { class: 'text-sm font-semibold text-gray-800' }, p.title),
+                // Keterangan jendela data: pembaca tahu angka ini "dari mana"
+                p.hint ? h('p', { class: 'text-[11px] text-gray-500 mt-0.5' }, p.hint) : null,
+            ]),
         ]) : null,
         slots.default ? slots.default() : null,
     ])
-Card.props = ['title', 'icon']
+Card.props = ['title', 'icon', 'hint']
 </script>

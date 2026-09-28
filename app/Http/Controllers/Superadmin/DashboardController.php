@@ -27,32 +27,155 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    /**
+     * GET admin/dashboard/live — hanya bagian yang benar-benar berubah tiap menit.
+     *
+     * Dashboard dulu memuat SELURUH payload (tren 7 hari, tren gaji 6 periode,
+     * gantt, distribusi kinerja, 14 query monitoring) hanya saat halaman dibuka,
+     * dan tidak pernah menyegarkan diri — padahal kartunya menulis "real-time".
+     * Endpoint ringan ini yang dipanggil berkala oleh halaman.
+     */
+    public function live()
+    {
+        return response()->json($this->dataLive() + ['success' => true]);
+    }
+
+    /**
+     * Data volatil: absensi hari ini, monitoring fitur, antrian, periode berjalan.
+     * Di-cache 15 detik supaya beberapa admin yang membuka dashboard bersamaan
+     * tidak menggandakan beban query.
+     */
+    private function dataLive(): array
+    {
+        return \Illuminate\Support\Facades\Cache::remember('dashboard.live', 15, function () {
+            $today     = Carbon::today();
+            $totalGuru = TenagaPendidik::aktif()->count();
+            $absen     = $this->ringkasanAbsensiHariIni($today, $totalGuru);
+            $periode   = PeriodePenggajian::untukTanggal($today->toDateString())
+                ?? PeriodePenggajian::orderByDesc('tanggal_selesai')->first();
+
+            return [
+                'absensi'         => $absen,
+                'monitoringFitur' => $this->monitoringFitur($today),
+                'antrian'         => $this->antrian(),
+                'periode'         => $periode ? [
+                    'nama'   => $periode->nama_bulan,
+                    'mulai'  => $periode->tanggal_mulai?->format('d M'),
+                    'sampai' => $periode->tanggal_selesai?->format('d M Y'),
+                    'status' => $periode->status,
+                    'sisa_hari' => $periode->tanggal_selesai
+                        ? max(0, $today->diffInDays($periode->tanggal_selesai, false)) : null,
+                ] : null,
+                'diperbarui_pada' => now()->format('H:i:s'),
+                'diperbarui_iso'  => now()->toIso8601String(),
+            ];
+        });
+    }
+
+    /**
+     * Ringkasan absensi hari ini — memakai COUNT di SQL, bukan memuat seluruh
+     * baris beserta relasinya seperti sebelumnya.
+     *
+     * "Belum absen" dulu = totalGuru − (hadir+izin+sakit), sehingga pada hari
+     * yang liburnya berbeda per guru angkanya membengkak. Kini guru yang hari itu
+     * memang libur / dibebaskan absen harian dikeluarkan dari penyebut.
+     */
+    private function ringkasanAbsensiHariIni(Carbon $today, int $totalGuru): array
+    {
+        $per = AbsensiHarian::whereDate('tanggal', $today)
+            ->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
+
+        $hadir     = (int) (($per['hadir'] ?? 0) + ($per['dinas_luar'] ?? 0));
+        $terlambat = (int) ($per['terlambat'] ?? 0);
+        $izin      = (int) (($per['izin'] ?? 0) + ($per['izin_sakit'] ?? 0));
+        $sakit     = (int) ($per['sakit'] ?? 0);
+        $alfa      = (int) ($per['alfa'] ?? 0);
+        $libur     = (int) ($per['libur'] ?? 0);
+        $hadirTotal = $hadir + $terlambat;
+
+        // Guru yang hari ini tidak punya kewajiban absen harian (libur mingguan,
+        // libur individu, atau dibebaskan) tidak dihitung sebagai "belum absen".
+        $namaHari = \App\Services\TimezoneHelper::namaHariDB($today);
+        $wajib = TenagaPendidik::aktif()->get()
+            ->filter(fn ($g) => $g->jadwalHari($namaHari, $today->toDateString()) !== null)
+            ->count();
+
+        $tercatat = $hadirTotal + $izin + $sakit + $alfa;
+        $belum    = max(0, $wajib - $tercatat);
+
+        return [
+            'total_guru'   => $totalGuru,
+            'wajib_absen'  => $wajib,
+            'hadir'        => $hadir,
+            'terlambat'    => $terlambat,
+            'izin'         => $izin,
+            'sakit'        => $sakit,
+            'alfa'         => $alfa,
+            'libur'        => $libur,
+            'hadir_total'  => $hadirTotal,
+            'belum'        => $belum,
+            'persen_hadir' => $wajib > 0 ? (int) round($hadirTotal / $wajib * 100) : 0,
+            'donut' => [
+                ['label' => 'Hadir',     'value' => $hadir,     'color' => '#059669'],
+                ['label' => 'Terlambat', 'value' => $terlambat, 'color' => '#D97706'],
+                ['label' => 'Izin',      'value' => $izin,      'color' => '#0284C7'],
+                ['label' => 'Sakit',     'value' => $sakit,     'color' => '#7C3AED'],
+                ['label' => 'Alfa',      'value' => $alfa,      'color' => '#DC2626'],
+                ['label' => 'Belum',     'value' => $belum,     'color' => '#CBD5E1'],
+            ],
+        ];
+    }
+
+    /** Antrian yang menunggu tindakan admin — angka yang paling sering dicek. */
+    private function antrian(): array
+    {
+        // Status menunggu pada pengajuan izin bernama 'pending' (bukan 'diajukan'
+        // seperti pada lembur) — beda penamaan antar modul.
+        $izinPending = \App\Models\PengajuanIzin::where('status', 'pending')->count();
+        $verifTugas  = \App\Models\PenugasanTambahan::where('status_pengerjaan', 'selesai')
+            ->whereNull('disetujui')->count();
+        $lewatTenggat = \App\Models\PenugasanTambahan::with('tugasTambahan')
+            ->whereHas('tugasTambahan', fn ($q) => $q->where('status', 'aktif'))
+            ->whereIn('status_pengerjaan', ['belum', 'sedang'])
+            ->get()->filter(fn ($p) => $p->lewatTenggat())->count();
+
+        return [
+            ['label' => 'Izin menunggu',      'value' => $izinPending,
+             'url' => route('admin.smart-payroll.pengajuan-izin.index'), 'tone' => 'blue'],
+            ['label' => 'Lembur menunggu',    'value' => Lembur::where('status', 'diajukan')->count(),
+             'url' => route('admin.smart-payroll.lembur.index'), 'tone' => 'violet'],
+            ['label' => 'Verifikasi tugas',   'value' => $verifTugas,
+             'url' => route('admin.smart-payroll.tugas-tambahan.index'), 'tone' => 'amber'],
+            ['label' => 'Tugas lewat tenggat', 'value' => $lewatTenggat,
+             'url' => route('admin.smart-payroll.tugas-tambahan.index'), 'tone' => 'rose'],
+            ['label' => 'Sanggah piket',      'value' => PiketPenilaian::where('status_sanggah', 'diajukan')->count(),
+             'url' => route('admin.piket.sanggah.index'), 'tone' => 'emerald'],
+            ['label' => 'Laporan gagal kirim', 'value' => OutboxLaporan::where('status', 'failed')->count(),
+             'url' => route('admin.smart-habbit.outbox.index'), 'tone' => 'gray'],
+        ];
+    }
+
     public function index()
     {
         $today   = Carbon::today();
-        $bulan   = $today->month;
-        $tahun   = $today->year;
         $setting = SettingKinerja::getDefault();
         $totalGuru = TenagaPendidik::aktif()->count();
 
-        // ── Absensi hari ini ─────────────────────────────────────────────────
-        $absensiHariIni = AbsensiHarian::with(['tenagaPendidik.user', 'tenagaPendidik.jabatan'])
-            ->whereDate('tanggal', $today)->get();
+        // Kinerja mengikuti PERIODE PENGGAJIAN (26→25), bukan bulan kalender:
+        // pada tanggal 26–31 dashboard dulu menampilkan distribusi bulan lama
+        // yang skornya sudah dibekukan, bukan periode yang sedang berjalan.
+        $periodeBerjalan = PeriodePenggajian::untukTanggal($today->toDateString());
+        $bulan = (int) ($periodeBerjalan->bulan ?? $today->month);
+        $tahun = (int) ($periodeBerjalan->tahun ?? $today->year);
 
-        $hadir     = $absensiHariIni->whereIn('status', ['hadir', 'dinas_luar'])->count();
-        $terlambat = $absensiHariIni->where('status', 'terlambat')->count();
-        $izin      = $absensiHariIni->whereIn('status', ['izin', 'izin_sakit'])->count();
-        $sakit     = $absensiHariIni->where('status', 'sakit')->count();
-        $hadirTotal = $hadir + $terlambat;
-        $belum     = max(0, $totalGuru - ($hadirTotal + $izin + $sakit));
-
-        $donutAbsensi = [
-            ['label' => 'Hadir',     'value' => $hadir,     'color' => '#059669'],
-            ['label' => 'Terlambat', 'value' => $terlambat, 'color' => '#F59E0B'],
-            ['label' => 'Izin',      'value' => $izin,      'color' => '#0284C7'],
-            ['label' => 'Sakit',     'value' => $sakit,     'color' => '#7C3AED'],
-            ['label' => 'Belum',     'value' => $belum,     'color' => '#CBD5E1'],
-        ];
+        $live         = $this->dataLive();
+        $absen        = $live['absensi'];
+        $hadirTotal   = $absen['hadir_total'];
+        $terlambat    = $absen['terlambat'];
+        $izin         = $absen['izin'];
+        $sakit        = $absen['sakit'];
+        $belum        = $absen['belum'];
+        $donutAbsensi = $absen['donut'];
 
         // ── Tren kehadiran 7 hari terakhir ───────────────────────────────────
         // Pengelompokan dikerjakan SQL, bukan memfilter koleksi di PHP: kolom
@@ -157,8 +280,9 @@ class DashboardController extends Controller
             });
 
         // ── Perlu perhatian: kinerja terendah ────────────────────────────────
+        // Eager load sekali (dulu loadMissing di dalam map → 5 query terpisah).
+        $rekap->loadMissing('tenagaPendidik.user');
         $kinerjaRendah = $rekap->sortBy('skor_total')->take(5)->map(function ($r) use ($setting) {
-            $r->loadMissing('tenagaPendidik.user');
             return [
                 'guru_id' => $r->tenaga_pendidik_id,
                 'nama'    => $r->tenagaPendidik?->user?->name ?? '—',
@@ -167,12 +291,9 @@ class DashboardController extends Controller
             ];
         })->values();
 
-        // ── Antrian verifikasi (pending) ─────────────────────────────────────
-        $tugasPending  = TugasTambahan::aktif()->count(); // ringkas
-        $lemburPending = Lembur::where('status', 'diajukan')->count();
-
-        // ── Periode terkini ──────────────────────────────────────────────────
-        $periode = PeriodePenggajian::latest()->first();
+        // ── Periode terkini: yang MENCAKUP hari ini (periode 26→25), bukan
+        //    yang terakhir dibuat ────────────────────────────────────────────
+        $periode = $periodeBerjalan ?? PeriodePenggajian::orderByDesc('tanggal_selesai')->first();
         $periodeTerkini = null;
         if ($periode) {
             $totalFinal = Penggajian::where('periode_penggajian_id', $periode->id)
@@ -189,7 +310,58 @@ class DashboardController extends Controller
             ];
         }
 
-        // ── Monitoring fitur pesantren (real-time hari ini + antrian) ────────────
+        // ── Monitoring fitur pesantren: lihat monitoringFitur() (dipakai juga
+        //    oleh endpoint live agar tidak ada dua versi logika) ────────────────
+        $monitoringFitur = $live['monitoringFitur'];
+
+        return Inertia::render('Admin/Dashboard', $this->payloadAwal(
+            $live, $monitoringFitur, $totalGuru, $hadirTotal, $terlambat, $izin, $sakit, $belum,
+            $donutAbsensi, $trenKehadiran, $trenGaji, $kinerjaDistribusi, $rataKinerja,
+            $jmlHari, $today, $gantt, $weekends, $kinerjaRendah, $periodeTerkini, $bulan, $tahun, $startM, $endM
+        ));
+    }
+
+    /** Susun payload awal halaman (data volatil + data analitik). */
+    private function payloadAwal(
+        array $live, array $monitoringFitur, int $totalGuru, int $hadirTotal, int $terlambat,
+        int $izin, int $sakit, int $belum, array $donutAbsensi, array $trenKehadiran, $trenGaji,
+        $kinerjaDistribusi, float $rataKinerja, int $jmlHari, Carbon $today, $gantt, array $weekends,
+        $kinerjaRendah, ?array $periodeTerkini, int $bulan, int $tahun, Carbon $startM, Carbon $endM
+    ): array {
+        return [
+            'live'            => $live,
+            'monitoringFitur' => $monitoringFitur,
+            'stats' => [
+                'total_guru'           => $totalGuru,
+                'wajib_absen'          => $live['absensi']['wajib_absen'],
+                'hadir_hari_ini'       => $hadirTotal,
+                'persen_hadir'         => $live['absensi']['persen_hadir'],
+                'tidak_hadir_hari_ini' => $belum,
+                'terlambat_hari_ini'   => $terlambat,
+                'izin_hari_ini'        => $izin,
+                'sakit_hari_ini'       => $sakit,
+                'rata_kinerja'         => $rataKinerja,
+                'lembur_bulan_ini'     => Lembur::whereBetween('tanggal', [$startM->toDateString(), $endM->toDateString()])->count(),
+                'punishment_bulan_ini' => PunishmentKinerja::where('bulan', $bulan)->where('tahun', $tahun)->count(),
+                'periode_aktif'        => $live['periode']['nama'] ?? null,
+            ],
+            'donutAbsensi'      => $donutAbsensi,
+            'trenKehadiran'     => $trenKehadiran,
+            'trenGaji'          => $trenGaji,
+            'kinerjaDistribusi' => $kinerjaDistribusi,
+            'gantt'             => [
+                'hari' => $jmlHari,
+                'bulan_label' => $today->locale('id')->isoFormat('MMMM YYYY'),
+                'hari_ini' => $today->day, 'weekends' => $weekends, 'items' => $gantt->values(),
+            ],
+            'kinerjaRendah'  => $kinerjaRendah,
+            'periodeTerkini' => $periodeTerkini,
+        ];
+    }
+
+    /** Kartu monitoring fitur pesantren — dipakai halaman & endpoint live. */
+    private function monitoringFitur(Carbon $today): array
+    {
         $tgl = $today->toDateString();
 
         $penggantiQ      = AbsensiMengajar::where('status', 'pengganti')->whereDate('tanggal', $tgl);
@@ -254,29 +426,6 @@ class DashboardController extends Controller
              'url' => route('admin.smart-habbit.outbox.index')],
         ];
 
-        return Inertia::render('Admin/Dashboard', [
-            'monitoringFitur' => $monitoringFitur,
-            'stats' => [
-                'total_guru'         => $totalGuru,
-                'hadir_hari_ini'     => $hadirTotal,
-                'persen_hadir'       => $totalGuru > 0 ? round($hadirTotal / $totalGuru * 100) : 0,
-                'tidak_hadir_hari_ini' => $belum,
-                'terlambat_hari_ini' => $terlambat,
-                'izin_hari_ini'      => $izin,
-                'sakit_hari_ini'     => $sakit,
-                'rata_kinerja'       => $rataKinerja,
-                'lembur_bulan_ini'   => Lembur::whereBetween('tanggal', [$startM->toDateString(), $endM->toDateString()])->count(),
-                'punishment_bulan_ini' => PunishmentKinerja::where('bulan', $bulan)->where('tahun', $tahun)->count(),
-                'lembur_pending'     => $lemburPending,
-                'periode_aktif'      => $periode?->nama,
-            ],
-            'donutAbsensi'      => $donutAbsensi,
-            'trenKehadiran'     => $trenKehadiran,
-            'trenGaji'          => $trenGaji,
-            'kinerjaDistribusi' => $kinerjaDistribusi,
-            'gantt'             => ['hari' => $jmlHari, 'bulan_label' => $today->locale('id')->isoFormat('MMMM YYYY'), 'hari_ini' => $today->day, 'weekends' => $weekends, 'items' => $gantt->values()],
-            'kinerjaRendah'     => $kinerjaRendah,
-            'periodeTerkini'    => $periodeTerkini,
-        ]);
+        return $monitoringFitur;
     }
 }

@@ -120,6 +120,8 @@ Route::prefix('admin')
 
         // Dashboard
         Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+        // Data ringan untuk penyegaran berkala dashboard (JSON)
+        Route::get('/dashboard/live', [DashboardController::class, 'live'])->name('dashboard.live');
 
         // Notifikasi (dropdown lonceng topbar — dikonsumsi via fetch)
         Route::get('notifikasi', [NotifikasiController::class, 'index'])->name('notifikasi.index');
