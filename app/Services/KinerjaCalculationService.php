@@ -701,7 +701,11 @@ class KinerjaCalculationService
                 // ketidakhadiran di kegiatan wajib. Jadi jumlah catatan piket bisa 0
                 // sementara poinnya tetap besar — sebabnya ditulis apa adanya.
                 'sebab'    => 'pengurangan ' . $kp['poin_catatan'] . ' poin dari catatan piket & ketidakhadiran kegiatan wajib',
-                'angka'    => "{$kp['catatan']} catatan piket · {$kp['apresiasi']} apresiasi (+{$kp['poin_apresiasi']}) · total penyesuaian {$kp['penyesuaian']}",
+                // Jumlah baris penilaian hanya mencakup penilaian guru piket, sedangkan
+                // poin juga berasal dari kegiatan wajib — jadi yang ditampilkan POIN-nya
+                // agar tidak terbaca "0 catatan tapi −38 poin".
+                'angka'    => "apresiasi +{$kp['poin_apresiasi']} · catatan −{$kp['poin_catatan']} · penyesuaian akhir {$kp['penyesuaian']}"
+                    . ($kp['catatan'] > 0 ? " (termasuk {$kp['catatan']} catatan dari guru piket)" : ''),
                 'saran'    => 'Ikuti kegiatan wajib (mis. sholat berjamaah) dan hindari catatan piket.',
                 'dampak'   => round(abs((float) $kp['penyesuaian']), 2),
             ];
