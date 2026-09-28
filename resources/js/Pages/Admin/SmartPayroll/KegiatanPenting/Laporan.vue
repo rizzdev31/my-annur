@@ -26,6 +26,7 @@
                 <div class="flex items-center gap-2 text-xs font-semibold">
                     <span class="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700">Hadir {{ keg.hadir }}</span>
                     <span class="px-2 py-1 rounded-lg bg-red-50 text-red-600">Tidak {{ keg.tidak }}</span>
+                    <span v-if="keg.izin" class="px-2 py-1 rounded-lg bg-amber-50 text-amber-700">Izin {{ keg.izin }} · netral</span>
                     <span v-if="keg.belum" class="px-2 py-1 rounded-lg bg-amber-50 text-amber-600">Belum {{ keg.belum }}</span>
                 </div>
                 <svg class="w-4 h-4 text-gray-300 transition-transform" :class="buka === keg.id ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -36,7 +37,9 @@
                     <span class="text-[11px] text-gray-400">{{ p.jenis_guru }}</span>
                     <span v-if="!p.hadir_kerja" class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-400">tak absen harian</span>
                     <span :class="statusCls(p.status)" class="text-[11px] font-semibold px-2 py-0.5 rounded-md w-24 text-center">
-                        {{ p.status === 'hadir' ? ('Hadir' + (p.jam_hadir ? ' ' + p.jam_hadir : '')) : (p.status === 'tidak_hadir' ? 'Tidak hadir' : 'Belum dicatat') }}
+                        {{ p.status === 'hadir' ? ('Hadir' + (p.jam_hadir ? ' ' + p.jam_hadir : ''))
+                            : p.status === 'tidak_hadir' ? 'Tidak hadir'
+                            : p.status === 'izin' ? 'Izin (netral)' : 'Belum dicatat' }}
                     </span>
                 </div>
             </div>
@@ -65,6 +68,7 @@ function labelSasaran(s) { return { semua: 'Semua', mukim: 'Mukim', non_mukim: '
 function statusCls(s) {
     if (s === 'hadir') return 'bg-emerald-50 text-emerald-700'
     if (s === 'tidak_hadir') return 'bg-red-50 text-red-600'
+    if (s === 'izin') return 'bg-amber-50 text-amber-700'
     return 'bg-amber-50 text-amber-600'
 }
 </script>

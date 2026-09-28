@@ -59,6 +59,9 @@ class KegiatanPentingApiController extends Controller
             'success'  => true,
             'kegiatan' => ['id' => $kegiatan->id, 'nama' => $kegiatan->nama, 'jam' => substr((string) $kegiatan->jam, 0, 5)],
             'data'     => $this->service->pesertaHariIni($kegiatan, $today)->values(),
+            // Guru di luar daftar wajib yang boleh ditambahkan piket sebagai
+            // peserta ad-hoc (mis. guru mukim yang ikut kegiatan non-mukim).
+            'kandidat' => $this->service->kandidatTambahan($kegiatan, $today),
         ]);
     }
 
@@ -77,7 +80,9 @@ class KegiatanPentingApiController extends Controller
         $data = $request->validate([
             'items'                     => 'required|array|min:1',
             'items.*.tenaga_pendidik_id'=> 'required|integer',
-            'items.*.status'            => 'required|in:hadir,tidak_hadir',
+            // 'izin' = berhalangan yang diperbolehkan; NETRAL bagi kinerja.
+            'items.*.status'            => 'required|in:hadir,tidak_hadir,izin',
+            'items.*.keterangan'        => 'nullable|string|max:200',
         ]);
 
         $n = $this->service->simpanBanyak($kegiatan, $today, $data['items'], $request->user()->id);
@@ -89,6 +94,7 @@ class KegiatanPentingApiController extends Controller
         return response()->json([
             'success' => true,
             'message' => "Kehadiran {$kegiatan->nama} tersimpan ({$n})."
+                . (($r['izin'] ?? 0) > 0 ? " {$r['izin']} izin (netral)." : '')
                 . ($r['belum'] > 0 ? " Masih ada {$r['belum']} guru belum ditandai." : ' Semua peserta sudah ditandai.'),
             'ringkasan' => $r,
         ]);

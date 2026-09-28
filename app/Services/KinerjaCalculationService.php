@@ -581,6 +581,7 @@ class KinerjaCalculationService
                     'adj_piket'      => $kp['adj_piket'],
                     'kegiatan_hadir' => $kp['kegiatan_hadir'],
                     'kegiatan_total' => $kp['kegiatan_total'],
+                    'kegiatan_izin'  => $kp['kegiatan_izin'],
                     'kegiatan_persen'=> $kp['kegiatan_persen'],
                     'kegiatan_band'  => $kp['kegiatan_band'],
                     'maks_kegiatan'  => $kp['maks_kegiatan'],
@@ -714,6 +715,7 @@ class KinerjaCalculationService
                 'sebab'    => "kehadiran {$kp['kegiatan_persen']}% tergolong {$kp['kegiatan_band']}"
                     . " ({$tidakHadir} kali tidak hadir)",
                 'angka'    => "hadir {$kp['kegiatan_hadir']} dari {$kp['kegiatan_total']} kegiatan"
+                    . (($kp['kegiatan_izin'] ?? 0) > 0 ? " ({$kp['kegiatan_izin']} izin tidak dihitung)" : '')
                     . " · batas penyesuaian ±{$kp['maks_kegiatan']}",
                 'saran'    => 'Ikuti kegiatan wajib (sholat berjamaah dll); penilaian memakai persentase, bukan jumlah kejadian.',
                 'dampak'   => round(abs((float) $kp['adj_kegiatan']), 2),
@@ -755,8 +757,11 @@ class KinerjaCalculationService
             ->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)
             ->get(['status']);
 
-        $kesempatan = $kegiatan->count();
-        $hadir      = $kegiatan->where('status', 'hadir')->count();
+        // IZIN bersifat NETRAL: dikeluarkan dari penyebut, jadi tidak menolong
+        // dan tidak menghukum (keputusan kebijakan 28 Sep 2026).
+        $izinKegiatan = $kegiatan->where('status', 'izin')->count();
+        $kesempatan   = $kegiatan->whereIn('status', ['hadir', 'tidak_hadir'])->count();
+        $hadir        = $kegiatan->where('status', 'hadir')->count();
         $rasio      = $kesempatan > 0 ? $hadir / $kesempatan : null;
         $maksKeg    = (float) ($s->maks_adj_kegiatan ?? 6);
         $minSampel  = (int) ($s->min_kesempatan_kegiatan ?? 5);
@@ -803,6 +808,7 @@ class KinerjaCalculationService
             'adj_piket'       => $adjPiket,
             'kegiatan_hadir'  => $hadir,
             'kegiatan_total'  => $kesempatan,
+            'kegiatan_izin'   => $izinKegiatan,
             'kegiatan_persen' => $rasio !== null ? round($rasio * 100, 1) : null,
             'kegiatan_band'   => $bandKegiatan,
             'apresiasi'       => $apresiasi,

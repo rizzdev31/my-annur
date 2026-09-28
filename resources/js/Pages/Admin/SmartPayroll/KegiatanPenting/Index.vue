@@ -60,6 +60,7 @@
                     <tr>
                         <th class="text-left px-4 py-2.5">Kegiatan</th>
                         <th class="text-left px-4 py-2.5">Sasaran</th>
+                        <th class="text-left px-4 py-2.5">Peserta Khusus</th>
                         <th class="text-center px-4 py-2.5">Jam</th>
                         <th class="text-center px-4 py-2.5">Poin (H/A)</th>
                         <th class="text-center px-4 py-2.5">Aktif</th>
@@ -67,10 +68,23 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
-                    <tr v-if="!kegiatan.length"><td colspan="6" class="px-4 py-8 text-center text-gray-400">Belum ada kegiatan.</td></tr>
+                    <tr v-if="!kegiatan.length"><td colspan="7" class="px-4 py-8 text-center text-gray-400">Belum ada kegiatan.</td></tr>
                     <tr v-for="k in kegiatan" :key="k.id" class="hover:bg-gray-50/50">
                         <td class="px-4 py-3 font-medium text-gray-800">{{ k.nama }}</td>
                         <td class="px-4 py-3 text-gray-600">{{ labelSasaran(k.sasaran) }}</td>
+                        <td class="px-4 py-3">
+                            <!-- Sasaran mukim/non-mukim tidak selalu pas: ada guru mukim
+                                 yang memang ikut kegiatan non-mukim, dan sebaliknya. -->
+                            <div v-if="k.peserta_khusus?.length" class="flex flex-wrap gap-1 mb-1">
+                                <span v-for="pk in k.peserta_khusus" :key="pk.id"
+                                    :class="pk.mode === 'tambahan' ? 'bg-violet-50 text-violet-700' : 'bg-gray-100 text-gray-500'"
+                                    class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded">
+                                    {{ pk.mode === 'tambahan' ? '+' : '−' }} {{ pk.nama }}
+                                    <button @click="hapusKhusus(pk)" class="text-red-400 font-bold">×</button>
+                                </span>
+                            </div>
+                            <button @click="bukaKhusus(k)" class="text-[11px] font-semibold text-indigo-600">Atur</button>
+                        </td>
                         <td class="px-4 py-3 text-center tabular-nums">{{ k.jam }}</td>
                         <td class="px-4 py-3 text-center tabular-nums text-gray-600">+{{ k.poin_hadir }} / −{{ k.poin_absen }}</td>
                         <td class="px-4 py-3 text-center">
@@ -86,14 +100,84 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- ATUR PESERTA KHUSUS -->
+        <div v-if="khusus.kegiatan" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl w-full max-w-lg p-5">
+                <h3 class="text-base font-bold text-gray-800">Peserta Khusus — {{ khusus.kegiatan.nama }}</h3>
+                <p class="text-xs text-gray-500 mt-1 mb-4">
+                    Sasaran kegiatan ini <b>{{ labelSasaran(khusus.kegiatan.sasaran) }}</b>.
+                    <b>Tambahan</b> = diwajibkan ikut walau di luar sasaran ·
+                    <b>Dikecualikan</b> = tidak diwajibkan walau termasuk sasaran.
+                </p>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-[11px] text-gray-500 mb-1">Guru</label>
+                        <select v-model.number="khususForm.tenaga_pendidik_id" class="w-full rounded-xl border-gray-200 text-sm">
+                            <option :value="null">— pilih guru —</option>
+                            <option v-for="g in guru" :key="g.id" :value="g.id">{{ g.nama }} ({{ g.jenis_guru }})</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-gray-500 mb-1">Mode</label>
+                        <div class="flex gap-2">
+                            <button @click="khususForm.mode = 'tambahan'"
+                                :class="khususForm.mode === 'tambahan' ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600'"
+                                class="flex-1 py-2 rounded-xl text-xs font-semibold">Tambahan (wajib ikut)</button>
+                            <button @click="khususForm.mode = 'dikecualikan'"
+                                :class="khususForm.mode === 'dikecualikan' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600'"
+                                class="flex-1 py-2 rounded-xl text-xs font-semibold">Dikecualikan</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-gray-500 mb-1">Catatan (opsional)</label>
+                        <input v-model="khususForm.catatan" type="text" maxlength="200"
+                            placeholder="mis. mukim tapi ikut jamaah dzuhur guru non-mukim"
+                            class="w-full rounded-xl border-gray-200 text-sm" />
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-5">
+                    <button @click="khusus.kegiatan = null" class="flex-1 py-2.5 rounded-xl bg-gray-100 text-sm font-semibold text-gray-600">Tutup</button>
+                    <button @click="simpanKhusus" :disabled="!khususForm.tenaga_pendidik_id"
+                        class="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50">Simpan</button>
+                </div>
+            </div>
+        </div>
     </AdminLayout>
 </template>
 
 <script setup>
+import { reactive } from 'vue'
 import { Head, Link, useForm, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
-defineProps({ kegiatan: { type: Array, default: () => [] } })
+const props = defineProps({
+    kegiatan: { type: Array, default: () => [] },
+    guru: { type: Array, default: () => [] },
+})
+
+// Peserta khusus per kegiatan (penyesuaian di luar aturan sasaran)
+const khusus = reactive({ kegiatan: null })
+const khususForm = reactive({ tenaga_pendidik_id: null, mode: 'tambahan', catatan: '' })
+
+function bukaKhusus(k) {
+    khusus.kegiatan = k
+    khususForm.tenaga_pendidik_id = null
+    khususForm.mode = 'tambahan'
+    khususForm.catatan = ''
+}
+
+function simpanKhusus() {
+    router.post(route('admin.smart-payroll.kegiatan-penting.peserta-khusus', khusus.kegiatan.id),
+        { ...khususForm }, {
+            preserveScroll: true,
+            onSuccess: () => { khusus.kegiatan = null },
+        })
+}
+
+function hapusKhusus(pk) {
+    router.delete(route('admin.smart-payroll.kegiatan-penting.peserta-khusus.hapus', pk.id), { preserveScroll: true })
+}
 
 const form = useForm({ id: null, nama: '', sasaran: 'semua', jam: '12:00', poin_hadir: 1, poin_absen: 1, is_aktif: true })
 

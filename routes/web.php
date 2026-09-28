@@ -536,6 +536,13 @@ Route::prefix('admin')
             // ── Kegiatan Penting Guru (tracking oleh guru piket) ──────────
             Route::get('kegiatan-penting/laporan',
                 [\App\Http\Controllers\Superadmin\KegiatanPentingController::class, 'laporan'])->name('kegiatan-penting.laporan');
+            // Peserta khusus: tambahan (wajib walau di luar sasaran) / dikecualikan
+            Route::post('kegiatan-penting/{kegiatanPenting}/peserta-khusus',
+                [\App\Http\Controllers\Superadmin\KegiatanPentingController::class, 'simpanPesertaKhusus'])
+                ->name('kegiatan-penting.peserta-khusus');
+            Route::delete('kegiatan-penting/peserta-khusus/{peserta}',
+                [\App\Http\Controllers\Superadmin\KegiatanPentingController::class, 'hapusPesertaKhusus'])
+                ->name('kegiatan-penting.peserta-khusus.hapus');
             Route::patch('kegiatan-penting/{kegiatanPenting}/toggle',
                 [\App\Http\Controllers\Superadmin\KegiatanPentingController::class, 'toggle'])->name('kegiatan-penting.toggle');
             Route::resource('kegiatan-penting',

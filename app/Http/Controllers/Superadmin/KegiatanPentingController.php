@@ -15,16 +15,66 @@ class KegiatanPentingController extends Controller
     public function index()
     {
         return Inertia::render('Admin/SmartPayroll/KegiatanPenting/Index', [
-            'kegiatan' => KegiatanPenting::orderBy('jam')->get()->map(fn ($k) => [
-                'id'         => $k->id,
-                'nama'       => $k->nama,
-                'sasaran'    => $k->sasaran,
-                'jam'        => substr((string) $k->jam, 0, 5),
-                'poin_hadir' => $k->poin_hadir,
-                'poin_absen' => $k->poin_absen,
-                'is_aktif'   => $k->is_aktif,
-            ]),
+            'kegiatan' => KegiatanPenting::with('pesertaKhusus.tenagaPendidik.user')
+                ->orderBy('jam')->get()->map(fn ($k) => [
+                    'id'         => $k->id,
+                    'nama'       => $k->nama,
+                    'sasaran'    => $k->sasaran,
+                    'jam'        => substr((string) $k->jam, 0, 5),
+                    'poin_hadir' => $k->poin_hadir,
+                    'poin_absen' => $k->poin_absen,
+                    'is_aktif'   => $k->is_aktif,
+                    // Penyesuaian di luar aturan sasaran: ada guru mukim yang
+                    // memang ikut kegiatan non-mukim, dan sebaliknya.
+                    'peserta_khusus' => $k->pesertaKhusus->map(fn ($p) => [
+                        'id'     => $p->id,
+                        'guru_id'=> $p->tenaga_pendidik_id,
+                        'nama'   => $p->tenagaPendidik?->user?->name ?? ('Guru #' . $p->tenaga_pendidik_id),
+                        'mode'   => $p->mode,
+                        'catatan'=> $p->catatan,
+                    ])->values(),
+                ]),
+            // Pilihan guru untuk daftar khusus
+            'guru' => \App\Models\TenagaPendidik::where('is_aktif', true)->with('user')->get()
+                ->map(fn ($g) => [
+                    'id'         => $g->id,
+                    'nama'       => $g->user?->name ?? ('Guru #' . $g->id),
+                    'jenis_guru' => $g->jenis_guru,
+                ])->sortBy('nama')->values(),
         ]);
+    }
+
+    /** Tambah/ubah guru pada daftar peserta khusus kegiatan. */
+    public function simpanPesertaKhusus(Request $request, KegiatanPenting $kegiatanPenting)
+    {
+        $data = $request->validate([
+            'tenaga_pendidik_id' => 'required|exists:tenaga_pendidik,id',
+            'mode'               => 'required|in:tambahan,dikecualikan',
+            'catatan'            => 'nullable|string|max:200',
+        ]);
+
+        \App\Models\KegiatanPentingPeserta::updateOrCreate(
+            [
+                'kegiatan_penting_id' => $kegiatanPenting->id,
+                'tenaga_pendidik_id'  => $data['tenaga_pendidik_id'],
+            ],
+            [
+                'mode'        => $data['mode'],
+                'catatan'     => $data['catatan'] ?? null,
+                'dibuat_oleh' => auth()->id(),
+            ],
+        );
+
+        return back()->with('success', $data['mode'] === 'tambahan'
+            ? 'Guru ditambahkan sebagai peserta wajib kegiatan ini.'
+            : 'Guru dikecualikan dari kegiatan ini.');
+    }
+
+    /** Hapus satu baris daftar peserta khusus. */
+    public function hapusPesertaKhusus(\App\Models\KegiatanPentingPeserta $peserta)
+    {
+        $peserta->delete();
+        return back()->with('success', 'Pengaturan peserta khusus dihapus.');
     }
 
     public function store(Request $request)
@@ -68,6 +118,8 @@ class KegiatanPentingController extends Controller
                     'total'   => $peserta->count(),
                     'hadir'   => $peserta->where('status', 'hadir')->count(),
                     'tidak'   => $peserta->where('status', 'tidak_hadir')->count(),
+                    // Izin bersifat netral — tidak masuk penyebut rasio kinerja.
+                    'izin'    => $peserta->where('status', 'izin')->count(),
                     'belum'   => $peserta->whereNull('status')->count(),
                     'peserta' => $peserta,
                 ];
