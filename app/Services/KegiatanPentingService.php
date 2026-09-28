@@ -84,7 +84,8 @@ class KegiatanPentingService
             ->where('is_datang_terlambat', false)
             ->where('tanggal_mulai', '<=', $tanggal)->where('tanggal_selesai', '>=', $tanggal)
             ->whereIn('tenaga_pendidik_id', $ids)
-            ->get(['tenaga_pendidik_id', 'jenis_izin', 'alasan'])
+            ->with('jenisPengajuan:id,nama')
+            ->get(['id', 'tenaga_pendidik_id', 'setting_jenis_pengajuan_id', 'alasan'])
             ->keyBy('tenaga_pendidik_id');
 
         $liburNasional = HariLibur::where('is_aktif', true)->whereNull('dibatalkan_pada')
@@ -170,7 +171,8 @@ class KegiatanPentingService
             if ($izinRow && $status !== 'hadir') {
                 $status = 'izin';
                 $sumber = 'perizinan';
-                $ket    = $ket ?: trim('Izin disetujui: ' . ($izinRow->jenis_izin ?? '') . ' — ' . ($izinRow->alasan ?? ''), ' —');
+                $ket    = $ket ?: trim('Izin disetujui: ' . ($izinRow->jenisPengajuan?->nama ?? 'izin')
+                    . ' — ' . ($izinRow->alasan ?? ''), ' —');
             }
 
             $peserta->push([
@@ -279,7 +281,8 @@ class KegiatanPentingService
             if ($status === 'izin' && $keterangan === null) {
                 $izinRow    = $izin->get($tpId);
                 $keterangan = $izinRow
-                    ? trim('Izin disetujui: ' . ($izinRow->jenis_izin ?? '') . ' — ' . ($izinRow->alasan ?? ''), ' —')
+                    ? trim('Izin disetujui: ' . ($izinRow->jenisPengajuan?->nama ?? 'izin')
+                        . ' — ' . ($izinRow->alasan ?? ''), ' —')
                     : 'Diizinkan guru piket';
             }
 
