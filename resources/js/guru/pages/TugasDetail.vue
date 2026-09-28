@@ -111,6 +111,20 @@ async function buatKegiatan() {
 
 <template>
     <div>
+        <!-- Tenggat pengisian: tugas yang lewat tenggat tidak bisa diisi lagi -->
+        <div v-if="p && p.lewat_tenggat && p.status_pengerjaan !== 'selesai'"
+            class="rounded-2xl bg-red-50 border border-red-100 p-3 mb-3">
+            <p class="text-[12px] font-bold text-red-700">Tenggat pengisian sudah lewat</p>
+            <p class="text-[11px] text-red-600 mt-0.5">
+                Batas {{ p.batas_pengisian }}. Tugas ini tidak bisa diisi lagi — hubungi admin bila perlu waktu tambahan.
+            </p>
+        </div>
+        <div v-else-if="p && p.ada_perpanjangan && p.status_pengerjaan !== 'selesai'"
+            class="rounded-2xl bg-violet-50 border border-violet-100 p-3 mb-3">
+            <p class="text-[12px] font-bold text-violet-700">Diberi waktu tambahan sampai {{ p.batas_pengisian }}</p>
+            <p v-if="p.alasan_perpanjangan" class="text-[11px] text-violet-600 mt-0.5">{{ p.alasan_perpanjangan }}</p>
+        </div>
+
         <PageHeader title="Detail Tugas" back />
         <div v-if="loading" class="pt-16 flex justify-center"><div class="w-8 h-8 border-2 border-[#0C78FF] border-t-transparent rounded-full animate-spin"></div></div>
 

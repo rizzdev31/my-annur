@@ -312,6 +312,7 @@
                                     <th class="px-4 py-3">Status</th>
                                     <th class="px-4 py-3">Bukti</th>
                                     <th class="px-4 py-3">Vakasi</th>
+                                    <th class="px-4 py-3">Tenggat</th>
                                     <th class="px-4 py-3">Verifikasi</th>
                                     <th v-if="tugas.tipe_pengerjaan === 'absen_kegiatan'" class="px-4 py-3">Kegiatan
                                     </th>
@@ -372,6 +373,22 @@
                                             {{ formatRp(p.nominal_vakasi) }}
                                         </span>
                                         <span v-else class="text-gray-300">—</span>
+                                    </td>
+
+                                    <!-- Tenggat pengisian -->
+                                    <td class="px-4 py-3">
+                                        <div class="text-xs">
+                                            <p v-if="p.batas_pengisian" :class="p.lewat_tenggat ? 'text-red-600 font-semibold' : 'text-gray-600'">
+                                                {{ p.tenggat_perpanjangan ? 'Diperpanjang s/d ' : 's/d ' }}{{ p.batas_pengisian }}
+                                            </p>
+                                            <p v-else class="text-gray-400">Tanpa batas</p>
+                                            <p v-if="p.lewat_tenggat && p.status_pengerjaan !== 'selesai'" class="text-[10px] text-red-500">
+                                                lewat tenggat · tidak bisa diisi guru
+                                            </p>
+                                            <p v-if="p.alasan_perpanjangan" class="text-[10px] text-gray-400 mt-0.5">
+                                                {{ p.alasan_perpanjangan }}
+                                            </p>
+                                        </div>
                                     </td>
 
                                     <!-- Verifikasi -->
@@ -438,11 +455,18 @@
                                                 Tolak
                                             </button>
                                         </div>
+                                        <!-- Belum diisi: admin memutuskan tidak terlaksana
+                                             atau memberi waktu tambahan -->
+                                        <button v-else-if="p.status_pengerjaan !== 'selesai'"
+                                            @click="bukaKeputusan(p)"
+                                            class="px-2.5 py-1 bg-amber-500 text-white text-xs font-semibold rounded-lg hover:bg-amber-600 transition">
+                                            {{ p.status_pengerjaan === 'tidak_selesai' ? 'Ubah Keputusan' : 'Keputusan Tenggat' }}
+                                        </button>
                                     </td>
 
                                 </tr>
                                 <tr v-if="!penugasanFiltered.length">
-                                    <td colspan="6" class="py-12 text-center text-sm text-gray-400">
+                                    <td colspan="7" class="py-12 text-center text-sm text-gray-400">
                                         Belum ada penerima tugas.
                                     </td>
                                 </tr>
@@ -673,11 +697,68 @@
         </Teleport>
 
         <AppConfirm ref="confirm" />
+        <!-- KEPUTUSAN TENGGAT -->
+        <div v-if="keputusan.penugasan" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl w-full max-w-lg p-5">
+                <h3 class="text-base font-bold text-gray-800">Keputusan Tenggat — {{ keputusan.penugasan.guru_nama }}</h3>
+                <p class="text-xs text-gray-500 mt-1 mb-4">
+                    Tenggat berlaku:
+                    <b>{{ keputusan.penugasan.batas_pengisian || 'tanpa batas' }}</b>
+                    <span v-if="keputusan.penugasan.lewat_tenggat" class="text-red-600"> · sudah lewat</span>.
+                    Guru tidak bisa mengisi tugas yang tenggatnya lewat sampai diberi waktu tambahan.
+                </p>
+
+                <div class="flex gap-2 mb-3">
+                    <button @click="keputusanForm.keputusan = 'perpanjang'"
+                        :class="keputusanForm.keputusan === 'perpanjang' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'"
+                        class="flex-1 py-2 rounded-xl text-xs font-semibold">Beri Waktu Tambahan</button>
+                    <button @click="keputusanForm.keputusan = 'tidak_terlaksana'"
+                        :class="keputusanForm.keputusan === 'tidak_terlaksana' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600'"
+                        class="flex-1 py-2 rounded-xl text-xs font-semibold">Tidak Terlaksana</button>
+                    <button v-if="keputusan.penugasan.tenggat_perpanjangan || keputusan.penugasan.status_pengerjaan === 'tidak_selesai'"
+                        @click="keputusanForm.keputusan = 'batalkan_keputusan'"
+                        :class="keputusanForm.keputusan === 'batalkan_keputusan' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600'"
+                        class="flex-1 py-2 rounded-xl text-xs font-semibold">Batalkan</button>
+                </div>
+
+                <div v-if="keputusanForm.keputusan === 'perpanjang'" class="mb-3">
+                    <label class="block text-[11px] text-gray-500 mb-1">Tenggat tambahan</label>
+                    <input v-model="keputusanForm.tenggat" type="date" class="w-full rounded-xl border-gray-200 text-sm" />
+                </div>
+
+                <div>
+                    <label class="block text-[11px] text-gray-500 mb-1">Alasan (wajib, min. 5 karakter)</label>
+                    <input v-model="keputusanForm.alasan" type="text" maxlength="300"
+                        :placeholder="keputusanForm.keputusan === 'tidak_terlaksana'
+                            ? 'mis. tidak mengisi sampai tenggat & tanpa keterangan'
+                            : 'mis. guru sakit saat tenggat berakhir'"
+                        class="w-full rounded-xl border-gray-200 text-sm" />
+                    <p class="text-[11px] text-gray-400 mt-1">
+                        <template v-if="keputusanForm.keputusan === 'tidak_terlaksana'">
+                            Tanpa vakasi, dan dihitung sebagai tugas tidak terpenuhi pada skor kinerja.
+                        </template>
+                        <template v-else-if="keputusanForm.keputusan === 'perpanjang'">
+                            Tugas kembali muncul di aplikasi guru sampai tanggal tersebut.
+                        </template>
+                        <template v-else>Kembali mengikuti tenggat asli tugas.</template>
+                        Keputusan & alasan ini diberitahukan ke guru.
+                    </p>
+                </div>
+
+                <div class="flex gap-2 mt-5">
+                    <button @click="keputusan.penugasan = null" class="flex-1 py-2.5 rounded-xl bg-gray-100 text-sm font-semibold text-gray-600">Tutup</button>
+                    <button @click="simpanKeputusan"
+                        :disabled="(keputusanForm.alasan || '').trim().length < 5 || (keputusanForm.keputusan === 'perpanjang' && !keputusanForm.tenggat)"
+                        class="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50">Simpan Keputusan</button>
+                </div>
+            </div>
+        </div>
+
     </AdminLayout>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AppConfirm from '@/Components/AppConfirm.vue'
@@ -771,6 +852,25 @@ function assign() {
         { tenaga_pendidik_ids: assignIds.value },
         { preserveScroll: true, onFinish: () => { assigning.value = false; assignIds.value = []; cariAssign.value = '' } }
     )
+}
+
+// ─── Keputusan tenggat (tidak terlaksana / waktu tambahan) ────────────────────
+const keputusan = reactive({ penugasan: null })
+const keputusanForm = reactive({ keputusan: 'perpanjang', tenggat: '', alasan: '' })
+
+function bukaKeputusan(p) {
+    keputusan.penugasan = p
+    keputusanForm.keputusan = p.status_pengerjaan === 'tidak_selesai' ? 'batalkan_keputusan' : 'perpanjang'
+    keputusanForm.tenggat = ''
+    keputusanForm.alasan = ''
+}
+
+function simpanKeputusan() {
+    router.patch(route('admin.smart-payroll.tugas-tambahan.penugasan.keputusan-tenggat', keputusan.penugasan.id),
+        { ...keputusanForm }, {
+            preserveScroll: true,
+            onSuccess: () => { keputusan.penugasan = null },
+        })
 }
 
 // ─── Verifikasi ───────────────────────────────────────────────────────────────

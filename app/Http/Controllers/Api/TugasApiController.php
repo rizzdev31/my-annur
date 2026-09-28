@@ -30,15 +30,14 @@ class TugasApiController extends Controller
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return $this->notFound();
 
+        // Daftar lengkap: tugas yang tenggatnya sudah lewat TETAP ditampilkan
+        // (ditandai lewat_tenggat & bisa_diisi=false) supaya tidak hilang
+        // diam-diam, tapi tidak lagi bisa diisi tanpa perpanjangan admin.
         $list = PenugasanTambahan::with(['tugasTambahan.settingVakasi'])
             ->where('tenaga_pendidik_id', $tp->id)
             ->whereHas('tugasTambahan', fn($q) =>
                 $q->where('status', 'aktif')
                   ->where('tanggal_mulai', '<=', now()->toDateString())
-                  ->where(fn($q2) =>
-                      $q2->whereNull('tanggal_selesai')
-                         ->orWhere('tanggal_selesai', '>=', now()->toDateString())
-                  )
             )
             ->orderBy('created_at', 'desc')
             ->get();
@@ -71,7 +70,13 @@ class TugasApiController extends Controller
                       ->where('tipe_pengerjaan', 'absen_kegiatan')
                       ->whereDate('tanggal_selesai', '>=', TimezoneHelper::today()));
             })
-            ->get();
+            ->get()
+            // BUG: dulu endpoint ini tidak memfilter tenggat sama sekali, jadi
+            // tugas yang tenggatnya lewat berbulan-bulan tetap muncul di PWA
+            // sebagai "tugas aktif" sampai diisi. Tenggat efektif menghormati
+            // perpanjangan yang diberikan admin.
+            ->filter(fn ($p) => !$p->lewatTenggat())
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -117,6 +122,7 @@ class TugasApiController extends Controller
         if ($p->status_pengerjaan === 'selesai') {
             return response()->json(['success' => false, 'message' => 'Tugas sudah selesai.'], 422);
         }
+        if ($pesan = $this->tolakBilaLewatTenggat($p)) return $pesan;
 
         $p->update([
             'status_pengerjaan' => 'sedang',
@@ -150,6 +156,7 @@ class TugasApiController extends Controller
         if ($p->status_pengerjaan === 'selesai') {
             return response()->json(['success' => false, 'message' => 'Tugas sudah selesai.'], 422);
         }
+        if ($pesan = $this->tolakBilaLewatTenggat($p)) return $pesan;
 
         // Upload foto jika ada
         $filePath = null;
@@ -743,6 +750,36 @@ class TugasApiController extends Controller
     // FORMAT HELPERS
     // ══════════════════════════════════════════════════════════════════════════
 
+    /**
+     * Tolak pengisian bila tenggatnya sudah lewat atau sudah diputuskan tidak
+     * terlaksana. Dulu tidak ada pemeriksaan ini: laporan tugas bulan lampau
+     * bisa masuk hari ini lalu dibayar pada periode gaji yang berbeda.
+     */
+    private function tolakBilaLewatTenggat(PenugasanTambahan $p): ?JsonResponse
+    {
+        $p->loadMissing('tugasTambahan');
+
+        if ($p->tidakTerlaksana()) {
+            return response()->json([
+                'success' => false,
+                'code'    => 'TUGAS_TIDAK_TERLAKSANA',
+                'message' => 'Tugas ini sudah diputuskan tidak terlaksana oleh admin.',
+            ], 422);
+        }
+
+        if ($p->lewatTenggat()) {
+            $batas = $p->batasPengisian()?->format('d M Y');
+            return response()->json([
+                'success' => false,
+                'code'    => 'LEWAT_TENGGAT',
+                'message' => "Tenggat pengisian sudah lewat ({$batas}). "
+                    . 'Hubungi admin bila perlu waktu tambahan.',
+            ], 422);
+        }
+
+        return null;
+    }
+
     private function formatPenugasan(PenugasanTambahan $p): array
     {
         $tugas = $p->tugasTambahan;
@@ -760,12 +797,18 @@ class TugasApiController extends Controller
             'tipe_pengerjaan'  => $tugas?->tipe_pengerjaan ?? 'mandiri',
             'tanggal_mulai'    => $tugas?->tanggal_mulai?->toDateString(),
             'tanggal_selesai'  => $tugas?->tanggal_selesai?->toDateString(),
+            // Tenggat yang BERLAKU (menghormati perpanjangan admin) + statusnya
+            'batas_pengisian'  => $p->batasPengisian()?->toDateString(),
+            'lewat_tenggat'    => $p->lewatTenggat(),
+            'bisa_diisi'       => $p->bisaDiisi(),
+            'ada_perpanjangan' => (bool) $p->tenggat_perpanjangan,
+            'alasan_perpanjangan' => $p->alasan_perpanjangan,
             'status_pengerjaan'=> $p->status_pengerjaan,
             'status_label'     => match($p->status_pengerjaan) {
                 'belum'         => 'Belum Dikerjakan',
                 'sedang'        => 'Sedang Dikerjakan',
                 'selesai'       => 'Selesai',
-                'tidak_selesai' => 'Tidak Selesai',
+                'tidak_selesai' => 'Tidak Terlaksana',
                 default         => $p->status_pengerjaan,
             },
             'wajib_laporan'    => $tugas?->wajib_laporan ?? false,

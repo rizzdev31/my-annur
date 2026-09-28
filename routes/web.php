@@ -356,6 +356,9 @@ Route::prefix('admin')
                 [TugasTambahanController::class, 'assign'])->name('tugas-tambahan.assign');
             Route::patch('penugasan/{penugasan}/verifikasi',
                 [TugasTambahanController::class, 'verifikasi'])->name('tugas-tambahan.verifikasi');
+            // Keputusan admin atas tenggat pengisian (tidak terlaksana / perpanjang)
+            Route::patch('penugasan/{penugasan}/keputusan-tenggat',
+                [TugasTambahanController::class, 'keputusanTenggat'])->name('penugasan.keputusan-tenggat');
             Route::patch('penugasan/{penugasan}/vakasi',
                 [TugasTambahanController::class, 'updateVakasiPenerima'])->name('penugasan.vakasi');
             Route::post('tugas-tambahan/{tugasTambahan}/batalkan',

@@ -188,6 +188,13 @@ class TugasTambahanController extends Controller
                 // Vakasi per penerima
                 'nominal_vakasi'      => $p->getNominalVakasi(),
                 'sumber_vakasi'       => $p->sumber_vakasi,
+                // Status tenggat: dasar keputusan admin (tidak terlaksana / perpanjang)
+                'batas_pengisian'     => $p->batasPengisian()?->toDateString(),
+                'lewat_tenggat'       => $p->lewatTenggat(),
+                'bisa_diisi'          => $p->bisaDiisi(),
+                'tenggat_perpanjangan'=> $p->tenggat_perpanjangan?->toDateString(),
+                'alasan_perpanjangan' => $p->alasan_perpanjangan,
+                'diputuskan_pada'     => $p->diputuskan_pada?->format('d M Y H:i'),
                 'vakasi_override'     => $p->vakasi_override,
                 'setting_vakasi_nama' => $p->settingVakasi?->nama,
                 'setting_vakasi_id'   => $p->setting_vakasi_id,
@@ -372,6 +379,100 @@ class TugasTambahanController extends Controller
         return redirect()
             ->route('admin.smart-payroll.tugas-tambahan.show', $penugasan->tugas_tambahan_id)
             ->with('success', 'Vakasi penerima diperbarui.');
+    }
+
+    /**
+     * Keputusan admin atas penerima yang tidak mengisi sampai tenggat.
+     *
+     * Dua pilihan, keduanya tercatat:
+     *  - tidak_terlaksana : status 'tidak_selesai' → tanpa vakasi, dan dihitung
+     *                       sebagai tugas tidak terpenuhi pada skor kinerja.
+     *  - perpanjang       : beri tenggat tambahan khusus penerima ini sehingga
+     *                       tugasnya kembali muncul & bisa diisi di aplikasi guru.
+     */
+    public function keputusanTenggat(PenugasanTambahan $penugasan, Request $request)
+    {
+        $data = $request->validate([
+            'keputusan' => 'required|in:tidak_terlaksana,perpanjang,batalkan_keputusan',
+            'tenggat'   => 'required_if:keputusan,perpanjang|nullable|date|after_or_equal:today',
+            'alasan'    => 'required|string|min:5|max:300',
+        ], [], ['alasan' => 'alasan keputusan']);
+
+        $penugasan->loadMissing(['tugasTambahan', 'tenagaPendidik.user']);
+
+        if ($penugasan->status_pengerjaan === 'selesai') {
+            return back()->with('error', 'Tugas ini sudah selesai dikerjakan — tidak perlu keputusan tenggat.');
+        }
+
+        $judul = $penugasan->tugasTambahan?->judul ?? 'Tugas tambahan';
+
+        if ($data['keputusan'] === 'tidak_terlaksana') {
+            $penugasan->update([
+                'status_pengerjaan'    => 'tidak_selesai',
+                'tenggat_perpanjangan' => null,
+                'alasan_perpanjangan'  => $data['alasan'],
+                'diperpanjang_oleh'    => auth()->id(),
+                'diputuskan_pada'      => TimezoneHelper::now(),
+                'disetujui'            => false,
+                'catatan_verifikasi'   => 'Tidak terlaksana: ' . $data['alasan'],
+                'diverifikasi_oleh'    => auth()->id(),
+            ]);
+
+            $this->kabariKeputusan($penugasan, 'Tugas Ditandai Tidak Terlaksana',
+                "Tugas \"{$judul}\" ditandai tidak terlaksana. Alasan: {$data['alasan']}");
+
+            $pesan = 'Penugasan ditandai tidak terlaksana — tanpa vakasi & dihitung sebagai tugas tidak terpenuhi.';
+        } elseif ($data['keputusan'] === 'perpanjang') {
+            $penugasan->update([
+                'status_pengerjaan'    => $penugasan->status_pengerjaan === 'tidak_selesai'
+                    ? 'belum' : $penugasan->status_pengerjaan,
+                'tenggat_perpanjangan' => $data['tenggat'],
+                'alasan_perpanjangan'  => $data['alasan'],
+                'diperpanjang_oleh'    => auth()->id(),
+                'diputuskan_pada'      => TimezoneHelper::now(),
+                'disetujui'            => null,
+                'catatan_verifikasi'   => null,
+            ]);
+
+            $sampai = \Carbon\Carbon::parse($data['tenggat'])->locale('id')->isoFormat('D MMMM YYYY');
+            $this->kabariKeputusan($penugasan, 'Waktu Tambahan Mengisi Tugas',
+                "Tugas \"{$judul}\" diberi waktu tambahan sampai {$sampai}. Alasan: {$data['alasan']}");
+
+            $pesan = "Waktu tambahan diberikan sampai {$sampai} — tugas kembali muncul di aplikasi guru.";
+        } else {
+            // Cabut keputusan: kembali mengikuti tenggat asli tugasnya.
+            $penugasan->update([
+                'status_pengerjaan'    => $penugasan->status_pengerjaan === 'tidak_selesai'
+                    ? 'belum' : $penugasan->status_pengerjaan,
+                'tenggat_perpanjangan' => null,
+                'alasan_perpanjangan'  => $data['alasan'],
+                'diperpanjang_oleh'    => auth()->id(),
+                'diputuskan_pada'      => TimezoneHelper::now(),
+                'disetujui'            => null,
+                'catatan_verifikasi'   => null,
+            ]);
+            $pesan = 'Keputusan dibatalkan — penugasan kembali mengikuti tenggat asli tugas.';
+        }
+
+        return redirect()
+            ->route('admin.smart-payroll.tugas-tambahan.show', $penugasan->tugas_tambahan_id)
+            ->with('success', $pesan);
+    }
+
+    /** Beri tahu guru tentang keputusan tenggat (menghormati toggle notifikasi). */
+    private function kabariKeputusan(PenugasanTambahan $penugasan, string $judul, string $pesan): void
+    {
+        $user = $penugasan->tenagaPendidik?->user;
+        if (!$user) return;
+
+        \App\Services\NotifikasiService::event('tugas.baru', [
+            'user'  => $user,
+            'judul' => $judul,
+            'pesan' => $pesan,
+            'tipe'  => 'tugas_update',
+            'data'  => ['type' => 'tugas', 'route' => '/tugas', 'penugasan_id' => $penugasan->id],
+            'dedup' => 'tenggat-' . $penugasan->id . '-' . now()->timestamp,
+        ]);
     }
 
     /**

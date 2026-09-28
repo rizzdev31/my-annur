@@ -12,6 +12,11 @@ class PenugasanTambahan extends Model
         'tugas_tambahan_id',
         'tenaga_pendidik_id',
         'status_pengerjaan',
+        // Keputusan admin atas tenggat pengisian
+        'tenggat_perpanjangan',
+        'alasan_perpanjangan',
+        'diperpanjang_oleh',
+        'diputuskan_pada',
         // Vakasi per penerima
         'setting_vakasi_id',
         'vakasi_override',
@@ -32,11 +37,55 @@ class PenugasanTambahan extends Model
     protected function casts(): array
     {
         return [
+            'tenggat_perpanjangan' => 'date',
+            'diputuskan_pada'      => 'datetime',
             'dikerjakan_pada' => 'datetime',
             'dilaporkan_pada' => 'datetime',
             'disetujui'       => 'boolean',
             'vakasi_override' => 'float',
         ];
+    }
+
+    // ─── Tenggat pengisian ───────────────────────────────────────────────────
+
+    /**
+     * Batas pengisian yang BERLAKU untuk penerima ini: perpanjangan bila
+     * diberikan admin, kalau tidak ya tanggal_selesai tugasnya. NULL = tanpa
+     * batas (tugas terbuka), jadi tidak bisa dikatakan terlambat.
+     */
+    public function batasPengisian(): ?\Carbon\Carbon
+    {
+        if ($this->tenggat_perpanjangan) {
+            return \Carbon\Carbon::parse($this->tenggat_perpanjangan)->endOfDay();
+        }
+        $akhir = $this->tugasTambahan?->tanggal_selesai;
+        return $akhir ? \Carbon\Carbon::parse($akhir)->endOfDay() : null;
+    }
+
+    /** Tenggatnya sudah lewat? (tanpa batas = tidak pernah lewat) */
+    public function lewatTenggat(?string $tanggal = null): bool
+    {
+        $batas = $this->batasPengisian();
+        if (!$batas) return false;
+
+        $acuan = $tanggal ? \Carbon\Carbon::parse($tanggal) : \App\Services\TimezoneHelper::now();
+        return $acuan->gt($batas);
+    }
+
+    /**
+     * Masih boleh diisi guru? Tugas yang sudah selesai, sudah diputuskan tidak
+     * terlaksana, atau tenggatnya lewat tanpa perpanjangan → tidak bisa.
+     */
+    public function bisaDiisi(): bool
+    {
+        if (in_array($this->status_pengerjaan, ['selesai', 'tidak_selesai'], true)) return false;
+        return !$this->lewatTenggat();
+    }
+
+    /** Sudah diputuskan admin sebagai tidak terlaksana. */
+    public function tidakTerlaksana(): bool
+    {
+        return $this->status_pengerjaan === 'tidak_selesai';
     }
 
     // ─── Relasi ──────────────────────────────────────────────────────────────

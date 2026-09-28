@@ -423,8 +423,20 @@ class KinerjaCalculationService
                       ->orWhere('tanggal_selesai', '>=', $mulai))
             )->get();
 
-        $penugasanTotal   = $penugasan->count();
-        $penugasanSelesai = $penugasan
+        // Tugas yang BELUM jatuh tempo tidak boleh menghukum: dulu tugas dengan
+        // tenggat hari ini pun sudah memotong skor sejak hari pertama periode.
+        // Yang dinilai hanya tugas yang sudah selesai (apa pun tenggatnya) atau
+        // yang tenggatnya sudah lewat / diputuskan tidak terlaksana.
+        $dinilai = $penugasan->filter(function ($p) use ($selesai) {
+            if ($p->status_pengerjaan === 'selesai') return true;
+            if ($p->tidakTerlaksana()) return true;
+            // Tenggat efektif dibandingkan dengan akhir jendela penilaian, bukan
+            // hari ini, supaya skor bulan lampau tidak berubah maknanya.
+            return $p->lewatTenggat($selesai->toDateString());
+        });
+
+        $penugasanTotal   = $dinilai->count();
+        $penugasanSelesai = $dinilai
             ->where('status_pengerjaan', 'selesai')
             ->where('disetujui', true)->count();
 
@@ -493,6 +505,8 @@ class KinerjaCalculationService
             'skor_jabatan'       => $skorJabatan,
             'penugasan_total'    => $penugasanTotal,
             'penugasan_selesai'  => $penugasanSelesai,
+            // Belum jatuh tempo → tidak dinilai (netral), hanya keterangan.
+            'penugasan_ditunda'  => $penugasan->count() - $penugasanTotal,
             'jabatan_total'      => $realisasiTotal,
             'jabatan_disetujui'  => $realisasiDisetujui,
             // untuk penjelasan penyebab ke guru
@@ -622,6 +636,7 @@ class KinerjaCalculationService
                         'skor_jabatan'      => $k2['skor_jabatan'],
                         'penugasan_total'   => $k2['penugasan_total'],
                         'penugasan_selesai' => $k2['penugasan_selesai'],
+                        'penugasan_ditunda' => $k2['penugasan_ditunda'] ?? 0,
                         'jabatan_total'     => $k2['jabatan_total'],
                         'jabatan_disetujui' => $k2['jabatan_disetujui'],
                         'jabatan_target'    => $k2['jabatan_target'] ?? 0,
@@ -726,7 +741,9 @@ class KinerjaCalculationService
                 'sebab'    => $k2['penugasan_total'] > 0
                     ? "{$sisa} tugas belum selesai atau belum disetujui admin"
                     : 'belum ada tugas tambahan yang tercatat',
-                'angka'    => "selesai {$k2['penugasan_selesai']} dari {$k2['penugasan_total']} tugas",
+                'angka'    => "selesai {$k2['penugasan_selesai']} dari {$k2['penugasan_total']} tugas yang sudah jatuh tempo"
+                    . (($k2['penugasan_ditunda'] ?? 0) > 0
+                        ? " ({$k2['penugasan_ditunda']} tugas belum jatuh tempo, belum dihitung)" : ''),
                 'saran'    => 'Selesaikan tugas lalu laporkan agar bisa disetujui admin.',
                 'dampak'   => $d,
             ];

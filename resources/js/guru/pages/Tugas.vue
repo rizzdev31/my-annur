@@ -14,7 +14,20 @@ const tambahan = ref([])
 const jabatan = ref([])
 
 const statusClass = (s) => ({ selesai: 'text-emerald-600 bg-emerald-50', sedang: 'text-amber-600 bg-amber-50', tidak_selesai: 'text-red-600 bg-red-50' }[s] || 'text-gray-500 bg-gray-100')
-const statusLabel = (s) => ({ selesai: 'Selesai', sedang: 'Dikerjakan', tidak_selesai: 'Tidak Selesai' }[s] || 'Belum')
+const statusLabel = (s) => ({ selesai: 'Selesai', sedang: 'Dikerjakan', tidak_selesai: 'Tidak Terlaksana' }[s] || 'Belum')
+
+// Tenggat pengisian: 'lewat' tidak bisa diisi lagi (kecuali admin memberi waktu
+// tambahan), 'hari ini'/'besok' perlu didahulukan.
+const sisaTenggat = (t) => {
+    if (!t.batas_pengisian) return null
+    const batas = new Date(t.batas_pengisian + 'T23:59:59')
+    const hari = Math.ceil((batas - new Date()) / 86400000)
+    if (t.lewat_tenggat) return { teks: 'Lewat tenggat', cls: 'text-red-600 bg-red-50' }
+    if (hari <= 0) return { teks: 'Tenggat hari ini', cls: 'text-red-600 bg-red-50' }
+    if (hari === 1) return { teks: 'Tenggat besok', cls: 'text-amber-600 bg-amber-50' }
+    if (hari <= 3) return { teks: `${hari} hari lagi`, cls: 'text-amber-600 bg-amber-50' }
+    return { teks: `s/d ${t.batas_pengisian}`, cls: 'text-gray-500 bg-gray-100' }
+}
 
 async function load() {
     loading.value = true
@@ -109,7 +122,18 @@ async function buatKegiatan(sumberTipe, sumberId) {
                                 <span v-if="t.tipe_pengerjaan === 'absen_kegiatan'" class="text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">Kegiatan</span>
                                 <span v-if="t.disetujui === true" class="text-[10px] text-emerald-600">✓ disetujui</span>
                                 <span v-else-if="t.disetujui === false" class="text-[10px] text-red-500">ditolak</span>
+                                <!-- Tenggat pengisian (menghormati waktu tambahan dari admin) -->
+                                <span v-if="t.status_pengerjaan !== 'selesai' && sisaTenggat(t)"
+                                    class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="sisaTenggat(t).cls">
+                                    {{ sisaTenggat(t).teks }}
+                                </span>
+                                <span v-if="t.ada_perpanjangan" class="text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
+                                    waktu tambahan
+                                </span>
                             </div>
+                            <p v-if="t.lewat_tenggat && t.status_pengerjaan !== 'selesai'" class="text-[10px] text-red-500 mt-1">
+                                Tidak bisa diisi lagi — hubungi admin bila perlu waktu tambahan.
+                            </p>
                         </div>
                         <svg class="w-5 h-5 text-gray-300 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                     </div>
