@@ -68,7 +68,11 @@ class PeriodePenggajianBerikutnya extends Command
                 'tanggal_mulai'   => $mulai->toDateString(),
                 'tanggal_selesai' => $selesai->toDateString(),
                 'status'          => 'draft',
-                'dibuat_oleh'     => null,
+                // Kolom ini NOT NULL — periode otomatis dicatat atas nama
+                // pembuat periode sebelumnya, atau superadmin pertama.
+                'dibuat_oleh'     => $terakhir->dibuat_oleh
+                    ?? \App\Models\User::where('role', 'superadmin')->value('id')
+                    ?? \App\Models\User::value('id'),
             ]);
             $dibuat++;
 
