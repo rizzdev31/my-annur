@@ -59,3 +59,8 @@ Schedule::command('eskalasi:pimpinan')->hourlyAt(5)->between('07:00', '21:00')
 // memfinalkan bulan lalu sebelum periode gajinya dikunci.
 Schedule::command('kinerja:hitung')->dailyAt('01:40');
 Schedule::command('kinerja:hitung --dengan-bulan-lalu')->monthlyOn(1, '02:10');
+
+// Periode penggajian berjalan 26→25. Pastikan tiap hari selalu ada periode yang
+// mencakup hari ini, supaya kinerja memakai jendela yang sama dengan slip gaji
+// (bukan bulan kalender) sejak hari pertama periode baru.
+Schedule::command('periode:pastikan-berikutnya')->dailyAt('00:20');

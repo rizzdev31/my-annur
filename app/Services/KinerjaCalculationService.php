@@ -90,10 +90,36 @@ class KinerjaCalculationService
      * skor di aplikasi guru selalu tampak lebih rendah. Sekarang keduanya memakai
      * metode ini.
      */
+    /**
+     * Rentang tanggal yang dinilai untuk label bulan/tahun tertentu.
+     *
+     * Mengikuti JENDELA PERIODE PENGGAJIAN (mis. 25 Agustus–25 September untuk
+     * label "September 2026"), bukan bulan kalender, supaya skor kinerja dan
+     * slip gaji menilai rentang hari yang sama persis — termasuk punishment
+     * kinerja yang memotong gaji periode tersebut. Bila periodenya belum dibuat,
+     * jatuh kembali ke bulan kalender.
+     *
+     * @return array{0: Carbon, 1: Carbon, 2: bool} [mulai, selesai, ikutPeriode]
+     */
+    public function rentangPenilaian(int $bulan, int $tahun): array
+    {
+        $periode = \App\Models\PeriodePenggajian::untukLabel($bulan, $tahun);
+
+        if ($periode?->tanggal_mulai && $periode->tanggal_selesai) {
+            return [
+                Carbon::parse($periode->tanggal_mulai)->startOfDay(),
+                Carbon::parse($periode->tanggal_selesai)->endOfDay(),
+                true,
+            ];
+        }
+
+        $mulai = Carbon::create($tahun, $bulan, 1)->startOfMonth();
+        return [$mulai, $mulai->copy()->endOfMonth(), false];
+    }
+
     private function susunKomponen(TenagaPendidik $guru, int $bulan, int $tahun, SettingKinerja $setting): array
     {
-        $mulai   = Carbon::create($tahun, $bulan, 1)->startOfMonth();
-        $selesai = $mulai->copy()->endOfMonth();
+        [$mulai, $selesai] = $this->rentangPenilaian($bulan, $tahun);
         $batas   = $this->batasHitung($mulai, $selesai);
 
         // Awal bulan (belum ada hari berjalan) → 0 hari kerja → komponen netral.
@@ -101,10 +127,10 @@ class KinerjaCalculationService
             ? 0
             : $this->hitungHariKerja($mulai, $batas, $guru->jamKerjaAktif(), $guru->id);
 
-        $k1 = $this->komponenAbsensi($guru, $bulan, $tahun, $hariKerja, $setting);
+        $k1 = $this->komponenAbsensi($guru, $mulai, $selesai, $hariKerja, $setting);
         $k2 = $this->komponenTugas($guru, $mulai, $selesai, $setting, $batas);
-        $k3 = $this->komponenAdministrasi($guru, $bulan, $tahun, $hariKerja, $mulai, $selesai, $setting);
-        $kp = $this->komponenPiket($guru, $bulan, $tahun, $setting);
+        $k3 = $this->komponenAdministrasi($guru, $hariKerja, $mulai, $selesai, $setting);
+        $kp = $this->komponenPiket($guru, $mulai, $selesai, $setting);
 
         // Skor DASAR = rata-rata TERBOBOT 3 komponen inti, DINORMALISASI ke jumlah
         // bobotnya sendiri → guru sempurna selalu 100 walau bobot inti ≠ 100.
@@ -126,6 +152,8 @@ class KinerjaCalculationService
             'skor_dasar' => round($skorDasar, 2),
             'skor_total' => $skorTotal,
             'batas'      => $batas,
+            'mulai'      => $mulai,
+            'selesai'    => $selesai,
         ];
     }
 
@@ -191,10 +219,52 @@ class KinerjaCalculationService
             // dijelaskan ke guru, termasuk di riwayat perubahan.
             'faktor_penurunan'          => $this->faktorPenurunan($h, $setting),
             'dihitung_pada'             => now(),
+            // Jendela yang dinilai — penting karena bisa mengikuti periode gaji
+            // (mis. 25 Ags–25 Sep) alih-alih bulan kalender.
+            'dinilai_dari'              => $h['mulai']->toDateString(),
+            'dinilai_sampai'            => $h['selesai']->toDateString(),
         ]);
 
         $rekap->save();
         return $rekap;
+    }
+
+    /**
+     * Bekukan kinerja satu periode saat penggajiannya difinalisasi.
+     *
+     * Dihitung sekali lagi sebagai angka final, lalu baris rekapnya dikunci
+     * supaya tidak berubah lagi mengikuti data yang masuk belakangan. Nilai
+     * lamanya tersimpan di riwayat dengan sebab 'finalisasi'. Admin masih bisa
+     * membuka lewat reset beralasan bila memang perlu.
+     *
+     * @return int jumlah guru yang dibekukan
+     */
+    public function finalisasiPeriode(\App\Models\PeriodePenggajian $periode, ?int $aktor = null): int
+    {
+        $bulan = (int) $periode->bulan;
+        $tahun = (int) $periode->tahun;
+        $alasan = 'Finalisasi penggajian ' . $periode->nama_bulan;
+
+        // Guru yang punya slip pada periode ini; bila belum ada, semua guru aktif.
+        $guruIds = \App\Models\Penggajian::where('periode_penggajian_id', $periode->id)
+            ->pluck('tenaga_pendidik_id')->unique();
+        $guru = $guruIds->isNotEmpty()
+            ? TenagaPendidik::whereIn('id', $guruIds)->get()
+            : TenagaPendidik::aktif()->get();
+
+        $n = 0;
+        foreach ($guru as $g) {
+            RekapKinerjaBulanan::tandaiPerubahan('finalisasi', $alasan, $aktor);
+            $rekap = $this->hitungRekap($g, $bulan, $tahun);   // angka final
+
+            if (!$rekap->exists || $rekap->sudah_dikunci) { if ($rekap->sudah_dikunci) $n++; continue; }
+
+            RekapKinerjaBulanan::tandaiPerubahan('finalisasi', $alasan, $aktor);
+            $rekap->update(['sudah_dikunci' => true]);
+            $n++;
+        }
+
+        return $n;
     }
 
     /** True bila periode penggajian bulan/tahun itu sudah dikunci bendahara. */
@@ -241,11 +311,12 @@ class KinerjaCalculationService
     // ═══════════════════════════════════════════════════════════════════════
 
     private function komponenAbsensi(
-        TenagaPendidik $guru, int $bulan, int $tahun,
+        TenagaPendidik $guru, Carbon $mulai, Carbon $selesai,
         int $hariKerja, SettingKinerja $s
     ): array {
+        // Rentang tanggal (bukan bulan kalender) — mengikuti jendela periode gaji.
         $absensi = AbsensiHarian::where('tenaga_pendidik_id', $guru->id)
-            ->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)
+            ->whereBetween('tanggal', [$mulai->toDateString(), $selesai->toDateString()])
             ->get();
 
         // Hitung per status
@@ -295,9 +366,7 @@ class KinerjaCalculationService
         // komponen administrasi): libur & izin netral, sesi yang dialihkan menjadi
         // tanggung jawab pengganti, dan inval yang tidak datang dihitung ke pengganti.
         $dinilai = app(\App\Services\SesiMengajarService::class)->sesiDinilaiKinerja(
-            $guru->id,
-            Carbon::create($tahun, $bulan, 1)->toDateString(),
-            Carbon::create($tahun, $bulan, 1)->endOfMonth()->toDateString(),
+            $guru->id, $mulai->toDateString(), $selesai->toDateString(),
         );
 
         $sesiJadwalBulan = $dinilai->count();
@@ -437,7 +506,7 @@ class KinerjaCalculationService
     // ═══════════════════════════════════════════════════════════════════════
 
     private function komponenAdministrasi(
-        TenagaPendidik $guru, int $bulan, int $tahun,
+        TenagaPendidik $guru,
         int $hariKerja, Carbon $mulai, Carbon $selesai,
         SettingKinerja $s
     ): array {
@@ -463,7 +532,7 @@ class KinerjaCalculationService
 
         // ── Sub 3b: Log Kerja Harian ─────────────────────────────────────────
         $logs = LogKerjaHarian::where('tenaga_pendidik_id', $guru->id)
-            ->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)
+            ->whereBetween('tanggal', [$mulai->toDateString(), $selesai->toDateString()])
             ->get();
 
         $logSubmitted    = $logs->whereIn('status', ['submitted', 'diverifikasi'])->count();
@@ -748,13 +817,16 @@ class KinerjaCalculationService
      * Skor penilaian piket: mulai baseline 100, lalu ± poin dari penilaian piket
      * (apresiasi +, catatan −), di-clamp [0,100]. Poin disimpan positif; jenis menentukan tanda.
      */
-    private function komponenPiket(TenagaPendidik $guru, int $bulan, int $tahun, SettingKinerja $s): array
+    private function komponenPiket(TenagaPendidik $guru, Carbon $mulai, Carbon $selesai, SettingKinerja $s): array
     {
+        $dari   = $mulai->toDateString();
+        $sampai = $selesai->toDateString();
+
         // ── A. Kedisiplinan kegiatan wajib (sholat berjamaah dll) ────────────
         // Dinilai dari PERSENTASE kehadiran bulan itu, bukan jumlah kejadian,
         // supaya guru dengan 10 kesempatan dan 42 kesempatan sebanding.
         $kegiatan = \App\Models\AbsensiKegiatanPenting::where('tenaga_pendidik_id', $guru->id)
-            ->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)
+            ->whereBetween('tanggal', [$dari, $sampai])
             ->get(['status']);
 
         // IZIN bersifat NETRAL: dikeluarkan dari penyebut, jadi tidak menolong
@@ -788,7 +860,7 @@ class KinerjaCalculationService
         // agar satu catatan tidak langsung memakan seluruh batas.
         $penilaian = PiketPenilaian::where('guru_dinilai_id', $guru->id)
             ->where('status_sanggah', '!=', 'diterima') // sanggahan diterima = dibatalkan
-            ->whereHas('jadwal', fn ($q) => $q->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun))
+            ->whereHas('jadwal', fn ($q) => $q->whereBetween('tanggal', [$dari, $sampai]))
             ->get(['jenis', 'poin', 'status_sanggah']);
 
         $apresiasi = $penilaian->where('jenis', 'apresiasi')->count();

@@ -40,6 +40,7 @@ class RiwayatRekapKinerja extends Model
         'reset'        => 'Direset admin',
         'reset_semua'  => 'Reset massal periode',
         'override'     => 'Skor ditetapkan manual',
+        'finalisasi'   => 'Dibekukan saat finalisasi penggajian',
         'catatan'      => 'Catatan admin diubah',
     ];
 

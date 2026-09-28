@@ -73,6 +73,8 @@ class RekapKinerjaBulanan extends Model
         // ── Audit ─────────────────────────────────────────────────────────────
         'catatan_superadmin',
         'dihitung_pada',
+        'dinilai_dari',      // jendela yang dinilai (ikut periode gaji)
+        'dinilai_sampai',
         'faktor_penurunan',
         'dikaji_oleh',
         'dikaji_pada',
@@ -84,6 +86,8 @@ class RekapKinerjaBulanan extends Model
         return [
             'dikaji_pada'          => 'datetime',
             'dihitung_pada'        => 'datetime',
+            'dinilai_dari'         => 'date',
+            'dinilai_sampai'       => 'date',
             'faktor_penurunan'     => 'array',
             'sudah_dikunci'        => 'boolean',
             // Skor

@@ -234,7 +234,12 @@ class PenggajianController extends Controller
 
         $this->notifSlipTerbit($penggajian->loadMissing('tenagaPendidik.user'));
 
-        return back()->with('success', "Penggajian {$penggajian->tenagaPendidik->user->name} difinalisasi.");
+        // Kinerja guru ini untuk periode tsb dibekukan: dihitung final lalu
+        // dikunci, nilai lamanya tersimpan di riwayat. Supaya skor yang menjadi
+        // dasar slip tidak berubah lagi setelah slipnya terbit.
+        $this->bekukanKinerja($penggajian);
+
+        return back()->with('success', "Penggajian {$penggajian->tenagaPendidik->user->name} difinalisasi. Kinerja periode ini dibekukan.");
     }
 
     public function finalisasiSemua(PeriodePenggajian $periode)
@@ -253,7 +258,34 @@ class PenggajianController extends Controller
 
         foreach ($drafts as $p) $this->notifSlipTerbit($p);
 
-        return back()->with('success', "{$jumlah} penggajian berhasil difinalisasi.");
+        // Bekukan kinerja SELURUH periode sekali jalan (hitung final + kunci).
+        $dibekukan = app(\App\Services\KinerjaCalculationService::class)
+            ->finalisasiPeriode($periode, Auth::id());
+
+        return back()->with('success',
+            "{$jumlah} penggajian berhasil difinalisasi. Kinerja {$dibekukan} guru dibekukan & tersimpan di riwayat.");
+    }
+
+    /**
+     * Bekukan kinerja satu guru untuk periode slip ini: hitung final lalu kunci.
+     * Nilai lama tersimpan di riwayat lewat observer (sebab 'finalisasi').
+     */
+    private function bekukanKinerja(Penggajian $penggajian): void
+    {
+        $periode = $penggajian->periodePenggajian;
+        $guru    = $penggajian->tenagaPendidik;
+        if (!$periode || !$guru) return;
+
+        $svc    = app(\App\Services\KinerjaCalculationService::class);
+        $alasan = 'Finalisasi penggajian ' . $periode->nama_bulan;
+
+        \App\Models\RekapKinerjaBulanan::tandaiPerubahan('finalisasi', $alasan, Auth::id());
+        $rekap = $svc->hitungRekap($guru, (int) $periode->bulan, (int) $periode->tahun);
+
+        if ($rekap->exists && !$rekap->sudah_dikunci) {
+            \App\Models\RekapKinerjaBulanan::tandaiPerubahan('finalisasi', $alasan, Auth::id());
+            $rekap->update(['sudah_dikunci' => true]);
+        }
     }
 
     /** Notifikasi 'penggajian.terbit' ke guru pemilik slip (menghormati toggle). */

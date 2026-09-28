@@ -29,8 +29,12 @@ class KinerjaApiController extends Controller
         if (!$tp) return $this->notFound();
 
         $today  = TimezoneHelper::today();
-        $bulan  = (int) $today->format('m');
-        $tahun  = (int) $today->format('Y');
+        // Periode gaji berjalan 26→25, jadi "bulan ini" bagi guru adalah periode
+        // yang MENCAKUP hari ini — bukan bulan kalender. Tanpa ini, tanggal 26–31
+        // tampil sebagai bulan lama yang skornya sudah dibekukan.
+        $periode = \App\Models\PeriodePenggajian::untukTanggal($today->toDateString());
+        $bulan  = (int) ($periode->bulan ?? $today->format('m'));
+        $tahun  = (int) ($periode->tahun ?? $today->format('Y'));
 
         $setting = SettingKinerja::getDefault();
 
@@ -59,7 +63,11 @@ class KinerjaApiController extends Controller
             'data'    => [
                 'bulan'             => $bulan,
                 'tahun'             => $tahun,
-                'nama_bulan'        => $today->locale('id')->isoFormat('MMMM YYYY'),
+                'nama_bulan'        => $periode?->nama_bulan ?? $today->locale('id')->isoFormat('MMMM YYYY'),
+                // Jendela yang dinilai — penting karena periode 26→25 tidak sama
+                // dengan bulan kalender.
+                'dinilai_dari'      => $periode?->tanggal_mulai?->format('d M Y'),
+                'dinilai_sampai'    => $periode?->tanggal_selesai?->format('d M Y'),
                 'sudah_dikunci'     => $rekap?->sudah_dikunci ?? false,
                 'is_preview'        => $rekap === null,
 

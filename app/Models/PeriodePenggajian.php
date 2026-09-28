@@ -50,6 +50,25 @@ class PeriodePenggajian extends Model
     }
 
     /**
+     * Periode berlabel bulan/tahun tertentu (mis. "September 2026" yang
+     * jendelanya 25 Agustus–25 September). Dipakai penilaian kinerja supaya
+     * jendelanya sama dengan jendela gaji, bukan bulan kalender.
+     */
+    public static function untukLabel(int $bulan, int $tahun): ?self
+    {
+        return static::where('bulan', $bulan)->where('tahun', $tahun)->first();
+    }
+
+    /** Periode yang MENCAKUP satu tanggal (26–25, bisa lintas bulan). */
+    public static function untukTanggal(string $tanggal): ?self
+    {
+        return static::whereDate('tanggal_mulai', '<=', $tanggal)
+            ->whereDate('tanggal_selesai', '>=', $tanggal)
+            ->orderByDesc('tanggal_mulai')
+            ->first();
+    }
+
+    /**
      * True bila ada periode gaji yang sedang diproses / dihitung tapi belum
      * dibayar (status 'proses' atau 'selesai'). Dipakai untuk mengunci
      * perubahan data yang mempengaruhi gaji (mis. Jabatan) selama proses gaji.
