@@ -537,6 +537,11 @@ class KinerjaController extends Controller
 
     private function formatRekapDetail(RekapKinerjaBulanan $r, SettingKinerja $s): array
     {
+        // Kontribusi dinormalisasi ke jumlah bobot inti (sama seperti perhitungan
+        // skor dasar) supaya jumlah kontribusi = skor dasar, bukan 85% darinya.
+        $bobotInti  = (float) ($s->bobot_absensi + $s->bobot_tugas + $s->bobot_administrasi) ?: 1;
+        $kontribusi = fn (float $skor, float $bobot) => round($skor * $bobot / $bobotInti, 2);
+
         return [
             'skor_total'  => $r->skor_total,
             'grade'       => $s->getGrade($r->skor_total),
@@ -546,7 +551,7 @@ class KinerjaController extends Controller
                 'absensi' => [
                     'skor'           => $r->skor_absensi      ?? 0,
                     'bobot'          => $s->bobot_absensi,
-                    'kontribusi'     => round(($r->skor_absensi ?? 0) * $s->bobot_absensi / 100, 2),
+                    'kontribusi'     => $kontribusi((float) ($r->skor_absensi ?? 0), (float) $s->bobot_absensi),
                     'hadir'          => $r->total_hadir        ?? 0,
                     'terlambat'      => $r->total_terlambat    ?? 0,
                     'izin'           => $r->total_izin         ?? 0,
@@ -560,7 +565,7 @@ class KinerjaController extends Controller
                 'tugas' => [
                     'skor'              => $r->skor_tugas         ?? 0,
                     'bobot'             => $s->bobot_tugas,
-                    'kontribusi'        => round(($r->skor_tugas ?? 0) * $s->bobot_tugas / 100, 2),
+                    'kontribusi'        => $kontribusi((float) ($r->skor_tugas ?? 0), (float) $s->bobot_tugas),
                     'penugasan_total'   => $r->total_penugasan_diterima  ?? 0,
                     'penugasan_selesai' => $r->total_penugasan_selesai   ?? 0,
                     'jabatan_total'     => $r->total_realisasi_jabatan   ?? 0,
@@ -569,7 +574,10 @@ class KinerjaController extends Controller
                 'administrasi' => [
                     'skor'             => $r->skor_administrasi  ?? 0,
                     'bobot'            => $s->bobot_administrasi,
-                    'kontribusi'       => round(($r->skor_administrasi ?? 0) * $s->bobot_administrasi / 100, 2),
+                    'kontribusi'       => $kontribusi((float) ($r->skor_administrasi ?? 0), (float) $s->bobot_administrasi),
+                    // Sub-bobot ikut dikirim agar UI bisa menandai yang tidak dinilai.
+                    'bobot_laporan'    => $s->bobot_laporan_mengajar,
+                    'bobot_log'        => $s->bobot_log_kerja,
                     'sesi_jadwal'      => $r->total_sesi_jadwal     ?? 0,
                     'sesi_terlaksana'  => $r->total_sesi_terlaksana ?? 0,
                     'sesi_dilaporkan'  => $r->total_sesi_dilaporkan ?? 0,

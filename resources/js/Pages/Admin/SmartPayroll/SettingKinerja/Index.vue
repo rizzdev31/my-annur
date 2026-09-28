@@ -188,7 +188,10 @@
                                     s.bobot_laporan_mengajar }}%</span>
                             </div>
                             <div class="flex justify-between">
-                                <span>Sub: Log Kerja</span><span class="font-semibold">{{ s.bobot_log_kerja }}%</span>
+                                <span>Sub: Log Kerja</span>
+                                <span class="font-semibold" :class="s.bobot_log_kerja > 0 ? '' : 'text-amber-600'">
+                                    {{ s.bobot_log_kerja }}%<template v-if="!s.bobot_log_kerja"> · tidak dinilai</template>
+                                </span>
                             </div>
                             <div class="flex justify-between pt-2 border-t border-gray-100">
                                 <span>Target log/hari</span><span class="font-semibold">{{ s.target_log_per_hari
@@ -430,6 +433,10 @@
                                 <label class="block text-xs font-medium text-gray-600 mb-1.5">Sub: Log Kerja (%)</label>
                                 <input v-model.number="form.bobot_log_kerja" type="number" min="0" max="100" step="5"
                                     class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none bg-white" />
+                                <p class="text-xs mt-1" :class="form.bobot_log_kerja > 0 ? 'text-gray-400' : 'text-amber-600'">
+                                    <template v-if="form.bobot_log_kerja > 0">Log kerja harian guru</template>
+                                    <template v-else>0% = tidak dinilai. Administrasi murni dari laporan mengajar.</template>
+                                </p>
                             </div>
                         </div>
                         <div>
@@ -562,7 +569,7 @@ const defaultForm = () => ({
     penalty_per_terlambat: 5, max_penalty_terlambat: 20,
     bobot_tugas: 30, bobot_tugas_tambahan: 60, bobot_tugas_jabatan: 40,
     jika_tidak_ada_tugas: 'sempurna',
-    bobot_administrasi: 20, bobot_laporan_mengajar: 60, bobot_log_kerja: 40,
+    bobot_administrasi: 20, bobot_laporan_mengajar: 100, bobot_log_kerja: 0,
     target_log_per_hari: 1,
     bobot_piket: 0, skor_min_piket: 50,
     grade_a: 90, grade_b: 75, grade_c: 60, grade_d: 40,

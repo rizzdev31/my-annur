@@ -141,7 +141,9 @@ class SettingKinerja extends Model
                 'penalty_per_terlambat' => 5, 'max_penalty_terlambat' => 20,
                 'bobot_tugas' => 30, 'bobot_tugas_tambahan' => 60, 'bobot_tugas_jabatan' => 40,
                 'jika_tidak_ada_tugas' => 'sempurna',
-                'bobot_administrasi' => 20, 'bobot_laporan_mengajar' => 60, 'bobot_log_kerja' => 40,
+                // Log kerja harian belum dipakai di lapangan → bobotnya 0 supaya
+                // tidak menopang skor administrasi (lihat migration 2026_09_28_120000).
+                'bobot_administrasi' => 20, 'bobot_laporan_mengajar' => 100, 'bobot_log_kerja' => 0,
                 'target_log_per_hari' => 1,
                 'bobot_piket' => 15, 'skor_min_piket' => 50,
                 'grade_a' => 90, 'grade_b' => 75, 'grade_c' => 60, 'grade_d' => 40,

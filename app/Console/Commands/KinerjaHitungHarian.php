@@ -21,7 +21,8 @@ class KinerjaHitungHarian extends Command
     protected $signature = 'kinerja:hitung
         {--bulan= : Bulan tertentu (default: bulan berjalan)}
         {--tahun= : Tahun tertentu}
-        {--dengan-bulan-lalu : Hitung juga bulan sebelumnya (finalisasi)}';
+        {--dengan-bulan-lalu : Hitung juga bulan sebelumnya (finalisasi)}
+        {--alasan= : Alasan yang dicatat di riwayat perubahan skor}';
 
     protected $description = 'Hitung rekap kinerja bulan berjalan (dan opsional finalisasi bulan lalu)';
 
@@ -42,9 +43,10 @@ class KinerjaHitungHarian extends Command
                 continue;
             }
 
-            $jumlah = $service->hitungRekapSemua($b, $t, function () {
+            $alasan = $this->option('alasan') ?: 'Penghitungan terjadwal';
+            $jumlah = $service->hitungRekapSemua($b, $t, function () use ($alasan) {
                 // Perubahan dari penjadwal: bukan keputusan manusia.
-                RekapKinerjaBulanan::tandaiPerubahan('hitung_ulang', 'Penghitungan terjadwal', null);
+                RekapKinerjaBulanan::tandaiPerubahan('hitung_ulang', $alasan, null);
             });
             $this->info("Kinerja {$t}-{$b}: {$jumlah} guru dihitung.");
         }
