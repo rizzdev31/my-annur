@@ -427,12 +427,16 @@ class KinerjaCalculationService
         // tenggat hari ini pun sudah memotong skor sejak hari pertama periode.
         // Yang dinilai hanya tugas yang sudah selesai (apa pun tenggatnya) atau
         // yang tenggatnya sudah lewat / diputuskan tidak terlaksana.
-        $dinilai = $penugasan->filter(function ($p) use ($selesai) {
+        // Acuan "sudah jatuh tempo": hari kerja yang sudah berjalan (batas hitung).
+        // Untuk periode lampau nilainya = akhir jendela, jadi maknanya tetap;
+        // untuk periode berjalan = kemarin, sehingga tugas yang tenggatnya masih
+        // di depan (bahkan hari ini) belum dihukum.
+        $acuanTenggat = ($batas && $batas->lt($selesai) ? $batas : $selesai)->toDateString();
+
+        $dinilai = $penugasan->filter(function ($p) use ($acuanTenggat) {
             if ($p->status_pengerjaan === 'selesai') return true;
             if ($p->tidakTerlaksana()) return true;
-            // Tenggat efektif dibandingkan dengan akhir jendela penilaian, bukan
-            // hari ini, supaya skor bulan lampau tidak berubah maknanya.
-            return $p->lewatTenggat($selesai->toDateString());
+            return $p->lewatTenggat($acuanTenggat);
         });
 
         $penugasanTotal   = $dinilai->count();

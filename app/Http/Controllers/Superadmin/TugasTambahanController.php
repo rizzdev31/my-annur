@@ -419,7 +419,7 @@ class TugasTambahanController extends Controller
             ]);
 
             $this->kabariKeputusan($penugasan, 'Tugas Ditandai Tidak Terlaksana',
-                "Tugas \"{$judul}\" ditandai tidak terlaksana. Alasan: {$data['alasan']}");
+                "Tugas \"{$judul}\" ditandai tidak terlaksana. Alasan: {$data['alasan']}", 'tidak-terlaksana');
 
             $pesan = 'Penugasan ditandai tidak terlaksana — tanpa vakasi & dihitung sebagai tugas tidak terpenuhi.';
         } elseif ($data['keputusan'] === 'perpanjang') {
@@ -436,7 +436,7 @@ class TugasTambahanController extends Controller
 
             $sampai = \Carbon\Carbon::parse($data['tenggat'])->locale('id')->isoFormat('D MMMM YYYY');
             $this->kabariKeputusan($penugasan, 'Waktu Tambahan Mengisi Tugas',
-                "Tugas \"{$judul}\" diberi waktu tambahan sampai {$sampai}. Alasan: {$data['alasan']}");
+                "Tugas \"{$judul}\" diberi waktu tambahan sampai {$sampai}. Alasan: {$data['alasan']}", 'perpanjang');
 
             $pesan = "Waktu tambahan diberikan sampai {$sampai} — tugas kembali muncul di aplikasi guru.";
         } else {
@@ -460,7 +460,7 @@ class TugasTambahanController extends Controller
     }
 
     /** Beri tahu guru tentang keputusan tenggat (menghormati toggle notifikasi). */
-    private function kabariKeputusan(PenugasanTambahan $penugasan, string $judul, string $pesan): void
+    private function kabariKeputusan(PenugasanTambahan $penugasan, string $judul, string $pesan, string $kunci = ''): void
     {
         $user = $penugasan->tenagaPendidik?->user;
         if (!$user) return;
@@ -471,7 +471,9 @@ class TugasTambahanController extends Controller
             'pesan' => $pesan,
             'tipe'  => 'tugas_update',
             'data'  => ['type' => 'tugas', 'route' => '/tugas', 'penugasan_id' => $penugasan->id],
-            'dedup' => 'tenggat-' . $penugasan->id . '-' . now()->timestamp,
+            // Kunci dedup memuat jenis keputusan: dua keputusan berbeda pada detik
+            // yang sama (mis. tidak terlaksana lalu diperpanjang) harus dua notifikasi.
+            'dedup' => 'tenggat-' . $penugasan->id . '-' . $kunci . '-' . now()->timestamp,
         ]);
     }
 

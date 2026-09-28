@@ -866,7 +866,7 @@ function bukaKeputusan(p) {
 }
 
 function simpanKeputusan() {
-    router.patch(route('admin.smart-payroll.tugas-tambahan.penugasan.keputusan-tenggat', keputusan.penugasan.id),
+    router.patch(route('admin.smart-payroll.penugasan.keputusan-tenggat', keputusan.penugasan.id),
         { ...keputusanForm }, {
             preserveScroll: true,
             onSuccess: () => { keputusan.penugasan = null },
