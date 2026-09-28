@@ -697,8 +697,11 @@ class KinerjaCalculationService
         if ((float) $kp['penyesuaian'] < 0) {
             $f[] = [
                 'komponen' => 'Penilaian guru piket',
-                'sebab'    => "{$kp['catatan']} catatan piket/kegiatan (−{$kp['poin_catatan']} poin)",
-                'angka'    => "apresiasi +{$kp['poin_apresiasi']} · catatan −{$kp['poin_catatan']}",
+                // Poin catatan datang dari DUA sumber: penilaian guru piket dan
+                // ketidakhadiran di kegiatan wajib. Jadi jumlah catatan piket bisa 0
+                // sementara poinnya tetap besar — sebabnya ditulis apa adanya.
+                'sebab'    => 'pengurangan ' . $kp['poin_catatan'] . ' poin dari catatan piket & ketidakhadiran kegiatan wajib',
+                'angka'    => "{$kp['catatan']} catatan piket · {$kp['apresiasi']} apresiasi (+{$kp['poin_apresiasi']}) · total penyesuaian {$kp['penyesuaian']}",
                 'saran'    => 'Ikuti kegiatan wajib (mis. sholat berjamaah) dan hindari catatan piket.',
                 'dampak'   => round(abs((float) $kp['penyesuaian']), 2),
             ];
