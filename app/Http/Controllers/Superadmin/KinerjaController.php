@@ -144,6 +144,25 @@ class KinerjaController extends Controller
             'rekap'         => $this->formatRekapDetail($rekap, $setting),
             'logs'          => $logs,
             'riwayat'       => $riwayat,
+            // Riwayat PERUBAHAN skor (audit) — beda dari tren 6 bulan di atas.
+            'perubahan'     => \App\Models\RiwayatRekapKinerja::with('pengubah')
+                ->where('tenaga_pendidik_id', $guru->id)
+                ->where('bulan', $bulan)->where('tahun', $tahun)
+                ->orderByDesc('id')->limit(30)->get()
+                ->map(fn ($r) => [
+                    'id'          => $r->id,
+                    'sebab'       => $r->sebab,
+                    'label_sebab' => $r->label_sebab,
+                    'alasan'      => $r->alasan,
+                    'skor_lama'   => $r->skor_total,
+                    'skor_baru'   => $r->skor_total_baru,
+                    'selisih'     => $r->selisih,
+                    'dikunci_lama'=> $r->sudah_dikunci_lama,
+                    'catatan_lama'=> $r->catatan_superadmin_lama,
+                    'oleh'        => $r->pengubah?->name ?? 'Sistem',
+                    'waktu'       => $r->created_at?->format('d M Y H:i'),
+                ]),
+            'periode_terkunci' => \App\Services\KinerjaCalculationService::periodeTerkunci($bulan, $tahun),
             'setting_aktif' => [
                 'nama'               => $setting->nama,
                 'bobot_absensi'      => $setting->bobot_absensi,
@@ -317,6 +336,7 @@ class KinerjaController extends Controller
     public function catatanRekap(Request $request, RekapKinerjaBulanan $rekap)
     {
         $request->validate(['catatan' => 'required|string|max:1000']);
+        RekapKinerjaBulanan::tandaiPerubahan('catatan');
         $rekap->update([
             'catatan_superadmin' => $request->catatan,
             'dikaji_oleh'        => auth()->id(),
@@ -337,6 +357,10 @@ class KinerjaController extends Controller
             'catatan'    => 'nullable|string|max:1000',
         ]);
 
+        if ($pesan = $this->cekPeriodeTerkunci((int) $data['bulan'], (int) $data['tahun'])) {
+            return back()->with('error', $pesan);
+        }
+
         $setting = SettingKinerja::getDefault();
         $rekap = RekapKinerjaBulanan::firstOrNew([
             'tenaga_pendidik_id' => $guru->id,
@@ -344,6 +368,8 @@ class KinerjaController extends Controller
             'tahun'              => $data['tahun'],
         ]);
         if (!$rekap->exists) $rekap->setting_kinerja_id = $setting->id;
+
+        RekapKinerjaBulanan::tandaiPerubahan('override', $data['catatan'] ?? null);
 
         $rekap->skor_total         = round($data['skor_total'], 1);
         $rekap->catatan_superadmin = $data['catatan'] ?? $rekap->catatan_superadmin;
@@ -355,31 +381,92 @@ class KinerjaController extends Controller
         return back()->with('success', "Skor {$guru->user->name} di-override ke {$rekap->skor_total} & dikunci.");
     }
 
-    /** Buka kunci lalu hitung ulang dari data sumber (kembali ke skor terhitung). */
+    /**
+     * Buka kunci lalu hitung ulang dari data sumber.
+     *
+     * Skor lama TIDAK hilang: observer menyalinnya ke riwayat_rekap_kinerja
+     * beserta alasan reset. Jejak kajian lama (catatan/dikaji) dibersihkan dari
+     * baris aktif supaya tidak menempel pada skor baru yang bukan hasil kajian itu.
+     */
     public function resetRekap(Request $request, TenagaPendidik $guru)
     {
-        $bulan = (int) ($request->bulan ?? now()->month);
-        $tahun = (int) ($request->tahun ?? now()->year);
+        $data = $request->validate([
+            'bulan'  => 'nullable|integer|between:1,12',
+            'tahun'  => 'nullable|integer|min:2020',
+            'alasan' => 'required|string|min:5|max:500',
+        ], [], ['alasan' => 'alasan reset']);
 
-        RekapKinerjaBulanan::where('tenaga_pendidik_id', $guru->id)
-            ->where('bulan', $bulan)->where('tahun', $tahun)
-            ->update(['sudah_dikunci' => false]);
+        $bulan = (int) ($data['bulan'] ?? now()->month);
+        $tahun = (int) ($data['tahun'] ?? now()->year);
+
+        if ($pesan = $this->cekPeriodeTerkunci($bulan, $tahun)) {
+            return back()->with('error', $pesan);
+        }
+
+        $rekap = RekapKinerjaBulanan::where('tenaga_pendidik_id', $guru->id)
+            ->where('bulan', $bulan)->where('tahun', $tahun)->first();
+
+        if ($rekap) {
+            RekapKinerjaBulanan::tandaiPerubahan('reset', $data['alasan']);
+            $rekap->update([
+                'sudah_dikunci'      => false,
+                'catatan_superadmin' => null,
+                'dikaji_oleh'        => null,
+                'dikaji_pada'        => null,
+            ]);
+        }
+
+        RekapKinerjaBulanan::tandaiPerubahan('reset', $data['alasan']);
         $this->kinerjaService->hitungRekap($guru, $bulan, $tahun);
 
-        return back()->with('success', "Kinerja {$guru->user->name} direset (dihitung ulang dari data).");
+        return back()->with('success',
+            "Kinerja {$guru->user->name} direset & dihitung ulang. Skor lama tersimpan di riwayat.");
     }
 
-    /** Reset massal 1 periode — buka semua kunci + hitung ulang. Berguna saat demo. */
+    /** Reset massal 1 periode — buka semua kunci + hitung ulang, wajib beralasan. */
     public function resetSemua(Request $request)
     {
-        $bulan = (int) ($request->bulan ?? now()->month);
-        $tahun = (int) ($request->tahun ?? now()->year);
+        $data = $request->validate([
+            'bulan'  => 'nullable|integer|between:1,12',
+            'tahun'  => 'nullable|integer|min:2020',
+            'alasan' => 'required|string|min:5|max:500',
+        ], [], ['alasan' => 'alasan reset']);
 
-        RekapKinerjaBulanan::where('bulan', $bulan)->where('tahun', $tahun)
-            ->update(['sudah_dikunci' => false]);
-        $total = $this->kinerjaService->hitungRekapSemua($bulan, $tahun);
+        $bulan = (int) ($data['bulan'] ?? now()->month);
+        $tahun = (int) ($data['tahun'] ?? now()->year);
 
-        return back()->with('success', "Kinerja {$total} guru direset & dihitung ulang untuk periode ini.");
+        if ($pesan = $this->cekPeriodeTerkunci($bulan, $tahun)) {
+            return back()->with('error', $pesan);
+        }
+
+        foreach (RekapKinerjaBulanan::where('bulan', $bulan)->where('tahun', $tahun)->get() as $r) {
+            RekapKinerjaBulanan::tandaiPerubahan('reset_semua', $data['alasan']);
+            $r->update([
+                'sudah_dikunci'      => false,
+                'catatan_superadmin' => null,
+                'dikaji_oleh'        => null,
+                'dikaji_pada'        => null,
+            ]);
+        }
+
+        $aktor = auth()->id();
+        $total = $this->kinerjaService->hitungRekapSemua($bulan, $tahun, function () use ($data, $aktor) {
+            RekapKinerjaBulanan::tandaiPerubahan('reset_semua', $data['alasan'], $aktor);
+        });
+
+        return back()->with('success',
+            "Kinerja {$total} guru direset & dihitung ulang. Semua skor lama tersimpan di riwayat.");
+    }
+
+    /** Pesan penolakan bila periode gaji bulan itu sudah dikunci (null = boleh). */
+    private function cekPeriodeTerkunci(int $bulan, int $tahun): ?string
+    {
+        $periode = \App\Models\PeriodePenggajian::where('bulan', $bulan)->where('tahun', $tahun)
+            ->whereNotNull('dikunci_pada')->first();
+
+        return $periode
+            ? "Periode gaji {$periode->nama_bulan} sudah dikunci — skor kinerja bulan itu ikut beku dan tidak dapat diubah."
+            : null;
     }
 
     /** Raport kinerja 1 guru (siap cetak). */

@@ -345,11 +345,16 @@ function hitungRekap() {
 
 const mereset = ref(false)
 function resetSemua() {
-    if (!window.confirm('Reset kinerja SEMUA guru untuk periode ini? Skor dihitung ulang dari data (override manual dihapus).')) return
+    // Reset massal menghapus semua override satu periode — alasannya wajib dan
+    // ikut tersimpan di riwayat tiap guru. Skor lama tidak hilang.
+    const alasan = window.prompt('Reset kinerja SEMUA guru periode ini.\nAlasan (wajib, min. 5 karakter):')
+    if (alasan === null) return
+    if (alasan.trim().length < 5) { window.alert('Alasan reset wajib diisi minimal 5 karakter.'); return }
     mereset.value = true
     router.post(route('admin.smart-payroll.kinerja.reset-semua'), {
         bulan: filterBulan.value,
         tahun: filterTahun.value,
+        alasan: alasan.trim(),
     }, {
         onFinish: () => mereset.value = false,
     })

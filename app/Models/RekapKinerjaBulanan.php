@@ -8,6 +8,23 @@ class RekapKinerjaBulanan extends Model
 {
     protected $table = 'rekap_kinerja_bulanan';
 
+    /**
+     * Konteks perubahan untuk satu kali penyimpanan berikutnya, dibaca oleh
+     * RekapKinerjaBulananObserver: ['sebab' => ..., 'alasan' => ..., 'aktor' => id].
+     * Diisi controller/command sebelum menyimpan; kosong = 'hitung_ulang' biasa.
+     */
+    public static array $konteksPerubahan = [];
+
+    /** Tandai sebab perubahan untuk penyimpanan berikutnya. */
+    public static function tandaiPerubahan(string $sebab, ?string $alasan = null, ?int $aktor = null): void
+    {
+        self::$konteksPerubahan = [
+            'sebab'  => $sebab,
+            'alasan' => $alasan,
+            'aktor'  => $aktor ?? auth()->id(),
+        ];
+    }
+
     protected $fillable = [
         // Identitas
         'tenaga_pendidik_id', 'bulan', 'tahun',
@@ -55,6 +72,8 @@ class RekapKinerjaBulanan extends Model
 
         // ── Audit ─────────────────────────────────────────────────────────────
         'catatan_superadmin',
+        'dihitung_pada',
+        'faktor_penurunan',
         'dikaji_oleh',
         'dikaji_pada',
         'sudah_dikunci',
@@ -64,6 +83,8 @@ class RekapKinerjaBulanan extends Model
     {
         return [
             'dikaji_pada'          => 'datetime',
+            'dihitung_pada'        => 'datetime',
+            'faktor_penurunan'     => 'array',
             'sudah_dikunci'        => 'boolean',
             // Skor
             'skor_absensi'         => 'float',
@@ -77,6 +98,12 @@ class RekapKinerjaBulanan extends Model
     }
 
     // ─── Relasi ───────────────────────────────────────────────────────────────
+
+    public function riwayat()
+    {
+        return $this->hasMany(RiwayatRekapKinerja::class, 'rekap_kinerja_bulanan_id')
+            ->latest('id');
+    }
 
     public function tenagaPendidik()
     {

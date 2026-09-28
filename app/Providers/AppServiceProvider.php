@@ -19,6 +19,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Riwayat skor kinerja: satu pintu penulis, menangkap semua jalur perubahan.
+        \App\Models\RekapKinerjaBulanan::observe(\App\Observers\RekapKinerjaBulananObserver::class);
+
         //
     }
 }

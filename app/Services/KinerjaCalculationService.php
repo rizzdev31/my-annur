@@ -67,6 +67,66 @@ use Illuminate\Support\Facades\DB;
  */
 class KinerjaCalculationService
 {
+    /**
+     * Batas hitung: hari kerja yang SUDAH BERJALAN (s/d kemarin), tidak pernah
+     * melewati akhir bulan. Bulan lampau otomatis = sebulan penuh.
+     * Dipakai bersama hitungRekap() dan preview() supaya angka di aplikasi guru
+     * tidak pernah berbeda dengan angka di admin.
+     */
+    private function batasHitung(Carbon $mulai, Carbon $selesai): Carbon
+    {
+        $batas = Carbon::now()->copy()->subDay()->endOfDay();
+        return $batas->gt($selesai) ? $selesai->copy() : $batas;
+    }
+
+    /**
+     * SATU SUMBER perhitungan skor kinerja.
+     *
+     * Dulu hitungRekap() (admin) dan preview() (aplikasi guru) menghitung sendiri
+     * dengan dua rumus berbeda: hitungRekap menormalisasi ke jumlah bobot inti,
+     * preview membagi 100. Karena bobot inti tidak harus berjumlah 100 (mis. 85),
+     * skor di aplikasi guru selalu tampak lebih rendah. Sekarang keduanya memakai
+     * metode ini.
+     */
+    private function susunKomponen(TenagaPendidik $guru, int $bulan, int $tahun, SettingKinerja $setting): array
+    {
+        $mulai   = Carbon::create($tahun, $bulan, 1)->startOfMonth();
+        $selesai = $mulai->copy()->endOfMonth();
+        $batas   = $this->batasHitung($mulai, $selesai);
+
+        // Awal bulan (belum ada hari berjalan) → 0 hari kerja → komponen netral.
+        $hariKerja = $batas->lt($mulai)
+            ? 0
+            : $this->hitungHariKerja($mulai, $batas, $guru->jamKerjaAktif(), $guru->id);
+
+        $k1 = $this->komponenAbsensi($guru, $bulan, $tahun, $hariKerja, $setting);
+        $k2 = $this->komponenTugas($guru, $mulai, $selesai, $setting, $batas);
+        $k3 = $this->komponenAdministrasi($guru, $bulan, $tahun, $hariKerja, $mulai, $selesai, $setting);
+        $kp = $this->komponenPiket($guru, $bulan, $tahun, (float) ($setting->skor_min_piket ?? 50));
+
+        // Skor DASAR = rata-rata TERBOBOT 3 komponen inti, DINORMALISASI ke jumlah
+        // bobotnya sendiri → guru sempurna selalu 100 walau bobot inti ≠ 100.
+        $bobotInti = (float) ($setting->bobot_absensi + $setting->bobot_tugas + $setting->bobot_administrasi);
+        $bobotInti = $bobotInti > 0 ? $bobotInti : 1;
+        $skorDasar = (
+              ($k1['skor'] * $setting->bobot_absensi)
+            + ($k2['skor'] * $setting->bobot_tugas)
+            + ($k3['skor'] * $setting->bobot_administrasi)
+        ) / $bobotInti;
+
+        // PIKET = penyesuaian (+/−) di atas skor dasar → total dibatasi [0..100].
+        $skorTotal = round(max(0, min(100, $skorDasar + $kp['penyesuaian'])), 2);
+
+        return [
+            'k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'kp' => $kp,
+            'hari_kerja' => $hariKerja,
+            'bobot_inti' => $bobotInti,
+            'skor_dasar' => round($skorDasar, 2),
+            'skor_total' => $skorTotal,
+            'batas'      => $batas,
+        ];
+    }
+
     public function hitungRekap(TenagaPendidik $guru, int $bulan, int $tahun): RekapKinerjaBulanan
     {
         $rekap = RekapKinerjaBulanan::firstOrNew([
@@ -77,42 +137,19 @@ class KinerjaCalculationService
 
         if ($rekap->exists && $rekap->sudah_dikunci) return $rekap;
 
+        // Periode gaji bulan itu sudah dikunci → skor kinerjanya ikut beku.
+        // Tanpa pagar ini, skor bulan lampau berubah hanya karena halaman dibuka.
+        if ($rekap->exists && self::periodeTerkunci($bulan, $tahun)) return $rekap;
+
         $setting = SettingKinerja::getDefault();
         if (!$setting) {
             throw new \RuntimeException(
                 'Setting kinerja belum dikonfigurasi. Hubungi administrator untuk membuat setting kinerja terlebih dahulu.'
             );
         }
-        $mulai   = Carbon::create($tahun, $bulan, 1)->startOfMonth();
-        $selesai = $mulai->copy()->endOfMonth();
 
-        // Denominator skor = hari kerja yang SUDAH BERJALAN (s/d kemarin), bukan
-        // sebulan penuh → di tengah bulan guru rajin tetap ~100; skor turun hanya
-        // saat ada alfa/kelalaian (auto-alfa menandai yg tak check-in). Bulan lampau
-        // otomatis = sebulan penuh; awal bulan (belum ada hari berjalan) = 0 → netral 100.
-        $hinggaHitung = Carbon::now()->copy()->subDay()->endOfDay();
-        if ($hinggaHitung->gt($selesai)) $hinggaHitung = $selesai->copy();
-        $hariKerja = $hinggaHitung->lt($mulai)
-            ? 0
-            : $this->hitungHariKerja($mulai, $hinggaHitung, $guru->jamKerjaAktif(), $guru->id);
-
-        $k1 = $this->komponenAbsensi($guru, $bulan, $tahun, $hariKerja, $setting);
-        $k2 = $this->komponenTugas($guru, $mulai, $selesai, $setting);
-        $k3 = $this->komponenAdministrasi($guru, $bulan, $tahun, $hariKerja, $mulai, $selesai, $setting);
-        $kp = $this->komponenPiket($guru, $bulan, $tahun, (float) ($setting->skor_min_piket ?? 50));
-
-        // Skor DASAR = rata-rata TERBOBOT dari 3 komponen inti, DINORMALISASI ke
-        // jumlah bobotnya sendiri → guru sempurna selalu = 100, walau bobot inti
-        // tak persis berjumlah 100 (piket = penyesuaian terpisah, bukan slot bobot).
-        $bobotInti = (float) ($setting->bobot_absensi + $setting->bobot_tugas + $setting->bobot_administrasi);
-        $bobotInti = $bobotInti > 0 ? $bobotInti : 1;
-        $skorDasar = (
-              ($k1['skor'] * $setting->bobot_absensi)
-            + ($k2['skor'] * $setting->bobot_tugas)
-            + ($k3['skor'] * $setting->bobot_administrasi)
-        ) / $bobotInti;
-        // PIKET = penyesuaian (+/−) DI ATAS skor dasar → total dibatasi [0..100].
-        $skorTotal = round(max(0, min(100, $skorDasar + $kp['penyesuaian'])), 2);
+        $h  = $this->susunKomponen($guru, $bulan, $tahun, $setting);
+        $k1 = $h['k1']; $k2 = $h['k2']; $k3 = $h['k3']; $kp = $h['kp'];
 
         $rekap->fill([
             // Skor komponen
@@ -120,7 +157,7 @@ class KinerjaCalculationService
             'skor_tugas'                => $k2['skor'],
             'skor_administrasi'         => $k3['skor'],
             'skor_piket'                => $kp['penyesuaian'], // penyesuaian signed (+/−)
-            'skor_total'                => $skorTotal,
+            'skor_total'                => $h['skor_total'],
             // backward compat
             'skor_keaktifan'            => $k3['skor_log'],
             'skor_penugasan'            => $k2['skor'],
@@ -131,7 +168,7 @@ class KinerjaCalculationService
             'total_sakit'               => $k1['sakit'],
             'total_alfa'                => $k1['alfa'],
             'total_dinas_luar'          => $k1['dinas_luar'],
-            'total_hari_kerja'          => $hariKerja,
+            'total_hari_kerja'          => $h['hari_kerja'],
             // Data mentah mengajar
             'total_sesi_jadwal'         => $k3['sesi_jadwal'],
             'total_sesi_terlaksana'     => $k3['sesi_terlaksana'],
@@ -148,19 +185,38 @@ class KinerjaCalculationService
             'total_realisasi_jabatan'   => $k2['jabatan_total'],
             'total_realisasi_disetujui' => $k2['jabatan_disetujui'],
             'setting_kinerja_id'        => $setting->id ?? null,
+            // Penyebab skor tidak 100 — disimpan agar bulan lampau tetap bisa
+            // dijelaskan ke guru, termasuk di riwayat perubahan.
+            'faktor_penurunan'          => $this->faktorPenurunan($h, $setting),
+            'dihitung_pada'             => now(),
         ]);
 
         $rekap->save();
         return $rekap;
     }
 
-    public function hitungRekapSemua(int $bulan, int $tahun): int
+    /** True bila periode penggajian bulan/tahun itu sudah dikunci bendahara. */
+    public static function periodeTerkunci(int $bulan, int $tahun): bool
+    {
+        return \App\Models\PeriodePenggajian::where('bulan', $bulan)
+            ->where('tahun', $tahun)
+            ->whereNotNull('dikunci_pada')
+            ->exists();
+    }
+
+    /**
+     * @param callable|null $sebelumTiapGuru Dipanggil sebelum tiap guru dihitung —
+     *        dipakai pemanggil untuk menandai sebab perubahan (mis. reset massal),
+     *        karena penanda di model bersifat sekali pakai per penyimpanan.
+     */
+    public function hitungRekapSemua(int $bulan, int $tahun, ?callable $sebelumTiapGuru = null): int
     {
         $setting = \App\Models\SettingKinerja::getDefault();
         $ambang  = (float) ($setting->grade_c ?? 0);
         $guru    = TenagaPendidik::aktif()->with('user')->get();
 
         foreach ($guru as $g) {
+            if ($sebelumTiapGuru) $sebelumTiapGuru($g);
             $rekap = $this->hitungRekap($g, $bulan, $tahun);
 
             // Notifikasi 'kinerja.rendah' bila skor di bawah ambang (guru + pimpinan).
@@ -264,6 +320,9 @@ class KinerjaCalculationService
             'skor'          => $skorAbsensi,
             'skor_harian'   => $skorHarian,
             'skor_mengajar' => $skorMengajar,
+            'hari_dinilai'  => $hariDinilai,
+            'sesi_jadwal'   => $sesiJadwalBulan,
+            'sesi_terlaksana' => $sesiTerlaksana,
             'hadir'         => $hadir,
             'terlambat'     => $terlambat,
             'izin'          => $izin,
@@ -282,7 +341,8 @@ class KinerjaCalculationService
     private function komponenTugas(
         TenagaPendidik $guru,
         Carbon $mulai, Carbon $selesai,
-        SettingKinerja $s
+        SettingKinerja $s,
+        ?Carbon $batas = null
     ): array {
         // ── Sub 2a: Penugasan Tambahan ──────────────────────────────────────
         $penugasan = PenugasanTambahan::where('tenaga_pendidik_id', $guru->id)
@@ -311,8 +371,13 @@ class KinerjaCalculationService
             $jabatanIds = [$guru->jabatan_id];
         }
 
-        $hariKerja = $this->hitungHariKerja($mulai, $selesai, $guru->jamKerjaAktif(), $guru->id);
-        $jmlMinggu = $this->hitungJumlahMinggu($mulai, $selesai);
+        // Target dihitung sampai hari yang SUDAH BERJALAN — di tengah bulan guru
+        // tidak dituntut memenuhi target hari yang belum datang.
+        $batasTarget = $batas && $batas->lt($selesai) ? $batas : $selesai;
+        $hariKerja = $batasTarget->lt($mulai)
+            ? 0
+            : $this->hitungHariKerja($mulai, $batasTarget, $guru->jamKerjaAktif(), $guru->id);
+        $jmlMinggu = $batasTarget->lt($mulai) ? 0 : $this->hitungJumlahMinggu($mulai, $batasTarget);
 
         $daftarTugas = TugasJabatan::whereIn('jabatan_id', $jabatanIds)->aktif()
             ->get(['id', 'frekuensi']);
@@ -359,6 +424,9 @@ class KinerjaCalculationService
             'penugasan_selesai'  => $penugasanSelesai,
             'jabatan_total'      => $realisasiTotal,
             'jabatan_disetujui'  => $realisasiDisetujui,
+            // untuk penjelasan penyebab ke guru
+            'jabatan_target'     => $targetTotal,
+            'jabatan_terpenuhi'  => $terpenuhiTotal,
         ];
     }
 
@@ -417,6 +485,7 @@ class KinerjaCalculationService
             'skor'             => $skorAdmin,
             'skor_laporan'     => $skorLaporan,
             'skor_log'         => $skorLog,
+            'target_log'       => $logs->count() > 0 ? $targetLog : 0,
             'sesi_jadwal'      => $sesiJadwal,
             'sesi_terlaksana'  => $sesiTerlaksana,
             'sesi_dilaporkan'  => $sesiDilaporkan,
@@ -432,32 +501,27 @@ class KinerjaCalculationService
 
     public function preview(TenagaPendidik $guru, int $bulan, int $tahun, SettingKinerja $setting): array
     {
-        $mulai     = Carbon::create($tahun, $bulan, 1)->startOfMonth();
-        $selesai   = $mulai->copy()->endOfMonth();
-        $hariKerja = $this->hitungHariKerja($mulai, $selesai, $guru->jamKerjaAktif(), $guru->id);
+        $h  = $this->susunKomponen($guru, $bulan, $tahun, $setting);
+        $k1 = $h['k1']; $k2 = $h['k2']; $k3 = $h['k3']; $kp = $h['kp'];
+        $skorTotal = $h['skor_total'];
 
-        $k1 = $this->komponenAbsensi($guru, $bulan, $tahun, $hariKerja, $setting);
-        $k2 = $this->komponenTugas($guru, $mulai, $selesai, $setting);
-        $k3 = $this->komponenAdministrasi($guru, $bulan, $tahun, $hariKerja, $mulai, $selesai, $setting);
-        $kp = $this->komponenPiket($guru, $bulan, $tahun, (float) ($setting->skor_min_piket ?? 50));
-
-        $skorDasar = ($k1['skor'] * $setting->bobot_absensi      / 100)
-                   + ($k2['skor'] * $setting->bobot_tugas        / 100)
-                   + ($k3['skor'] * $setting->bobot_administrasi / 100);
-        // PIKET = penyesuaian (+/−) di atas skor dasar.
-        $skorTotal = round(max(0, min(100, $skorDasar + $kp['penyesuaian'])), 2);
+        // Kontribusi = skor komponen × bobotnya, dinormalisasi ke jumlah bobot inti
+        // (sama seperti perhitungan skor dasar) supaya jumlah kontribusi = skor dasar.
+        $kontribusi = fn (float $skor, float $bobot) => round($skor * $bobot / $h['bobot_inti'], 2);
 
         return [
             'skor_total'   => $skorTotal,
-            'skor_dasar'   => round($skorDasar, 2),
+            'skor_dasar'   => $h['skor_dasar'],
             'grade'        => $setting->getGrade($skorTotal),
             'label_grade'  => $setting->getLabelGrade($skorTotal),
             'badge_grade'  => $setting->getBadgeGrade($skorTotal),
+            // Penjelasan "kenapa skor saya tidak 100"
+            'faktor'       => $this->faktorPenurunan($h, $setting),
             'komponen' => [
                 'absensi' => [
                     'skor'       => $k1['skor'],
                     'bobot'      => $setting->bobot_absensi,
-                    'kontribusi' => round($k1['skor'] * $setting->bobot_absensi / 100, 2),
+                    'kontribusi' => $kontribusi((float) $k1['skor'], (float) $setting->bobot_absensi),
                     'detail' => [
                         'skor_harian'   => $k1['skor_harian'],
                         'skor_mengajar' => $k1['skor_mengajar'],
@@ -467,7 +531,7 @@ class KinerjaCalculationService
                         'sakit'         => $k1['sakit'],
                         'alfa'          => $k1['alfa'],
                         'dinas_luar'    => $k1['dinas_luar'],
-                        'hari_kerja'    => $hariKerja,
+                        'hari_kerja'    => $h['hari_kerja'],
                         'nilai_per_status' => [
                             'hadir'      => $setting->nilai_hadir,
                             'terlambat'  => $setting->nilai_terlambat,
@@ -481,7 +545,7 @@ class KinerjaCalculationService
                 'tugas' => [
                     'skor'       => $k2['skor'],
                     'bobot'      => $setting->bobot_tugas,
-                    'kontribusi' => round($k2['skor'] * $setting->bobot_tugas / 100, 2),
+                    'kontribusi' => $kontribusi((float) $k2['skor'], (float) $setting->bobot_tugas),
                     'detail' => [
                         'skor_penugasan'    => $k2['skor_penugasan'],
                         'skor_jabatan'      => $k2['skor_jabatan'],
@@ -489,12 +553,14 @@ class KinerjaCalculationService
                         'penugasan_selesai' => $k2['penugasan_selesai'],
                         'jabatan_total'     => $k2['jabatan_total'],
                         'jabatan_disetujui' => $k2['jabatan_disetujui'],
+                        'jabatan_target'    => $k2['jabatan_target'] ?? 0,
+                        'jabatan_terpenuhi' => $k2['jabatan_terpenuhi'] ?? 0,
                     ],
                 ],
                 'administrasi' => [
                     'skor'       => $k3['skor'],
                     'bobot'      => $setting->bobot_administrasi,
-                    'kontribusi' => round($k3['skor'] * $setting->bobot_administrasi / 100, 2),
+                    'kontribusi' => $kontribusi((float) $k3['skor'], (float) $setting->bobot_administrasi),
                     'detail' => [
                         'skor_laporan'    => $k3['skor_laporan'],
                         'skor_log'        => $k3['skor_log'],
@@ -502,6 +568,7 @@ class KinerjaCalculationService
                         'sesi_terlaksana' => $k3['sesi_terlaksana'],
                         'sesi_dilaporkan' => $k3['sesi_dilaporkan'],
                         'log_submitted'   => $k3['log_submitted'],
+                        'target_log'      => $k3['target_log'] ?? 0,
                     ],
                 ],
                 // PIKET sebagai penyesuaian (+/−), bukan komponen berbobot.
@@ -514,6 +581,131 @@ class KinerjaCalculationService
                 ],
             ],
         ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PENYEBAB SKOR TIDAK 100 — dijelaskan apa adanya ke guru
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Daftar penyebab konkret beserta dampaknya dalam POIN SKOR TOTAL, supaya
+     * guru tidak hanya melihat angka turun tapi tahu sebabnya dan apa yang
+     * bisa diperbaiki. Dampak dihitung dari kekurangan tiap sub-komponen
+     * × bobot sub × bobot komponen ÷ jumlah bobot inti, jadi jumlah seluruh
+     * dampak ≈ (100 − skor dasar).
+     */
+    public function faktorPenurunan(array $h, SettingKinerja $s): array
+    {
+        $k1 = $h['k1']; $k2 = $h['k2']; $k3 = $h['k3']; $kp = $h['kp'];
+        $bi = (float) $h['bobot_inti'];
+        $f  = [];
+
+        // dampak sub-komponen terhadap skor total
+        $dampak = fn (float $skorSub, float $bobotSub, float $bobotKomponen) =>
+            round((100 - min(100, $skorSub)) * ($bobotSub / 100) * ($bobotKomponen / $bi), 2);
+
+        // ── Absensi harian ────────────────────────────────────────────────
+        $d = $dampak((float) $k1['skor_harian'], (float) $s->bobot_absensi_harian, (float) $s->bobot_absensi);
+        if ($d > 0) {
+            $rincian = [];
+            if ($k1['alfa'] > 0)      $rincian[] = "{$k1['alfa']}× alfa (dinilai {$s->nilai_alfa})";
+            if ($k1['terlambat'] > 0) $rincian[] = "{$k1['terlambat']}× terlambat (dinilai {$s->nilai_terlambat})";
+            if ($k1['izin'] > 0)      $rincian[] = "{$k1['izin']}× izin (dinilai {$s->nilai_izin})";
+            if ($k1['sakit'] > 0)     $rincian[] = "{$k1['sakit']}× sakit (dinilai {$s->nilai_sakit})";
+            $f[] = [
+                'komponen' => 'Absensi harian',
+                'sebab'    => $rincian ? implode(', ', $rincian) : 'ada hari kerja yang tidak bernilai penuh',
+                'angka'    => "hadir {$k1['hadir']} dari {$k1['hari_dinilai']} hari tercatat",
+                'saran'    => 'Hadir tepat waktu; izin/sakit tetap dinilai di bawah hadir.',
+                'dampak'   => $d,
+            ];
+        }
+
+        // ── Absensi mengajar (sesi terlaksana) ────────────────────────────
+        $d = $dampak((float) $k1['skor_mengajar'], (float) $s->bobot_absensi_mengajar, (float) $s->bobot_absensi);
+        if ($d > 0) {
+            $tidak = max(0, (int) $k1['sesi_jadwal'] - (int) $k1['sesi_terlaksana']);
+            $f[] = [
+                'komponen' => 'Sesi mengajar',
+                'sebab'    => "{$tidak} sesi tidak terlaksana",
+                'angka'    => "terlaksana {$k1['sesi_terlaksana']} dari {$k1['sesi_jadwal']} sesi yang dinilai",
+                'saran'    => 'Isi absen mengajar tiap sesi; sesi yang dialihkan ke pengganti tidak dihitung ke Anda.',
+                'dampak'   => $d,
+            ];
+        }
+
+        // ── Tugas tambahan ────────────────────────────────────────────────
+        $d = $dampak((float) $k2['skor_penugasan'], (float) $s->bobot_tugas_tambahan, (float) $s->bobot_tugas);
+        if ($d > 0) {
+            $sisa = max(0, (int) $k2['penugasan_total'] - (int) $k2['penugasan_selesai']);
+            $f[] = [
+                'komponen' => 'Tugas tambahan',
+                'sebab'    => $k2['penugasan_total'] > 0
+                    ? "{$sisa} tugas belum selesai atau belum disetujui admin"
+                    : 'belum ada tugas tambahan yang tercatat',
+                'angka'    => "selesai {$k2['penugasan_selesai']} dari {$k2['penugasan_total']} tugas",
+                'saran'    => 'Selesaikan tugas lalu laporkan agar bisa disetujui admin.',
+                'dampak'   => $d,
+            ];
+        }
+
+        // ── Tugas jabatan (frekuensi) ─────────────────────────────────────
+        $d = $dampak((float) $k2['skor_jabatan'], (float) $s->bobot_tugas_jabatan, (float) $s->bobot_tugas);
+        if ($d > 0) {
+            $target    = (int) ($k2['jabatan_target'] ?? 0);
+            $terpenuhi = (int) ($k2['jabatan_terpenuhi'] ?? 0);
+            $f[] = [
+                'komponen' => 'Tugas jabatan',
+                'sebab'    => $target > 0
+                    ? (($target - $terpenuhi) . ' target tugas jabatan belum terpenuhi')
+                    : 'realisasi tugas jabatan belum tercatat',
+                'angka'    => "terpenuhi {$terpenuhi} dari {$target} target sampai hari ini",
+                'saran'    => 'Catat realisasi tugas jabatan sesuai frekuensinya (harian/mingguan/bulanan).',
+                'dampak'   => $d,
+            ];
+        }
+
+        // ── Laporan mengajar (materi/jurnal) ──────────────────────────────
+        $d = $dampak((float) $k3['skor_laporan'], (float) $s->bobot_laporan_mengajar, (float) $s->bobot_administrasi);
+        if ($d > 0) {
+            $belum = max(0, (int) $k3['sesi_jadwal'] - (int) $k3['sesi_dilaporkan']);
+            $f[] = [
+                'komponen' => 'Laporan mengajar',
+                'sebab'    => "{$belum} sesi belum ada laporan materinya",
+                'angka'    => "dilaporkan {$k3['sesi_dilaporkan']} dari {$k3['sesi_jadwal']} sesi",
+                'saran'    => 'Isi materi/jurnal setiap selesai mengajar — absen saja belum dihitung.',
+                'dampak'   => $d,
+            ];
+        }
+
+        // ── Log kerja harian ──────────────────────────────────────────────
+        $d = $dampak((float) $k3['skor_log'], (float) $s->bobot_log_kerja, (float) $s->bobot_administrasi);
+        if ($d > 0) {
+            $target = (int) ($k3['target_log'] ?? 0);
+            $f[] = [
+                'komponen' => 'Log kerja harian',
+                'sebab'    => $target > 0
+                    ? (max(0, $target - (int) $k3['log_submitted']) . ' log kerja belum diisi')
+                    : 'log kerja belum diisi',
+                'angka'    => "terisi {$k3['log_submitted']}" . ($target > 0 ? " dari target {$target}" : ''),
+                'saran'    => 'Isi log kerja harian; target ' . $s->target_log_per_hari . ' log per hari kerja.',
+                'dampak'   => $d,
+            ];
+        }
+
+        // ── Penilaian guru piket (penyesuaian, bukan bobot) ───────────────
+        if ((float) $kp['penyesuaian'] < 0) {
+            $f[] = [
+                'komponen' => 'Penilaian guru piket',
+                'sebab'    => "{$kp['catatan']} catatan piket/kegiatan (−{$kp['poin_catatan']} poin)",
+                'angka'    => "apresiasi +{$kp['poin_apresiasi']} · catatan −{$kp['poin_catatan']}",
+                'saran'    => 'Ikuti kegiatan wajib (mis. sholat berjamaah) dan hindari catatan piket.',
+                'dampak'   => round(abs((float) $kp['penyesuaian']), 2),
+            ];
+        }
+
+        usort($f, fn ($a, $b) => $b['dampak'] <=> $a['dampak']);
+        return $f;
     }
 
     // ═══════════════════════════════════════════════════════════════════════

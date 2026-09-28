@@ -69,6 +69,15 @@ class KinerjaApiController extends Controller
                 'grade'             => $preview['grade'],
                 'label_grade'       => $preview['label_grade'],
 
+                // ── Penyebab skor belum 100, berikut dampaknya dalam poin ──
+                // Diurut dari yang paling menurunkan skor, lengkap dengan angka
+                // dan saran perbaikan, supaya guru tidak hanya melihat angka turun.
+                'faktor'            => $preview['faktor'] ?? [],
+                'skor_hilang'       => round(array_sum(array_column($preview['faktor'] ?? [], 'dampak')), 2),
+
+                // ── Jejak revisi skor bulan ini (transparansi) ─────────────
+                'revisi'            => $this->jejakRevisi($tp->id, $bulan, $tahun),
+
                 // ── Penyesuaian PIKET (penunjang +/−, bukan komponen berbobot) ──
                 'piket' => [
                     'penyesuaian'    => $preview['komponen']['piket']['penyesuaian'] ?? 0,
@@ -175,6 +184,10 @@ class KinerjaApiController extends Controller
             'grade'             => $setting->getGrade((float) $r->skor_total),
             'label_grade'       => $setting->getLabelGrade((float) $r->skor_total),
             'sudah_dikunci'     => (bool) $r->sudah_dikunci,
+            // Transparansi: bulan ini pernah direvisi berapa kali & kenapa
+            'revisi'            => $this->jejakRevisi($r->tenaga_pendidik_id, $r->bulan, $r->tahun),
+            'faktor'            => $r->faktor_penurunan ?? [],
+            'dihitung_pada'     => $r->dihitung_pada?->format('d M Y H:i'),
             // Ringkasan absensi
             'hadir'       => $r->total_hadir     ?? 0,
             'terlambat'   => $r->total_terlambat  ?? 0,
@@ -294,6 +307,46 @@ class KinerjaApiController extends Controller
                 'label_grade_terbaru' => ($rekapTerbaru && $setting) ? $setting->getLabelGrade($rekapTerbaru->skor_total) : null,
             ],
         ]);
+    }
+
+    /**
+     * Ringkasan perubahan skor yang pernah terjadi pada satu bulan.
+     *
+     * Sumbernya riwayat_rekap_kinerja (ditulis otomatis tiap skor berubah), jadi
+     * guru bisa melihat skornya pernah direvisi, dari berapa ke berapa, sebab apa,
+     * dan oleh siapa — tanpa bisa mengubah apa pun.
+     */
+    private function jejakRevisi(int $tenagaPendidikId, int $bulan, int $tahun): array
+    {
+        $rows = \App\Models\RiwayatRekapKinerja::with('pengubah')
+            ->where('tenaga_pendidik_id', $tenagaPendidikId)
+            ->where('bulan', $bulan)->where('tahun', $tahun)
+            // Perubahan otomatis (hitung ulang harian) tidak perlu meramaikan
+            // tampilan guru — yang penting keputusan manusia.
+            ->whereIn('sebab', ['reset', 'reset_semua', 'override', 'catatan'])
+            ->orderByDesc('id')->get();
+
+        return [
+            'jumlah'   => $rows->count(),
+            'terakhir' => $rows->first() ? [
+                'label_sebab' => $rows->first()->label_sebab,
+                'alasan'      => $rows->first()->alasan,
+                'skor_lama'   => $rows->first()->skor_total,
+                'skor_baru'   => $rows->first()->skor_total_baru,
+                'selisih'     => $rows->first()->selisih,
+                'oleh'        => $rows->first()->pengubah?->name ?? 'Admin',
+                'waktu'       => $rows->first()->created_at?->format('d M Y H:i'),
+            ] : null,
+            'daftar'   => $rows->take(10)->map(fn ($r) => [
+                'label_sebab' => $r->label_sebab,
+                'alasan'      => $r->alasan,
+                'skor_lama'   => $r->skor_total,
+                'skor_baru'   => $r->skor_total_baru,
+                'selisih'     => $r->selisih,
+                'oleh'        => $r->pengubah?->name ?? 'Admin',
+                'waktu'       => $r->created_at?->format('d M Y H:i'),
+            ])->values()->all(),
+        ];
     }
 
     private function notFound(): JsonResponse

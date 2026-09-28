@@ -55,6 +55,57 @@ const gradeColor = (g) => ({
                 <span v-else-if="d.sudah_dikunci" class="inline-block mt-2 text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Terkunci</span>
             </div>
 
+            <!-- Penyebab skor belum 100 — pertanyaan pertama guru: "kenapa turun?" -->
+            <div v-if="d.faktor?.length" class="rounded-2xl bg-white border border-gray-100 p-4 mt-4">
+                <div class="flex items-baseline justify-between mb-1">
+                    <h2 class="text-sm font-bold text-gray-800">Kenapa skor belum 100</h2>
+                    <span class="text-[11px] font-bold text-red-500">−{{ Math.round(d.skor_hilang ?? 0) }} poin</span>
+                </div>
+                <p class="text-[10px] text-gray-400 mb-3">Diurut dari yang paling menurunkan skor.</p>
+                <div class="space-y-2.5">
+                    <div v-for="(f, i) in d.faktor" :key="'f'+i" class="rounded-xl bg-gray-50 p-3">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="text-[13px] font-semibold text-gray-800">{{ f.komponen }}</p>
+                                <p class="text-[11px] text-gray-600 mt-0.5">{{ f.sebab }}</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">{{ f.angka }}</p>
+                            </div>
+                            <span class="shrink-0 text-[11px] font-bold text-red-500 tabular-nums">−{{ f.dampak }}</span>
+                        </div>
+                        <p class="text-[10px] text-[#0C78FF] mt-1.5">{{ f.saran }}</p>
+                    </div>
+                </div>
+            </div>
+            <div v-else class="rounded-2xl bg-emerald-50 border border-emerald-100 p-4 mt-4">
+                <p class="text-[12px] text-emerald-700 font-semibold">Tidak ada catatan penurunan bulan ini.</p>
+                <p class="text-[11px] text-emerald-600 mt-0.5">Semua komponen bernilai penuh sejauh data yang tercatat.</p>
+            </div>
+
+            <!-- Jejak revisi: guru berhak tahu skornya pernah diubah admin -->
+            <div v-if="d.revisi?.jumlah" class="rounded-2xl bg-white border border-amber-200 p-4 mt-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-sm font-bold text-gray-800">Riwayat Revisi Skor</h2>
+                    <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                        {{ d.revisi.jumlah }}× direvisi
+                    </span>
+                </div>
+                <div class="space-y-2">
+                    <div v-for="(r, i) in d.revisi.daftar" :key="'r'+i" class="text-[11px] border-l-2 border-amber-200 pl-2.5">
+                        <p class="text-gray-700 font-semibold">
+                            {{ r.label_sebab }}
+                            <span v-if="r.skor_lama !== null" class="font-normal text-gray-500">
+                                · {{ Math.round(r.skor_lama) }} → {{ Math.round(r.skor_baru) }}
+                                <span :class="r.selisih >= 0 ? 'text-emerald-600' : 'text-red-500'">
+                                    ({{ r.selisih > 0 ? '+' : '' }}{{ r.selisih }})
+                                </span>
+                            </span>
+                        </p>
+                        <p v-if="r.alasan" class="text-gray-500">Alasan: {{ r.alasan }}</p>
+                        <p class="text-gray-400">{{ r.oleh }} · {{ r.waktu }}</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Komponen -->
             <div class="rounded-2xl bg-white border border-gray-100 p-4 mt-4 space-y-4">
                 <h2 class="text-sm font-bold text-gray-800">Komponen Penilaian</h2>

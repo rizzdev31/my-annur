@@ -53,3 +53,9 @@ Schedule::command('mengajar:isi-libur')->dailyAt('00:30');
 // karena tiap jenis di-dedup per hari (satu ringkasan per jenis per pengawas).
 Schedule::command('eskalasi:pimpinan')->hourlyAt(5)->between('07:00', '21:00')
     ->withoutOverlapping()->runInBackground();
+
+// Kinerja: bulan berjalan dihitung tiap malam supaya angka tersimpan tidak
+// bergantung siapa yang terakhir membuka halaman admin. Tanggal 1–5 sekalian
+// memfinalkan bulan lalu sebelum periode gajinya dikunci.
+Schedule::command('kinerja:hitung')->dailyAt('01:40');
+Schedule::command('kinerja:hitung --dengan-bulan-lalu')->monthlyOn(1, '02:10');

@@ -72,8 +72,18 @@
         <!-- KONTROL SKOR (override / reset — koreksi manual & demo) -->
         <div class="bg-white rounded-2xl border border-indigo-100 p-5 mb-6">
             <h3 class="text-sm font-semibold text-gray-800 mb-1">Kontrol Skor Kinerja</h3>
-            <p class="text-xs text-gray-400 mb-4">Override skor manual (dikunci agar tak tertimpa hitung ulang), atau reset ke skor terhitung dari data.</p>
-            <div class="flex flex-wrap items-end gap-3">
+            <p class="text-xs text-gray-400 mb-4">Override skor manual (dikunci agar tak tertimpa hitung ulang), atau reset ke skor terhitung dari data.
+                Setiap perubahan tersimpan di riwayat — skor lama tidak hilang.</p>
+
+            <!-- Periode gaji dikunci → skor kinerja bulan itu ikut beku -->
+            <div v-if="periode_terkunci" class="mb-4 rounded-xl bg-gray-50 border border-gray-200 p-3">
+                <p class="text-xs text-gray-600">
+                    Periode gaji bulan ini <strong>sudah dikunci</strong>, jadi skor kinerjanya beku:
+                    tidak dihitung ulang dan tidak bisa di-override/reset.
+                </p>
+            </div>
+
+            <div v-else class="flex flex-wrap items-end gap-3">
                 <div>
                     <label class="block text-[11px] text-gray-500 mb-1">Skor (0–100)</label>
                     <input v-model.number="overrideForm.skor_total" type="number" min="0" max="100" step="0.5"
@@ -92,6 +102,39 @@
                     class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200">
                     Reset (hitung ulang)
                 </button>
+            </div>
+        </div>
+
+        <!-- RIWAYAT PERUBAHAN SKOR (audit) -->
+        <div class="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
+            <div class="flex items-baseline justify-between mb-1">
+                <h3 class="text-sm font-semibold text-gray-800">Riwayat Perubahan Skor</h3>
+                <span class="text-[11px] text-gray-400">{{ namaBulan }} {{ tahun }}</span>
+            </div>
+            <p class="text-xs text-gray-400 mb-4">Setiap kali skor berubah, nilai lamanya disalin ke sini beserta sebab & pelakunya.</p>
+
+            <div v-if="!perubahan.length" class="text-xs text-gray-400 italic">Belum ada perubahan tercatat untuk periode ini.</div>
+            <div v-else class="divide-y divide-gray-100">
+                <div v-for="r in perubahan" :key="r.id" class="py-2.5 flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-800">
+                            <span class="font-semibold">{{ r.label_sebab }}</span>
+                            <span v-if="r.dikunci_lama" class="ml-1.5 text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">sebelumnya terkunci</span>
+                        </p>
+                        <p v-if="r.alasan" class="text-xs text-gray-500 mt-0.5">Alasan: {{ r.alasan }}</p>
+                        <p v-if="r.catatan_lama" class="text-xs text-gray-400 mt-0.5">Catatan lama: {{ r.catatan_lama }}</p>
+                        <p class="text-[11px] text-gray-400 mt-0.5">{{ r.oleh }} · {{ r.waktu }}</p>
+                    </div>
+                    <div class="shrink-0 text-right">
+                        <p class="text-sm tabular-nums text-gray-700">
+                            {{ r.skor_lama ?? '—' }} <span class="text-gray-300">→</span> {{ r.skor_baru ?? '—' }}
+                        </p>
+                        <p v-if="r.selisih !== null" class="text-[11px] font-semibold tabular-nums"
+                            :class="r.selisih >= 0 ? 'text-emerald-600' : 'text-red-500'">
+                            {{ r.selisih > 0 ? '+' : '' }}{{ r.selisih }}
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -177,6 +220,8 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { confirm } from '@/composables/useConfirm'
 
 const props = defineProps({
+    perubahan: { type: Array, default: () => [] },
+    periode_terkunci: { type: Boolean, default: false },
     guru: { type: Object, default: () => ({}) },
     rekap: { type: Object, default: () => ({ komponen: { absensi: {}, tugas: {}, administrasi: {}, piket: {} } }) },
     logs: { type: Array, default: () => [] },
@@ -248,8 +293,13 @@ function override() {
     overrideForm.post(route('admin.smart-payroll.kinerja.override', props.guru.id), { preserveScroll: true })
 }
 async function resetKinerja() {
-    if (!(await confirm({ title: 'Reset kinerja guru ini?', message: 'Skor dihitung ulang dari data (override dihapus).', confirmLabel: 'Ya, Reset' }))) return
-    router.post(route('admin.smart-payroll.kinerja.reset', props.guru.id), { bulan: props.bulan, tahun: props.tahun }, { preserveScroll: true })
+    // Alasan wajib: reset mengganti skor yang mungkin hasil kajian manual,
+    // dan alasannya ikut tersimpan di riwayat agar bisa dipertanggungjawabkan.
+    const alasan = window.prompt('Alasan reset kinerja guru ini? (wajib, min. 5 karakter)\nSkor lama akan tersimpan di riwayat.')
+    if (alasan === null) return
+    if (alasan.trim().length < 5) { window.alert('Alasan reset wajib diisi minimal 5 karakter.'); return }
+    router.post(route('admin.smart-payroll.kinerja.reset', props.guru.id),
+        { bulan: props.bulan, tahun: props.tahun, alasan: alasan.trim() }, { preserveScroll: true })
 }
 
 function rupiah(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID') }
