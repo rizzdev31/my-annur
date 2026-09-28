@@ -11,19 +11,28 @@ const loading = ref(true)
 const error = ref('')
 
 const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+// Potongan disimpan negatif; tampilkan nilai mutlaknya karena tanda minus
+// sudah dicetak terpisah di depan angka.
+const abs = (n) => Math.abs(Number(n || 0))
 
 // Rincian bisa belum lengkap pada periode lama (dulu tidak semua komponen
 // disimpan per baris). Selisihnya ditampilkan apa adanya supaya jumlah baris
 // selalu pas dengan Total Penerimaan — tidak ada rupiah yang "hilang".
-const jumlah = (rows) => (rows || []).reduce((a, x) => a + Number(x.subtotal || 0), 0)
-const selisihPendapatan = computed(() => {
-    if (!d.value?.breakdown_pendapatan?.length) return 0
-    return Math.max(0, Number(d.value.total_pendapatan || 0) - jumlah(d.value.breakdown_pendapatan))
-})
-const selisihPotongan = computed(() => {
-    if (!d.value?.breakdown_potongan?.length) return 0
-    return Math.max(0, Number(d.value.total_potongan || 0) - jumlah(d.value.breakdown_potongan))
-})
+// Subtotal potongan disimpan NEGATIF di detail_penggajian, sedangkan kolom
+// total_potongan bernilai positif. Tanpa nilai mutlak, selisihnya jadi dua kali
+// lipat dan memunculkan baris "Potongan lain" palsu.
+const jumlah = (rows) => (rows || []).reduce((a, x) => a + Math.abs(Number(x.subtotal || 0)), 0)
+// Selisih di bawah 1 rupiah hanyalah pembulatan, bukan komponen yang belum dirinci.
+const selisihBersih = (total, rows) => {
+    const d = Number(total || 0) - jumlah(rows)
+    return d >= 1 ? d : 0
+}
+const selisihPendapatan = computed(() =>
+    d.value?.breakdown_pendapatan?.length
+        ? selisihBersih(d.value.total_pendapatan, d.value.breakdown_pendapatan) : 0)
+const selisihPotongan = computed(() =>
+    d.value?.breakdown_potongan?.length
+        ? selisihBersih(d.value.total_potongan, d.value.breakdown_potongan) : 0)
 
 const statusColor = (s) => ({
     dibayar: 'bg-emerald-500', final: 'bg-[#0041c8]', draft: 'bg-gray-400',
@@ -120,7 +129,7 @@ onMounted(load)
                                     <span v-if="it.jumlah_satuan">{{ it.jumlah_satuan }} {{ it.satuan }} × {{ rp(it.nilai_per_satuan) }} · </span>{{ it.label }}
                                 </p>
                             </div>
-                            <p class="text-[13px] font-semibold text-red-500 tabular-nums shrink-0">− {{ rp(it.subtotal) }}</p>
+                            <p class="text-[13px] font-semibold text-red-500 tabular-nums shrink-0">− {{ rp(abs(it.subtotal)) }}</p>
                         </div>
                         <div v-if="selisihPotongan > 0" class="py-2 flex justify-between">
                             <span class="text-[13px] text-gray-500">Potongan lain</span>
