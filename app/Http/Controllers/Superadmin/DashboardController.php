@@ -95,10 +95,23 @@ class DashboardController extends Controller
 
         // Guru yang hari ini tidak punya kewajiban absen harian (libur mingguan,
         // libur individu, atau dibebaskan) tidak dihitung sebagai "belum absen".
-        $namaHari = \App\Services\TimezoneHelper::namaHariDB($today);
-        $wajib = TenagaPendidik::aktif()->get()
-            ->filter(fn ($g) => $g->jadwalHari($namaHari, $today->toDateString()) !== null)
-            ->count();
+        //
+        // Dihitung per guru lewat jadwalHari() → jamKerjaAktif() yang menyentuh DB
+        // (overlay shift + setting jam kerja), jadi untuk 51 guru biayanya ~100
+        // query. Angka ini hanya berubah bila jam kerja/shift/libur diubah, maka
+        // di-cache 10 menit per tanggal — endpoint live yang ditarik tiap 30 detik
+        // tidak boleh membayar biaya itu berulang.
+        $wajib = \Illuminate\Support\Facades\Cache::remember(
+            'dashboard.wajib-absen.' . $today->toDateString(), 600,
+            function () use ($today) {
+                $namaHari = \App\Services\TimezoneHelper::namaHariDB($today);
+                return TenagaPendidik::aktif()
+                    ->with(['jamKerja', 'jabatan'])
+                    ->get()
+                    ->filter(fn ($g) => $g->jadwalHari($namaHari, $today->toDateString()) !== null)
+                    ->count();
+            }
+        );
 
         $tercatat = $hadirTotal + $izin + $sakit + $alfa;
         $belum    = max(0, $wajib - $tercatat);
