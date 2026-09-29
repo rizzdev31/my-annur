@@ -59,7 +59,8 @@ use Illuminate\Support\Facades\DB;
  *   Skor_Admin = (Skor_Laporan × 60%) + (Skor_Log × 40%)
  *
  *   Skor_Laporan (Laporan Mengajar):
- *     → Sesi yang dilaporkan = sesi absen mengajar + ada materi terisi
+ *     → Sesi dilaporkan: kelas pelajaran = materi terisi; tahfidz/tahsin =
+ *       absensi santri terisi (atau ada setoran/penilaian pada sesi itu)
  *     → skor = sesi_dilaporkan / sesi_jadwal_aktif × 100
  *
  *   Skor_Log (Log Kerja Harian):
@@ -529,21 +530,31 @@ class KinerjaCalculationService
         SettingKinerja $s
     ): array {
         // ── Sub 3a: Laporan Mengajar ─────────────────────────────────────────
-        // Sesi yang DILAPORKAN = absensi mengajar ada + materi diisi
-        // Sesi jadwal aktif = semua sesi yang seharusnya mengajar bulan ini
-
+        // Sesi dianggap DILAPORKAN bila pertanggungjawabannya ada — dan bentuk
+        // pertanggungjawaban itu BERBEDA per jenis pembelajaran:
+        //
+        //   sekolah/mapel : materi (jurnal) terisi
+        //   tahfidz/tahsin: roster absensi santri terisi, atau ada catatan
+        //                   setoran/penilaian pada sesi tersebut
+        //
+        // Sebelumnya semua sesi dituntut memiliki `materi`, padahal alur tahfidz
+        // & tahsin tidak pernah mengisi kolom itu (guru mencatat setoran per
+        // santri). Akibatnya 100% sesi tahfidz/tahsin dianggap tidak dilaporkan
+        // dan skor administrasi pengampunya jatuh ke 0 meski rosternya lengkap.
         $dinilai = app(\App\Services\SesiMengajarService::class)->sesiDinilaiKinerja(
             $guru->id, $mulai->toDateString(), $selesai->toDateString()
         );
 
-        $sesiJadwal      = $dinilai->count();
-        $sesiTerlaksana  = $dinilai->where('terlaksana', true)->count();
-        $sesiDilaporkan  = $dinilai->where('terlaksana', true)
-            ->filter(fn($x) => !empty(trim($x['absensi']->materi ?? '')))
-            ->count();
+        $sesiJadwal     = $dinilai->count();
+        $terlaksana     = $dinilai->where('terlaksana', true);
+        $sesiTerlaksana = $terlaksana->count();
 
-        // Skor laporan: sesi yang absen mengajar DAN ada materinya
-        // Jika tidak ada jadwal = sempurna
+        $bukti = $this->buktiLaporanSesi($terlaksana->pluck('absensi'));
+
+        $sesiDilaporkan = $terlaksana->filter(fn ($x) => $bukti['dilaporkan']->has($x['absensi']->id))->count();
+
+        // Skor laporan: sesi terlaksana yang buktinya ada, dibanding seluruh
+        // sesi yang dinilai. Tanpa jadwal = sempurna.
         $skorLaporan = $sesiJadwal > 0
             ? min(100, round($sesiDilaporkan / $sesiJadwal * 100, 2))
             : 100;
@@ -575,6 +586,12 @@ class KinerjaCalculationService
             'skor_laporan'     => $skorLaporan,
             'skor_log'         => $skorLog,
             'target_log'       => $logs->count() > 0 ? $targetLog : 0,
+            // Rincian bukti yang kurang, dipisah per jenis pembelajaran supaya
+            // penjelasan ke guru menyebut hal yang benar-benar harus diisi.
+            'belum_materi'     => $bukti['belum_materi'],
+            'belum_roster'     => $bukti['belum_roster'],
+            'sesi_quran'       => $bukti['sesi_quran'],
+            'sesi_mapel'       => $bukti['sesi_mapel'],
             'sesi_jadwal'      => $sesiJadwal,
             'sesi_terlaksana'  => $sesiTerlaksana,
             'sesi_dilaporkan'  => $sesiDilaporkan,
@@ -657,6 +674,10 @@ class KinerjaCalculationService
                         'sesi_jadwal'     => $k3['sesi_jadwal'],
                         'sesi_terlaksana' => $k3['sesi_terlaksana'],
                         'sesi_dilaporkan' => $k3['sesi_dilaporkan'],
+                        'sesi_quran'      => $k3['sesi_quran'] ?? 0,
+                        'sesi_mapel'      => $k3['sesi_mapel'] ?? 0,
+                        'belum_materi'    => $k3['belum_materi'] ?? 0,
+                        'belum_roster'    => $k3['belum_roster'] ?? 0,
                         'log_submitted'   => $k3['log_submitted'],
                         'target_log'      => $k3['target_log'] ?? 0,
                     ],
@@ -683,6 +704,66 @@ class KinerjaCalculationService
                 ],
             ],
         ];
+    }
+
+    /**
+     * Tentukan sesi mana yang sudah "dilaporkan", sesuai jenis pembelajarannya.
+     *
+     * Bukti yang diterima:
+     *   - kelas sekolah/mapel : kolom `materi` terisi
+     *   - kelas tahfidz/tahsin: roster absensi santri terisi, ATAU ada catatan
+     *     setoran tahfidz / penilaian tahsin pada sesi itu (materi tetap
+     *     diterima bila kebetulan diisi)
+     *
+     * @param  \Illuminate\Support\Collection $absensiList koleksi AbsensiMengajar
+     * @return array{dilaporkan: \Illuminate\Support\Collection, belum_materi: int,
+     *               belum_roster: int, sesi_quran: int, sesi_mapel: int}
+     */
+    private function buktiLaporanSesi($absensiList): array
+    {
+        $kosong = [
+            'dilaporkan'   => collect(),
+            'belum_materi' => 0, 'belum_roster' => 0,
+            'sesi_quran'   => 0, 'sesi_mapel'   => 0,
+        ];
+        if ($absensiList->isEmpty()) return $kosong;
+
+        $ids = $absensiList->pluck('id')->all();
+
+        // Jenis kelas per sesi (satu query, bukan per baris).
+        $jenisPerSesi = \Illuminate\Support\Facades\DB::table('absensi_mengajar as am')
+            ->join('jadwal_mengajar as jm', 'jm.id', '=', 'am.jadwal_mengajar_id')
+            ->join('kelas as k', 'k.id', '=', 'jm.kelas_id')
+            ->whereIn('am.id', $ids)
+            ->pluck('k.jenis', 'am.id');
+
+        // Bukti khas pembelajaran Qur'an: roster santri & catatan setoran/nilai.
+        $adaRoster  = \Illuminate\Support\Facades\DB::table('absensi_santri')
+            ->whereIn('absensi_mengajar_id', $ids)->distinct()->pluck('absensi_mengajar_id')->flip();
+        $adaSetoran = \Illuminate\Support\Facades\DB::table('setoran_tahfidz')
+            ->whereIn('absensi_mengajar_id', $ids)->distinct()->pluck('absensi_mengajar_id')->flip();
+        $adaNilai   = \Illuminate\Support\Facades\DB::table('tahsin_penilaian')
+            ->whereIn('absensi_mengajar_id', $ids)->distinct()->pluck('absensi_mengajar_id')->flip();
+
+        $hasil = $kosong;
+        foreach ($absensiList as $a) {
+            $jenis     = $jenisPerSesi[$a->id] ?? null;
+            $adaMateri = trim((string) ($a->materi ?? '')) !== '';
+
+            if (in_array($jenis, ['tahfidz', 'tahsin'], true)) {
+                $hasil['sesi_quran']++;
+                $ok = $adaRoster->has($a->id) || $adaSetoran->has($a->id) || $adaNilai->has($a->id) || $adaMateri;
+                if ($ok) $hasil['dilaporkan'][$a->id] = true;
+                else     $hasil['belum_roster']++;
+                continue;
+            }
+
+            $hasil['sesi_mapel']++;
+            if ($adaMateri) $hasil['dilaporkan'][$a->id] = true;
+            else            $hasil['belum_materi']++;
+        }
+
+        return $hasil;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -772,12 +853,31 @@ class KinerjaCalculationService
         // ── Laporan mengajar (materi/jurnal) ──────────────────────────────
         $d = $dampak((float) $k3['skor_laporan'], (float) $s->bobot_laporan_mengajar, (float) $s->bobot_administrasi);
         if ($d > 0) {
-            $belum = max(0, (int) $k3['sesi_jadwal'] - (int) $k3['sesi_dilaporkan']);
+            $belum        = max(0, (int) $k3['sesi_jadwal'] - (int) $k3['sesi_dilaporkan']);
+            $belumMateri  = (int) ($k3['belum_materi'] ?? 0);
+            $belumRoster  = (int) ($k3['belum_roster'] ?? 0);
+
+            // Bentuk bukti berbeda per jenis pembelajaran, jadi sebabnya ditulis
+            // sesuai yang benar-benar harus diisi guru bersangkutan.
+            $rincian = [];
+            if ($belumMateri > 0) $rincian[] = "{$belumMateri} sesi pelajaran belum ada materi/jurnal";
+            if ($belumRoster > 0) $rincian[] = "{$belumRoster} sesi tahfidz/tahsin belum ada absensi santrinya";
+            $sisa = $belum - $belumMateri - $belumRoster;
+            if ($sisa > 0) $rincian[] = "{$sisa} sesi belum terlaksana/dilaporkan";
+
+            $saran = $belumRoster > 0 && $belumMateri === 0
+                ? 'Isi absensi santri tiap pertemuan tahfidz/tahsin — itu yang dihitung, bukan materi.'
+                : ($belumRoster > 0
+                    ? 'Kelas pelajaran: isi materi/jurnal. Tahfidz & tahsin: cukup isi absensi santri (atau catatan setoran).'
+                    : 'Isi materi/jurnal setiap selesai mengajar — absen saja belum dihitung.');
+
             $f[] = [
                 'komponen' => 'Laporan mengajar',
-                'sebab'    => "{$belum} sesi belum ada laporan materinya",
-                'angka'    => "dilaporkan {$k3['sesi_dilaporkan']} dari {$k3['sesi_jadwal']} sesi",
-                'saran'    => 'Isi materi/jurnal setiap selesai mengajar — absen saja belum dihitung.',
+                'sebab'    => $rincian ? implode(' · ', $rincian) : "{$belum} sesi belum dilaporkan",
+                'angka'    => "dilaporkan {$k3['sesi_dilaporkan']} dari {$k3['sesi_jadwal']} sesi"
+                    . (($k3['sesi_quran'] ?? 0) > 0
+                        ? " ({$k3['sesi_quran']} sesi tahfidz/tahsin dinilai dari absensi santri)" : ''),
+                'saran'    => $saran,
                 'dampak'   => $d,
             ];
         }
