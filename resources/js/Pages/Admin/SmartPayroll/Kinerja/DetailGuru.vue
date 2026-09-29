@@ -180,7 +180,7 @@
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Nominal Potongan</label>
                     <div class="relative">
                         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">Rp</span>
-                        <input v-model.number="form.nominal" type="number" min="0" step="1000"
+                        <input v-model.number="form.nominal" type="number" min="0" step="any" inputmode="numeric"
                             class="w-full pl-8 pr-3 py-2 rounded-xl border border-gray-200 text-sm" />
                     </div>
                     <p class="text-[11px] text-gray-400 mt-1">Dipotong otomatis di penggajian periode {{ namaBulan }} {{ tahun }}.</p>

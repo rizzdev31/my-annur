@@ -110,22 +110,38 @@ class SettingGajiController extends Controller
     {
         $jabatan = Jabatan::aktif()->get(['id', 'nama_jabatan', 'kode_jabatan', 'tipe']);
 
-        $vakasi = SettingVakasi::aktif()
-            ->orderBy('tipe_aktivitas')
-            ->orderBy('nama')
-            ->get()
-            ->map(fn($v) => [
+        $daftar = SettingVakasi::aktif()->orderBy('tipe_aktivitas')->orderBy('nama')->get();
+
+        // Nama guru penerima untuk setting berlingkup INDIVIDU. Sebelumnya tabel
+        // hanya bisa menampilkan "Semua jabatan" atau nama jabatan, sehingga
+        // setting per-guru (mis. vakasi kehadiran khusus) tampil sebagai kolom
+        // KOSONG dan membingungkan: tidak terlihat siapa penerimanya.
+        $semuaIdGuru = $daftar->flatMap(fn ($v) => is_array($v->tenaga_pendidik_ids) ? $v->tenaga_pendidik_ids : [])
+            ->unique()->values();
+        $namaGuru = $semuaIdGuru->isEmpty() ? collect() : \App\Models\TenagaPendidik::with('user')
+            ->whereIn('id', $semuaIdGuru)->get()
+            ->mapWithKeys(fn ($g) => [$g->id => $g->user?->name ?? ('Guru #' . $g->id)]);
+
+        $vakasi = $daftar->map(function ($v) use ($namaGuru) {
+            $idGuru = is_array($v->tenaga_pendidik_ids) ? $v->tenaga_pendidik_ids : [];
+
+            return [
                 'id'                  => $v->id,
                 'nama'                => $v->nama,
                 'tipe_aktivitas'      => $v->tipe_aktivitas,
                 'satuan'              => $v->satuan,
                 'nominal'             => $v->nominal,
                 'berlaku_untuk_semua' => $v->berlaku_untuk_semua,
+                'lingkup'             => $v->lingkup,
                 // FIXED: pastikan jabatan_ids selalu array, tidak pernah null atau string
                 'jabatan_ids'         => is_array($v->jabatan_ids) ? $v->jabatan_ids : [],
+                'tenaga_pendidik_ids' => $idGuru,
+                'guru_names'          => collect($idGuru)->map(fn ($id) => $namaGuru[$id] ?? ('Guru #' . $id))
+                    ->values()->all(),
                 'berlaku_mulai'       => $v->berlaku_mulai?->format('d M Y'),
                 'berlaku_selesai'     => $v->berlaku_selesai?->format('d M Y'),
-            ]);
+            ];
+        });
 
         return Inertia::render('Admin/SmartPayroll/SettingGaji/Vakasi/Index', [
             'vakasi'  => $vakasi,

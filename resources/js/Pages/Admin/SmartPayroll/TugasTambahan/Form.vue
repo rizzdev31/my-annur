@@ -228,7 +228,7 @@
                             <input
                                 :value="form.vakasi_override ?? ''"
                                 @input="form.vakasi_override = $event.target.value !== '' ? Number($event.target.value) : null"
-                                type="number" min="0" step="1000"
+                                type="number" min="0" step="any" inputmode="numeric"
                                 placeholder="Kosongkan = pakai setting"
                                 :class="inputCls(form.errors.vakasi_override)" />
                             <p class="text-xs text-gray-400 mt-1">Isi jika ingin nominal khusus</p>

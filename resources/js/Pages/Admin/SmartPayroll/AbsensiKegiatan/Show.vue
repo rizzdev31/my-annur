@@ -120,7 +120,7 @@
                                 <button @click="modeVakasi = 'ada'" :class="['flex-1 py-1.5 rounded-md text-xs font-semibold transition',
                                     modeVakasi === 'ada' ? 'bg-indigo-600 text-white' : 'text-gray-500']">Bervakasi</button>
                             </div>
-                            <input v-if="modeVakasi === 'ada'" v-model.number="formVakasi" type="number" min="0" step="1000"
+                            <input v-if="modeVakasi === 'ada'" v-model.number="formVakasi" type="number" min="0" step="any" inputmode="numeric"
                                 placeholder="Nominal per orang"
                                 class="w-full px-3 py-2 rounded-lg border border-indigo-200 text-sm focus:outline-none focus:border-indigo-400" />
                             <p class="text-[11px] text-gray-500 leading-relaxed">

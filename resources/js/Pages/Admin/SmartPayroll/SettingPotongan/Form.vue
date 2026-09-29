@@ -166,7 +166,7 @@
                                 {{ form.tipe_nominal === 'persen' ? '%' : 'Rp' }}
                             </span>
                             <input v-model.number="form.nominal" type="number" min="0"
-                                :step="form.tipe_nominal === 'persen' ? '0.01' : '1000'"
+                                :step="form.tipe_nominal === 'persen' ? '0.01' : 'any'" inputmode="numeric"
                                 :class="inputCls(form.errors.nominal) + ` pl-10`" />
                         </div>
                         <p v-if="form.tipe_nominal === 'nominal' && form.nominal > 0"

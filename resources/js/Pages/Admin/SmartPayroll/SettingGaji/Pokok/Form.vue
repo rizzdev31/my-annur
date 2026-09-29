@@ -47,7 +47,7 @@
                     </label>
                     <div class="relative">
                         <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">Rp</span>
-                        <input v-model.number="form.nominal" type="number" min="0" step="1000" placeholder="0"
+                        <input v-model.number="form.nominal" type="number" min="0" step="any" inputmode="numeric" placeholder="0"
                             class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white" />
                     </div>
                     <p v-if="form.nominal > 0" class="text-xs text-indigo-600 mt-1">

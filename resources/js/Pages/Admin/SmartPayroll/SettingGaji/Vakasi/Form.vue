@@ -81,7 +81,7 @@
                             </label>
                             <div class="relative">
                                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">Rp</span>
-                                <input v-model.number="form.nominal" type="number" min="0" step="1000"
+                                <input v-model.number="form.nominal" type="number" min="0" step="any" inputmode="numeric"
                                     :class="inputCls(form.errors.nominal) + ' pl-9'" />
                             </div>
                             <p v-if="form.nominal > 0" class="text-xs text-indigo-600 mt-1">
@@ -105,7 +105,7 @@
                                 <label class="block text-sm font-medium text-gray-700 mb-1.5">
                                     Minimal Kerja (menit) <span class="text-red-500">*</span>
                                 </label>
-                                <input v-model.number="form.min_durasi_menit" type="number" min="1" step="30"
+                                <input v-model.number="form.min_durasi_menit" type="number" min="1" step="1" inputmode="numeric"
                                     :class="inputCls(form.errors.min_durasi_menit)" />
                                 <p class="text-xs text-gray-400 mt-1">
                                     Durasi lembur minimal agar berhak vakasi. {{ form.min_durasi_menit ? '≈ ' + (form.min_durasi_menit / 60).toFixed(1) + ' jam' : '' }}
@@ -116,7 +116,7 @@
                                 <label class="block text-sm font-medium text-gray-700 mb-1.5">
                                     Tenggang Upload (menit)
                                 </label>
-                                <input v-model.number="form.batas_grace_menit" type="number" min="0" step="15"
+                                <input v-model.number="form.batas_grace_menit" type="number" min="0" step="1" inputmode="numeric"
                                     :class="inputCls(form.errors.batas_grace_menit)" />
                                 <p class="text-xs text-gray-400 mt-1">Batas upload bukti setelah jam selesai. Default 60.</p>
                                 <ErrMsg :e="form.errors.batas_grace_menit" />

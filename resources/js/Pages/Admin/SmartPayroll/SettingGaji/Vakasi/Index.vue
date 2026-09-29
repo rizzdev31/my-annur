@@ -70,14 +70,33 @@
                             <td class="px-5 py-3.5 hidden md:table-cell">
                                 <span v-if="v.berlaku_untuk_semua"
                                     class="text-xs px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">
-                                    Semua jabatan
+                                    Semua guru
                                 </span>
-                                <div v-else class="flex flex-wrap gap-1">
+                                <!-- Berlingkup jabatan -->
+                                <div v-else-if="v.jabatan_names?.length" class="flex flex-wrap gap-1">
                                     <span v-for="jn in v.jabatan_names" :key="jn"
                                         class="text-xs px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700">
                                         {{ jn }}
                                     </span>
                                 </div>
+                                <!-- Berlingkup individu: nama guru penerima (dulu kolom ini kosong) -->
+                                <div v-else-if="v.guru_names?.length">
+                                    <div class="flex flex-wrap gap-1">
+                                        <span v-for="gn in v.guru_names.slice(0, 3)" :key="gn"
+                                            class="text-xs px-2 py-0.5 rounded-lg bg-sky-50 text-sky-700">{{ gn }}</span>
+                                        <button v-if="v.guru_names.length > 3" @click="bukaPenerima(v)"
+                                            class="text-xs px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800 font-semibold">
+                                            +{{ v.guru_names.length - 3 }} lainnya
+                                        </button>
+                                    </div>
+                                    <p class="text-[11px] text-gray-500 mt-1">
+                                        {{ v.guru_names.length }} guru penerima
+                                        <button @click="bukaPenerima(v)" class="text-indigo-600 font-semibold">lihat semua</button>
+                                    </p>
+                                </div>
+                                <span v-else class="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700">
+                                    Belum ada penerima
+                                </span>
                             </td>
                             <td class="px-5 py-3.5 text-right">
                                 <p class="text-sm font-bold text-indigo-700">{{ formatRp(v.nominal) }}</p>
@@ -116,6 +135,22 @@
             Belum ada setting vakasi.
         </div>
         <AppConfirm ref="confirm" />
+        <!-- DAFTAR PENERIMA VAKASI (lingkup individu) -->
+        <div v-if="penerima" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl w-full max-w-md p-5">
+                <h3 class="text-base font-bold text-gray-800">{{ penerima.nama }}</h3>
+                <p class="text-xs text-gray-500 mt-0.5 mb-3">
+                    {{ formatRp(penerima.nominal) }} · {{ labelSatuan[penerima.satuan] || penerima.satuan }} ·
+                    {{ penerima.guru_names.length }} guru penerima
+                </p>
+                <div class="max-h-72 overflow-y-auto divide-y divide-gray-50 border border-gray-100 rounded-xl">
+                    <p v-for="gn in penerima.guru_names" :key="gn" class="px-3 py-2 text-sm text-gray-700">{{ gn }}</p>
+                </div>
+                <button @click="penerima = null"
+                    class="mt-4 w-full py-2.5 rounded-xl bg-gray-100 text-sm font-semibold text-gray-600">Tutup</button>
+            </div>
+        </div>
+
     </AdminLayout>
 </template>
 
@@ -131,6 +166,10 @@ const props = defineProps({
     vakasi: { type: Array, default: () => [] },
     jabatan: { type: Array, default: () => [] },
 })
+
+// Daftar penerima (lingkup individu) — dibuka dari tabel
+const penerima = ref(null)
+function bukaPenerima(v) { penerima.value = v }
 
 const vakasiByTipe = computed(() => {
     const g = {}

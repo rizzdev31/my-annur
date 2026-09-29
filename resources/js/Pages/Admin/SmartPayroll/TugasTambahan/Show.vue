@@ -537,7 +537,7 @@
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Vakasi per Peserta</label>
-                                <input v-model="formKegiatan.vakasi_per_peserta" type="number" min="0" step="1000"
+                                <input v-model="formKegiatan.vakasi_per_peserta" type="number" min="0" step="any" inputmode="numeric"
                                     :placeholder="tugas.nominal_vakasi > 0 ? `Kosongkan = ikut tugas (${formatRp(tugas.nominal_vakasi)})` : 'Kosongkan = tanpa vakasi'"
                                     class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-violet-400" />
                                 <p class="text-xs text-gray-400 mt-1">
