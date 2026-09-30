@@ -64,7 +64,14 @@ return [
             'nama'     => 'Tugas Tambahan',
             'kategori' => 'Kinerja & Tugas',
             'beranda'  => 'admin.smart-payroll.tugas-tambahan.index',
-            'prefix'   => ['admin.smart-payroll.tugas-tambahan'],
+            // 'penugasan' = aksi per penerima (verifikasi, vakasi, keputusan tenggat)
+            'prefix'   => ['admin.smart-payroll.tugas-tambahan', 'admin.smart-payroll.penugasan'],
+        ],
+        'kegiatan_penting' => [
+            'nama'     => 'Kegiatan Wajib Guru',
+            'kategori' => 'Kinerja & Tugas',
+            'beranda'  => 'admin.smart-payroll.kegiatan-penting.index',
+            'prefix'   => ['admin.smart-payroll.kegiatan-penting'],
         ],
         'absensi_kegiatan' => [
             'nama'     => 'Absensi Kegiatan',
@@ -100,11 +107,66 @@ return [
             'beranda'  => 'admin.smart-payroll.penggajian.index',
             'prefix'   => ['admin.smart-payroll.penggajian'],
         ],
-        'gaji_laporan' => [
-            'nama'     => 'Laporan Payroll',
+        // Laporan dipecah PER LAPORAN supaya bisa dipilih satu-satu di Kelola Peran.
+        // Kode lama 'gaji_laporan' (membungkus semuanya) di-expand ke kode-kode ini
+        // lewat migration 2026_09_30_*_expand_modul_laporan_granular.
+        'laporan_ringkasan' => [
+            'nama'     => 'Laporan: Ringkasan',
             'kategori' => 'Penggajian & Laporan',
             'beranda'  => 'admin.smart-payroll.laporan.ringkasan',
-            'prefix'   => ['admin.smart-payroll.laporan'],
+            'prefix'   => ['admin.smart-payroll.laporan.ringkasan'],
+        ],
+        'laporan_kehadiran' => [
+            'nama'     => 'Laporan: Kehadiran',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.laporan.kehadiran',
+            'prefix'   => ['admin.smart-payroll.laporan.kehadiran'],
+        ],
+        'laporan_absensi' => [
+            'nama'     => 'Laporan: Absensi Harian',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.laporan.absensi',
+            'prefix'   => ['admin.smart-payroll.laporan.absensi'],
+        ],
+        'laporan_mengajar' => [
+            'nama'     => 'Laporan: Absensi Mengajar',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.laporan.mengajar',
+            'prefix'   => ['admin.smart-payroll.laporan.mengajar'],
+        ],
+        'laporan_pengganti' => [
+            'nama'     => 'Laporan: Guru Pengganti',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.laporan.pengganti',
+            'prefix'   => ['admin.smart-payroll.laporan.pengganti'],
+        ],
+        'laporan_penggajian' => [
+            'nama'     => 'Laporan: Penggajian & Slip',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.laporan.penggajian',
+            'prefix'   => [
+                'admin.smart-payroll.laporan.penggajian',
+                'admin.smart-payroll.laporan.slip-gaji',
+            ],
+        ],
+        'laporan_vakasi' => [
+            'nama'     => 'Laporan: Vakasi',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.laporan.vakasi',
+            'prefix'   => [
+                'admin.smart-payroll.laporan.vakasi',
+                'admin.smart-payroll.laporan.vakasi-detail',
+            ],
+        ],
+        'laporan_guru' => [
+            'nama'     => 'Laporan: Rekap per Guru & Ekspor',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.laporan.detail-guru',
+            'prefix'   => [
+                'admin.smart-payroll.laporan.detail-guru',
+                'admin.smart-payroll.laporan.export-guru',
+                'admin.smart-payroll.laporan.export',
+            ],
         ],
         'kalender_libur' => [
             'nama'     => 'Kalender Libur',
@@ -150,11 +212,36 @@ return [
             'beranda'  => 'admin.smart-education.tahsin.index',
             'prefix'   => ['admin.smart-education.tahsin', 'admin.smart-education.materi-tahsin', 'admin.smart-education.tahsin-monitoring'],
         ],
-        'se_laporan' => [
-            'nama'     => 'Laporan Pembelajaran',
+        // Dipecah per laporan (kode lama 'se_laporan' di-expand lewat migration).
+        'se_laporan_index' => [
+            'nama'     => 'Laporan Pembelajaran: Ringkasan',
             'kategori' => 'Smart Education',
             'beranda'  => 'admin.smart-education.laporan.index',
-            'prefix'   => ['admin.smart-education.laporan'],
+            'prefix'   => ['admin.smart-education.laporan.index'],
+        ],
+        'se_laporan_tahfidz' => [
+            'nama'     => 'Laporan Pembelajaran: Tahfidz',
+            'kategori' => 'Smart Education',
+            'beranda'  => 'admin.smart-education.laporan.tahfidz',
+            'prefix'   => ['admin.smart-education.laporan.tahfidz'],
+        ],
+        'se_laporan_tahsin' => [
+            'nama'     => 'Laporan Pembelajaran: Tahsin',
+            'kategori' => 'Smart Education',
+            'beranda'  => 'admin.smart-education.laporan.tahsin',
+            'prefix'   => ['admin.smart-education.laporan.tahsin'],
+        ],
+        'se_laporan_kehadiran_santri' => [
+            'nama'     => 'Laporan Pembelajaran: Kehadiran Santri',
+            'kategori' => 'Smart Education',
+            'beranda'  => 'admin.smart-education.laporan.kehadiran-santri',
+            'prefix'   => ['admin.smart-education.laporan.kehadiran-santri'],
+        ],
+        'se_laporan_mengajar_quran' => [
+            'nama'     => 'Laporan Pembelajaran: Mengajar Tahfidz & Tahsin',
+            'kategori' => 'Smart Education',
+            'beranda'  => 'admin.smart-education.laporan.mengajar-quran',
+            'prefix'   => ['admin.smart-education.laporan.mengajar-quran'],
         ],
 
         // ── Kesiswaan ────────────────────────────────────────────────────────
@@ -200,6 +287,112 @@ return [
             'beranda'  => 'admin.masukan.index',
             'prefix'   => ['admin.masukan'],
         ],
+        // ── Master Data ──────────────────────────────────────────────────────
+        // Sebelumnya TIDAK terpetakan modul apa pun → hanya super_admin yang bisa
+        // membukanya, sehingga fiturnya tidak pernah muncul di Kelola Peran.
+        'master_tenaga_pendidik' => [
+            'nama'     => 'Data Tenaga Pendidik',
+            'kategori' => 'Master Data',
+            'beranda'  => 'admin.master.tenaga-pendidik.index',
+            'prefix'   => ['admin.master.tenaga-pendidik'],
+        ],
+        'master_jabatan' => [
+            'nama'     => 'Jabatan & Penugasan Jabatan',
+            'kategori' => 'Master Data',
+            'beranda'  => 'admin.master.jabatan.index',
+            'prefix'   => ['admin.master.jabatan', 'admin.master.jabatan-guru'],
+        ],
+        'master_mapel' => [
+            'nama'     => 'Mata Pelajaran',
+            'kategori' => 'Master Data',
+            'beranda'  => 'admin.master.mata-pelajaran.index',
+            'prefix'   => ['admin.master.mata-pelajaran'],
+        ],
+        'master_jadwal_mengajar' => [
+            'nama'     => 'Jadwal Mengajar',
+            'kategori' => 'Master Data',
+            'beranda'  => 'admin.master.jadwal-mengajar.index',
+            'prefix'   => ['admin.master.jadwal-mengajar'],
+        ],
+        'master_tahun_ajaran' => [
+            'nama'     => 'Tahun Ajaran',
+            'kategori' => 'Master Data',
+            'beranda'  => 'admin.master.tahun-ajaran.index',
+            'prefix'   => ['admin.master.tahun-ajaran'],
+        ],
+
+        // ── Pengaturan Sistem ────────────────────────────────────────────────
+        'setting_gaji' => [
+            'nama'     => 'Setting Gaji (Pokok, Vakasi, Jam Kerja)',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.setting-gaji.index',
+            'prefix'   => ['admin.smart-payroll.setting-gaji'],
+        ],
+        'setting_potongan' => [
+            'nama'     => 'Setting Potongan',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.setting-potongan.index',
+            'prefix'   => ['admin.smart-payroll.setting-potongan'],
+        ],
+        'potongan_guru' => [
+            'nama'     => 'Potongan per Guru',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.potongan.index',
+            'prefix'   => ['admin.smart-payroll.potongan'],
+        ],
+        'setting_kinerja' => [
+            'nama'     => 'Setting Kinerja',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.setting-kinerja.index',
+            'prefix'   => ['admin.smart-payroll.setting-kinerja'],
+        ],
+        'setting_lokasi' => [
+            'nama'     => 'Setting Lokasi Absensi',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.setting-lokasi.index',
+            'prefix'   => ['admin.smart-payroll.setting-lokasi'],
+        ],
+        'setting_pengajuan' => [
+            'nama'     => 'Setting Jenis Pengajuan Izin',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.setting-pengajuan.index',
+            'prefix'   => ['admin.smart-payroll.setting-pengajuan'],
+        ],
+        'setting_notifikasi' => [
+            'nama'     => 'Setting Notifikasi & Broadcast',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.setting-notifikasi.index',
+            'prefix'   => ['admin.smart-payroll.setting-notifikasi'],
+        ],
+        'jadwal_shift' => [
+            'nama'     => 'Jadwal Shift (Satpam/Asrama)',
+            'kategori' => 'Pengaturan',
+            'beranda'  => 'admin.smart-payroll.jadwal-shift.index',
+            'prefix'   => ['admin.smart-payroll.jadwal-shift'],
+        ],
+
+        // ── Akun & Akses ─────────────────────────────────────────────────────
+        'akun_pengguna' => [
+            'nama'     => 'Akun Pengguna',
+            'kategori' => 'Akun & Akses',
+            'beranda'  => 'admin.akun.index',
+            'prefix'   => ['admin.akun'],
+        ],
+        // SANGAT SENSITIF: pemegang modul ini bisa memberi dirinya modul lain.
+        // Berikan hanya kepada pengelola sistem.
+        'kelola_peran' => [
+            'nama'     => 'Kelola Peran (sensitif)',
+            'kategori' => 'Akun & Akses',
+            'beranda'  => 'admin.peran.index',
+            'prefix'   => ['admin.peran'],
+        ],
+        'pengumuman' => [
+            'nama'     => 'Pengumuman',
+            'kategori' => 'Komunikasi',
+            'beranda'  => 'admin.pengumuman.index',
+            'prefix'   => ['admin.pengumuman'],
+        ],
+
         'whatsapp' => [
             'nama'     => 'WhatsApp',
             'kategori' => 'Komunikasi',

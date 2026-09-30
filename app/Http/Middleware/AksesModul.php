@@ -18,8 +18,13 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class AksesModul
 {
-    /** Prefix route yang selalu boleh untuk admin mana pun (mis. lonceng notifikasi). */
-    private array $selaluBoleh = ['admin.notifikasi'];
+    /**
+     * Prefix route yang selalu boleh untuk admin mana pun:
+     *  - admin.notifikasi : lonceng & polling badge di layout
+     *  - admin.dashboard  : halaman pendaratan; tanpa ini admin non-super yang
+     *    membuka /admin langsung kena halaman "Akses Ditolak"
+     */
+    private array $selaluBoleh = ['admin.notifikasi', 'admin.dashboard'];
 
     public function handle(Request $request, Closure $next): Response
     {
