@@ -916,17 +916,37 @@ class LaporanController extends Controller
             $sesi = $sesi->filter(fn ($a) => $a->jadwalMengajar?->kelasRel?->jenis === $request->jenis_kelas)->values();
         }
 
-        // Tarif per JP per guru pengganti (dihitung sekali per guru).
-        $payroll = app(PayrollCalculationService::class);
-        $tarif   = [];
+        // ── Tarif per JP ─────────────────────────────────────────────────────
+        // Kalau periodenya SUDAH digenerate, pakai tarif yang benar-benar dipakai
+        // saat generate (tersimpan di detail_penggajian.nilai_per_satuan). Tanpa ini
+        // laporan memakai tarif setting HARI INI, sehingga begitu tarifnya diubah
+        // angka laporan tidak akan pernah sama dengan slip yang sudah terbit
+        // (terjadi nyata: tarif 7.000 → 7.484, slip 854.000 vs laporan 913.048).
+        $payroll   = app(PayrollCalculationService::class);
+        $tarif     = [];
+        $tarifSlip = collect();
 
-        $rows = $sesi->map(function ($a) use ($payroll, &$tarif) {
+        if ($periode) {
+            $tarifSlip = \App\Models\DetailPenggajian::where('tipe', 'vakasi_mengajar')
+                ->whereHas('penggajian', fn ($q) => $q->where('periode_penggajian_id', $periode->id))
+                ->with('penggajian:id,tenaga_pendidik_id')
+                ->get()
+                ->mapWithKeys(fn ($d) => [
+                    $d->penggajian->tenaga_pendidik_id => (float) $d->nilai_per_satuan,
+                ]);
+        }
+        $sumberTarif = $tarifSlip->isNotEmpty() ? 'slip' : 'setting';
+
+        $rows = $sesi->map(function ($a) use ($payroll, &$tarif, $tarifSlip) {
             $jadwal   = $a->jadwalMengajar;
             $pengganti= $a->digantikanOleh;
             $pid      = $a->digantikan_oleh;
 
             if ($pid && !array_key_exists($pid, $tarif)) {
-                $tarif[$pid] = $pengganti ? (float) $payroll->tarifPerJpMengajar($pengganti) : 0.0;
+                // Tarif slip menang: supaya laporan sama dengan yang dibayarkan.
+                $tarif[$pid] = $tarifSlip->has($pid)
+                    ? (float) $tarifSlip[$pid]
+                    : ($pengganti ? (float) $payroll->tarifPerJpMengajar($pengganti) : 0.0);
             }
 
             $jp      = (int) ($a->jp_terlaksana ?? 0);
@@ -1007,6 +1027,9 @@ class LaporanController extends Controller
             ],
             'rows'      => $rows,
             'rekap'     => $rekap,
+            // 'slip'    = angka sama dengan yang dibayarkan pada periode itu
+            // 'setting' = perkiraan memakai tarif yang berlaku sekarang
+            'sumberTarif' => $sumberTarif,
             'ringkasan' => [
                 'total_sesi'   => $rows->count(),
                 'sesi_datang'  => $rows->where('status', 'datang')->count(),

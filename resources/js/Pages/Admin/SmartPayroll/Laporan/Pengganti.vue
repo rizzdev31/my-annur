@@ -30,6 +30,13 @@
                     Menampilkan: <b class="text-gray-700">{{ label }}</b>
                     <span class="text-gray-400"> ({{ rentang.mulai }} → {{ rentang.selesai }})</span>
                 </span>
+                <!-- Sumber tarif menentukan apakah angkanya sama dengan slip -->
+                <span class="text-[11px] font-semibold px-2 py-1 rounded-full"
+                    :class="sumberTarif === 'slip' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'">
+                    {{ sumberTarif === 'slip'
+                        ? 'Nominal sesuai slip yang terbit'
+                        : 'Perkiraan — tarif yang berlaku sekarang' }}
+                </span>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -209,6 +216,10 @@
                     </table>
                 </div>
                 <p class="px-5 py-3 text-[11px] text-gray-500 border-t border-gray-100">
+                    <span v-if="sumberTarif === 'slip'">Tarif per JP diambil dari slip yang sudah terbit pada periode ini,
+                        jadi nominalnya sama dengan yang dibayarkan.</span>
+                    <span v-else>Periode ini belum digenerate penggajiannya, jadi nominal memakai tarif yang berlaku
+                        sekarang — anggap sebagai perkiraan.</span>
                     Hanya sesi yang benar-benar diampu pengganti yang dibayar. Sesi bertanda
                     <b>Pengganti tidak datang</b> tidak menghasilkan vakasi dan berdampak pada kinerja pengganti,
                     bukan pada guru yang digantikan.
@@ -245,6 +256,7 @@ const props = defineProps({
     rows: { type: Array, default: () => [] },
     rekap: { type: Array, default: () => [] },
     ringkasan: { type: Object, default: () => ({}) },
+    sumberTarif: { type: String, default: 'setting' },
 })
 
 const inp = 'w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-400'
