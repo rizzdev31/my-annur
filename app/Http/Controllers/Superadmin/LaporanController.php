@@ -110,7 +110,12 @@ class LaporanController extends Controller
 
             // ── Kalkulasi status & terlambat via service ─────────────────────
             // Dibebaskan absen harian → bukan "belum absen" (lihat AbsensiController).
-            $status         = $a?->status ?? ($g->wajibAbsenHarian() ? 'belum' : 'tanpa_absen');
+            // Tanpa catatan pada hari yang memang liburnya (mingguan/shift) bukan
+            // "belum absen" — jam kerja per guru yang menentukan, bukan default.
+            $status = $a?->status ?? (!$g->wajibAbsenHarian()
+                ? 'tanpa_absen'
+                : ($g->jadwalHari(\App\Services\TimezoneHelper::namaHariDB($tanggal),
+                        $tanggal->toDateString()) === null ? 'libur' : 'belum'));
             $menitTerlambat = (int) ($a?->menit_terlambat ?? 0);
 
             // Hitung ulang jika ada jam masuk dan belum dikoreksi manual
@@ -1001,11 +1006,20 @@ class LaporanController extends Controller
             while ($s->lte($e)) { $liburMap[$s->toDateString()] = $hl->nama; $s->addDay(); }
         }
 
-        $jamKerja  = SettingJamKerja::getDefault();
+        // Jam kerja DEFAULT tidak boleh dipakai di sini: tiap guru bisa punya
+        // setting/shift sendiri. Guru asrama yang liburnya Selasa (mis. shift
+        // 15:15→07:00) dulu terbaca "hari kerja" menurut setting default,
+        // sehingga hari liburnya tanpa catatan absen dihitung ALFA.
+        // jamKerjaAktif($tanggal) sadar-tanggal (overlay shift ikut terpakai).
         $mapHariDb = [
             'Monday'=>'senin','Tuesday'=>'selasa','Wednesday'=>'rabu','Thursday'=>'kamis',
             'Friday'=>'jumat','Saturday'=>'sabtu','Sunday'=>'ahad',
         ];
+
+        // Libur individu (mis. guru mukim) juga bukan kelalaian.
+        $liburIndividu = \App\Models\LiburTendik::tanggalSetUntuk(
+            $guru->id, $mulai->toDateString(), $selesai->toDateString()
+        );
 
         $rows = collect();
         $cnt  = ['hadir'=>0,'terlambat'=>0,'izin'=>0,'sakit'=>0,'dinas_luar'=>0,
@@ -1017,9 +1031,10 @@ class LaporanController extends Controller
         while ($cursor->lte($selesai)) {
             $tglStr      = $cursor->toDateString();
             $hariDb      = $mapHariDb[$cursor->format('l')];
-            $jadwal      = $jamKerja?->getJamUntukHari($hariDb);
-            $isHariKerja = $jadwal !== null;
-            $namaLibur   = $liburMap[$tglStr] ?? null;
+            // Jadwal milik GURU pada tanggal itu; null = hari liburnya.
+            $jadwal      = $guru->jadwalHari($hariDb, $tglStr);
+            $isHariKerja = $jadwal !== null && !isset($liburIndividu[$tglStr]);
+            $namaLibur   = $liburMap[$tglStr] ?? (isset($liburIndividu[$tglStr]) ? 'Libur individu' : null);
             $a           = $absensiByTgl->get($tglStr);
 
             $jamMasuk = $jamPulang = '-';
@@ -1043,7 +1058,9 @@ class LaporanController extends Controller
                 $status = 'libur';
                 $keterangan = $namaLibur;
             } elseif (!$isHariKerja) {
+                // Bukan hari kerja bagi guru ini (libur mingguan/shift/individu).
                 $status = 'off';
+                $keterangan = $keterangan ?: 'Libur ' . $cursor->locale('id')->isoFormat('dddd');
             } elseif ($cursor->lt($today)) {
                 $status = 'alfa';
             } else {

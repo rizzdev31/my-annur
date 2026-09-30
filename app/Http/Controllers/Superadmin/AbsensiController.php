@@ -89,6 +89,14 @@ class AbsensiController extends Controller
                 $menitTerlambat = $hasil['menit_terlambat'];
             }
 
+            // Hari libur MINGGUAN/shift guru ini sendiri: tanpa catatan bukan
+            // kelalaian. Dulu halaman ini memakai jam kerja default, sehingga guru
+            // asrama yang liburnya Selasa tetap terbaca "belum absen".
+            if (!$absensi && $guru->wajibAbsenHarian()
+                && $guru->jadwalHari(TimezoneHelper::namaHariDB($tanggal), $tanggal->toDateString()) === null) {
+                $status = 'libur';
+            }
+
             // Hari libur pesantren: tanpa catatan, tampilkan "libur" — bukan "belum
             // absen" seolah guru lalai. Rekap per guru sudah begini sejak awal.
             if (!$absensi && $hariLibur && $guru->wajibAbsenHarian()) {
