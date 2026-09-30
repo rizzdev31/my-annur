@@ -39,17 +39,34 @@ const AYAT_JUZ = [148, 111, 125, 131, 124, 110, 149, 142, 159, 127, 151, 170, 15
 const isi = ref({})
 const stel = (id) => isi.value[id]
 
+/** Tandai "belum tasmi'" hanya untuk juz yang masih dicentang. */
+function rapikanTasmi(s) {
+    for (const j of [...s.belumTasmi]) if (!s.juz.has(j)) s.belumTasmi.delete(j)
+}
+
 function terapkanPola(id) {
     const s = stel(id)
     const n = Math.max(0, Math.min(30, parseInt(s.jumlah) || 0))
     s.juz = new Set(urutanJuz(pola.value).slice(0, n))
+    rapikanTasmi(s)
 }
 
 function toggleJuz(id, j) {
     const s = stel(id)
     s.juz.has(j) ? s.juz.delete(j) : s.juz.add(j)
     s.jumlah = s.juz.size
+    rapikanTasmi(s)
 }
+
+// ── Status tasmi' tiap juz ───────────────────────────────────────────────
+// Dicatat terpisah dari "sudah hafal": juz yang hafalannya diakui tapi belum
+// ditasmi' harus tetap memunculkan tombol Tasmi' di halaqoh.
+function toggleTasmi(id, j) {
+    const s = stel(id)
+    s.belumTasmi.has(j) ? s.belumTasmi.delete(j) : s.belumTasmi.add(j)
+}
+function semuaSudahTasmi(id) { stel(id).belumTasmi.clear() }
+function semuaBelumTasmi(id) { const s = stel(id); s.belumTasmi = new Set(s.juz) }
 
 const juzTerurut = (id) => [...stel(id).juz].sort((a, b) => a - b)
 
@@ -81,7 +98,9 @@ const mencurigakan = computed(() =>
 function siapkan(list) {
     for (const s of list) {
         if (!isi.value[s.santri_id]) {
-            isi.value[s.santri_id] = { jumlah: 0, juz: new Set(), last_surah: '', last_ayat: '' }
+            isi.value[s.santri_id] = {
+                jumlah: 0, juz: new Set(), belumTasmi: new Set(), last_surah: '', last_ayat: '',
+            }
         }
     }
 }
@@ -111,6 +130,7 @@ async function simpan() {
         return {
             santri_id: s.santri_id,
             juz_lulus: [...v.juz],
+            belum_tasmi: [...v.belumTasmi],
             last_surah: v.last_surah ? Number(v.last_surah) : null,
             last_ayat: v.last_ayat ? Number(v.last_ayat) : null,
             ganti: !!koreksi.value[s.santri_id],
@@ -205,6 +225,17 @@ async function simpan() {
                         ± {{ perkiraan(s.santri_id).ayat }} ayat · {{ perkiraan(s.santri_id).persen }}% dari Al-Qur'an
                         <span v-if="perkiraan(s.santri_id).persen >= 50"> — yakin sebanyak ini?</span>
                     </p>
+                    <!-- Status tasmi' menentukan muncul-tidaknya tombol Tasmi' di halaqoh,
+                         jadi ringkasannya ditampilkan tanpa perlu membuka rincian. -->
+                    <button @click="buka[s.santri_id] = true" type="button"
+                        class="text-[11px] mt-1 text-left"
+                        :class="stel(s.santri_id).belumTasmi.size ? 'text-amber-700 font-semibold' : 'text-gray-400'">
+                        <template v-if="stel(s.santri_id).belumTasmi.size">
+                            Belum ditasmi': juz {{ [...stel(s.santri_id).belumTasmi].sort((a, b) => a - b).join(', ') }}
+                            — tombol Tasmi' akan muncul
+                        </template>
+                        <template v-else>Semua juz dianggap sudah ditasmi' · <u>ubah</u></template>
+                    </button>
                 </template>
                 <!-- Posisi saja: persennya baru bisa dihitung server, jadi tegaskan
                      pola yang dipakai agar salah pilih pola tidak lolos diam-diam. -->
@@ -228,6 +259,33 @@ async function simpan() {
                         <button v-for="j in 30" :key="j" @click="toggleJuz(s.santri_id, j)"
                             :class="stel(s.santri_id).juz.has(j) ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-500'"
                             class="py-1.5 rounded text-[10px] font-bold">{{ j }}</button>
+                    </div>
+
+                    <!-- Status tasmi' per juz -->
+                    <div v-if="stel(s.santri_id).juz.size" class="mb-3 rounded-xl bg-amber-50 border border-amber-100 p-2.5">
+                        <p class="text-[11px] font-bold text-amber-800">Juz mana yang belum ditasmi'?</p>
+                        <p class="text-[10px] text-amber-700 leading-snug mt-0.5 mb-2">
+                            Ketuk juz yang hafalannya sudah ada tapi <b>belum pernah ditasmi'</b>.
+                            Hafalannya tetap dihitung penuh, hanya saja tombol <b>Tasmi'</b> akan
+                            muncul di halaqoh. Juz yang tidak diketuk dianggap sudah ditasmi'
+                            sebelum memakai sistem.
+                        </p>
+                        <div class="flex flex-wrap gap-1 mb-2">
+                            <button v-for="j in juzTerurut(s.santri_id)" :key="j"
+                                @click="toggleTasmi(s.santri_id, j)" type="button"
+                                :class="stel(s.santri_id).belumTasmi.has(j)
+                                    ? 'bg-amber-500 text-white border-amber-500'
+                                    : 'bg-white text-gray-500 border-gray-200'"
+                                class="px-2.5 py-1 rounded-lg border text-[11px] font-bold">
+                                {{ j }}
+                            </button>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="semuaSudahTasmi(s.santri_id)" type="button"
+                                class="text-[10px] font-bold text-gray-500 underline">Semua sudah ditasmi'</button>
+                            <button @click="semuaBelumTasmi(s.santri_id)" type="button"
+                                class="text-[10px] font-bold text-amber-700 underline">Semua belum ditasmi'</button>
+                        </div>
                     </div>
 
                     <p class="text-[10px] text-gray-400 mb-1 leading-snug">

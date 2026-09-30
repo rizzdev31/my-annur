@@ -153,8 +153,10 @@ class TahfidzController extends Controller
     {
         $d = $request->validate([
             'santri_id'   => 'required|integer|exists:santri,id',
-            'juz_lulus'   => 'nullable|array',
-            'juz_lulus.*' => 'integer|min:1|max:30',
+            'juz_lulus'     => 'nullable|array',
+            'juz_lulus.*'   => 'integer|min:1|max:30',
+            'belum_tasmi'   => 'nullable|array',
+            'belum_tasmi.*' => 'integer|min:1|max:30',
             'last_surah'  => 'nullable|integer|min:1|max:114',
             'last_ayat'   => 'nullable|integer|min:1',
             'pola'        => 'nullable|in:' . implode(',', TahfidzService::POLA),
@@ -166,6 +168,7 @@ class TahfidzController extends Controller
                 (int) $d['santri_id'], $d['juz_lulus'] ?? [],
                 $d['last_surah'] ?? null, $d['last_ayat'] ?? null,
                 $d['pola'] ?? null, (bool) ($d['simulasi'] ?? false),
+                $d['belum_tasmi'] ?? [],
             );
         } catch (\Throwable $e) {
             return back()->with('error', $e->getMessage());
@@ -174,6 +177,9 @@ class TahfidzController extends Controller
         $nama = Santri::find($d['santri_id'])?->nama_lengkap ?? 'Santri';
         $ringkas = $nama . ': ' . $res['sebelum']['total_ayat'] . ' → ' . $res['sesudah']['total_ayat']
             . ' ayat (' . count($res['sesudah']['juz']) . ' juz, ' . $res['setoran_diputar'] . ' setoran diputar ulang)';
+        if ($res['sesudah']['wajib_tasmi']) {
+            $ringkas .= ' · menunggu tasmi\': juz ' . implode(', ', $res['sesudah']['wajib_tasmi']);
+        }
 
         return back()->with(
             $res['simulasi'] ? 'info' : 'success',
@@ -185,11 +191,14 @@ class TahfidzController extends Controller
     public function sinkronisasi(Request $request)
     {
         $d = $request->validate([
-            'santri_id'   => 'required|integer|exists:santri,id',
-            'juz_lulus'   => 'nullable|array',
-            'juz_lulus.*' => 'integer|min:1|max:30',
+            'santri_id'     => 'required|integer|exists:santri,id',
+            'juz_lulus'     => 'nullable|array',
+            'juz_lulus.*'   => 'integer|min:1|max:30',
+            'belum_tasmi'   => 'nullable|array',
+            'belum_tasmi.*' => 'integer|min:1|max:30',
             'last_surah'  => 'nullable|integer|min:1|max:114',
             'last_ayat'   => 'nullable|integer|min:1',
+            'pola'        => 'nullable|in:' . implode(',', TahfidzService::POLA),
         ]);
 
         try {
@@ -198,6 +207,9 @@ class TahfidzController extends Controller
                 $d['juz_lulus'] ?? [],
                 $d['last_surah'] ?? null,
                 $d['last_ayat'] ?? null,
+                $d['pola'] ?? null,
+                false,
+                $d['belum_tasmi'] ?? [],
             );
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage());
@@ -206,8 +218,11 @@ class TahfidzController extends Controller
         }
 
         $posisi = $res['partial_juz'] ? " + posisi tengah (juz {$res['partial_juz']})" : '';
+        $tasmi  = $res['wajib_tasmi']
+            ? " · menunggu tasmi': juz " . implode(', ', $res['wajib_tasmi'])
+            : '';
         return back()->with('success',
-            "Sinkronisasi tersimpan: {$res['juz_lulus']} juz lulus{$posisi} · total {$res['total_ayat']} ayat.");
+            "Sinkronisasi tersimpan: {$res['juz_lulus']} juz lulus{$posisi} · total {$res['total_ayat']} ayat{$tasmi}.");
     }
 
     /** Generator jadwal tahfidz standar (1 klik bikin slot mingguan). */

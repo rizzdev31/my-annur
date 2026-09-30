@@ -273,11 +273,21 @@ class TahfidzService
      * dari jumlah ayat terkumpul tiap juz (sudah dibatasi kapasitas juz),
      * bukan dari penjumlahan bebas.
      *
-     * @param  bool $simulasi  true = hitung & kembalikan pratinjau, lalu batalkan.
+     * "SUDAH HAFAL" ≠ "SUDAH DITASMI'". Dulu setiap juz baseline langsung ditulis
+     * 'tasmi_lulus', padahal form hanya menanyakan juz yang sudah DIHAFAL. Akibatnya
+     * santri yang hafalannya diselesaikan di dalam sistem tetapi belum pernah tasmi'
+     * ikut dianggap lulus, dan tombol tasmi' tidak pernah muncul lagi untuk juz itu.
+     * Karena itu ada $belumTasmi: juz baseline yang hafalannya diakui tetapi tasmi'-nya
+     * belum → ditulis 'selesai' (wajib tasmi'), bukan 'tasmi_lulus'.
+     *
+     * @param  bool  $simulasi   true = hitung & kembalikan pratinjau, lalu batalkan.
+     * @param  int[] $belumTasmi Bagian dari $juzLulus yang BELUM ditasmi'. Kosong =
+     *                           seluruh juz baseline dianggap sudah ditasmi' (hafalan
+     *                           lama pra-sistem), sama seperti perilaku sebelumnya.
      */
     public function bangunUlangPencapaian(
         int $santriId, array $juzLulus, ?int $lastSurah = null, ?int $lastAyat = null,
-        ?string $pola = null, bool $simulasi = false
+        ?string $pola = null, bool $simulasi = false, array $belumTasmi = []
     ): array {
         $hafLama = HafalanSantri::where('santri_id', $santriId)->first();
         $sebelum = [
@@ -309,15 +319,22 @@ class TahfidzService
             throw new \DomainException('Isi minimal satu juz lulus atau posisi terakhir (surah & ayat).');
         }
 
+        // Hanya berlaku untuk juz yang memang ada di baseline; nomor di luar itu
+        // diabaikan supaya kiriman klien tidak bisa menyulap status juz lain.
+        $belumTasmi = collect($belumTasmi)->map(fn($j) => (int) $j)
+            ->intersect($juzLulus)->unique()->values()->all();
+
         DB::beginTransaction();
         try {
             HafalanJuz::where('santri_id', $santriId)->delete();
 
             // ── 1. Baseline dari admin ────────────────────────────────────
+            // Ayatnya sama-sama penuh; yang membedakan hanya status tasmi'-nya.
             foreach ($juzLulus as $juz) {
                 $full = $this->quran->jumlahAyatJuz($juz);
                 HafalanJuz::create(['santri_id' => $santriId, 'juz' => $juz,
-                    'ayat_terkumpul' => $full, 'jumlah_ayat_juz' => $full, 'status' => 'tasmi_lulus']);
+                    'ayat_terkumpul' => $full, 'jumlah_ayat_juz' => $full,
+                    'status' => in_array($juz, $belumTasmi, true) ? 'selesai' : 'tasmi_lulus']);
             }
             if ($partialJuz) {
                 [$sM, $aM] = $this->quran->juzRange($partialJuz);
@@ -344,7 +361,9 @@ class TahfidzService
                     );
                     // Juz yang sudah penuh dari baseline tidak bertambah lagi —
                     // inilah yang mencegah hitung ganda saat rentangnya beririsan.
-                    if ($hj->status === 'tasmi_lulus') continue;
+                    // Patokannya ayat penuh, bukan status: juz baseline yang wajib
+                    // tasmi' ('selesai') juga sudah penuh dan tidak boleh bertambah.
+                    if ($hj->status === 'tasmi_lulus' || $hj->ayat_terkumpul >= $hj->jumlah_ayat_juz) continue;
 
                     $hj->ayat_terkumpul = min($hj->jumlah_ayat_juz, $hj->ayat_terkumpul + $cnt);
                     if ($hj->ayat_terkumpul >= $hj->jumlah_ayat_juz && $hj->status === 'berjalan') {
@@ -396,6 +415,10 @@ class TahfidzService
             $sesudah = [
                 'total_ayat' => $totalAyat,
                 'juz'        => HafalanJuz::where('santri_id', $santriId)->orderBy('juz')->pluck('juz')->all(),
+                // Juz penuh yang tasmi'-nya masih menunggu — angka inilah yang
+                // menentukan munculnya tombol tasmi' di halaqoh.
+                'wajib_tasmi' => HafalanJuz::where('santri_id', $santriId)
+                    ->where('status', 'selesai')->orderBy('juz')->pluck('juz')->all(),
             ];
 
             if ($simulasi) {
@@ -590,7 +613,8 @@ class TahfidzService
     /**
      * Sinkronisasi pencapaian AWAL santri (seeding) — untuk migrasi data hafalan
      * yang sudah berjalan sebelum sistem dipakai.
-     *  - Juz pada $juzLulus → status 'tasmi_lulus' (ayat penuh).
+     *  - Juz pada $juzLulus → ayat penuh; status 'tasmi_lulus' bila tasmi'-nya sudah
+     *    dilakukan di luar sistem, atau 'selesai' (wajib tasmi') bila masuk $belumTasmi.
      *  - Posisi tengah (last surah+ayat) → juz tsb 'berjalan' (ayat dari awal juz s/d posisi),
      *    semua ayat sebelum posisi dianggap ACC (nilai lulus 8). Kursor di-set ke posisi ini.
      * Hanya untuk santri yang BELUM punya data hafalan (anti-timpa). Tanpa baris riwayat setoran.
@@ -601,10 +625,11 @@ class TahfidzService
      *                            Bila diisi bersama posisi terakhir, juz-juz SEBELUM posisi
      *                            menurut pola ikut dihitung lulus — lihat catatan di bawah.
      * @param bool        $ganti  Koreksi: buang hasil seed lama lalu tulis ulang.
+     * @param int[]  $belumTasmi  Juz baseline yang hafalannya diakui tetapi BELUM ditasmi'.
      */
     public function seedPencapaian(
         int $santriId, array $juzLulus, ?int $lastSurah = null, ?int $lastAyat = null,
-        ?string $pola = null, bool $ganti = false
+        ?string $pola = null, bool $ganti = false, array $belumTasmi = []
     ): array {
         // Gerbang berdasar DATA TURUNAN, bukan keberadaan setoran.
         //
@@ -620,12 +645,15 @@ class TahfidzService
             throw new \DomainException('Santri sudah punya pencapaian tercatat — pilih "Koreksi" bila ingin memperbaikinya.');
         }
 
-        $res = $this->bangunUlangPencapaian($santriId, $juzLulus, $lastSurah, $lastAyat, $pola, false);
+        $res = $this->bangunUlangPencapaian(
+            $santriId, $juzLulus, $lastSurah, $lastAyat, $pola, false, $belumTasmi
+        );
 
         return [
             'juz_lulus'   => $res['juz_baseline'],
             'partial_juz' => $res['partial_juz'],
             'total_ayat'  => $res['sesudah']['total_ayat'],
+            'wajib_tasmi' => $res['sesudah']['wajib_tasmi'],
         ];
     }
 

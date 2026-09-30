@@ -531,6 +531,9 @@ class TahfidzApiController extends Controller
             'items.*.santri_id'      => 'required|integer|exists:santri,id',
             'items.*.juz_lulus'      => 'nullable|array',
             'items.*.juz_lulus.*'    => 'integer|min:1|max:30',
+            // Juz yang hafalannya diakui tetapi TASMI'-nya belum → wajib tasmi'.
+            'items.*.belum_tasmi'    => 'nullable|array',
+            'items.*.belum_tasmi.*'  => 'integer|min:1|max:30',
             'items.*.last_surah'     => 'nullable|integer|min:1|max:114',
             'items.*.last_ayat'      => 'nullable|integer|min:1',
             'items.*.ganti'          => 'nullable|boolean',
@@ -567,6 +570,7 @@ class TahfidzApiController extends Controller
                     $it['last_ayat'] ?? null,
                     $d['pola'] ?? null,
                     (bool) ($it['ganti'] ?? false),
+                    $it['belum_tasmi'] ?? [],
                 );
                 $berhasil++;
             } catch (\Throwable $e) {

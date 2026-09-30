@@ -39,7 +39,7 @@
         <!-- Sinkronisasi Pencapaian Awal -->
         <div class="bg-white rounded-2xl border border-gray-200 p-5 mt-6">
             <h3 class="text-base font-semibold text-gray-900 mb-1">Sinkronisasi Pencapaian Awal</h3>
-            <p class="text-xs text-gray-400 mb-4">Seed hafalan santri yang sudah berjalan sebelum sistem dipakai. Juz dicentang = <b>lulus tasmi</b>; posisi tengah (surah &amp; ayat terakhir) → juz berjalan, ayat sebelumnya dianggap <b>lulus (nilai 8 otomatis)</b>. Hanya untuk santri yang belum punya data.</p>
+            <p class="text-xs text-gray-400 mb-4">Seed hafalan santri yang sudah berjalan sebelum sistem dipakai. Juz dicentang = <b>sudah dihafal penuh</b> — status tasmi'-nya ditentukan terpisah di bawah; posisi tengah (surah &amp; ayat terakhir) → juz berjalan, ayat sebelumnya dianggap <b>lulus (nilai 8 otomatis)</b>. Hanya untuk santri yang belum punya data.</p>
 
             <div class="grid md:grid-cols-2 gap-5">
                 <div>
@@ -69,14 +69,38 @@
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Juz Lulus <span class="text-gray-300">(centang yang sudah dihafal penuh)</span></label>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Juz Hafal <span class="text-gray-300">(centang yang sudah dihafal penuh)</span></label>
                     <div class="grid grid-cols-6 gap-1.5">
                         <button type="button" v-for="j in 30" :key="j" @click="toggleJuz(j)"
                             :class="['py-1.5 rounded-lg text-xs font-semibold border transition-colors', sync.juz_lulus.includes(j) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50']">
                             {{ j }}
                         </button>
                     </div>
-                    <p class="text-[11px] text-gray-400 mt-1.5">{{ sync.juz_lulus.length }} juz dipilih sebagai lulus tasmi.</p>
+                    <p class="text-[11px] text-gray-400 mt-1.5">{{ sync.juz_lulus.length }} juz dicatat sudah dihafal penuh.</p>
+
+                    <!-- Hafal ≠ sudah ditasmi'. Dipisah supaya juz yang belum ditasmi'
+                         tetap memunculkan tombol Tasmi' di halaqoh. -->
+                    <div v-if="sync.juz_lulus.length" class="mt-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
+                        <p class="text-xs font-semibold text-amber-800">Juz mana yang belum ditasmi'?</p>
+                        <p class="text-[11px] text-amber-700 leading-relaxed mt-0.5 mb-2">
+                            Klik juz yang hafalannya sudah ada tapi <b>belum pernah ditasmi'</b> — juz itu
+                            ditulis <b>menunggu tasmi'</b>, bukan lulus. Yang tidak diklik dianggap sudah
+                            ditasmi' sebelum memakai sistem.
+                        </p>
+                        <div class="flex flex-wrap gap-1.5 mb-2">
+                            <button type="button" v-for="j in juzTerurut" :key="j" @click="toggleTasmi(j)"
+                                :class="['px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors',
+                                    sync.belum_tasmi.includes(j) ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50']">
+                                {{ j }}
+                            </button>
+                        </div>
+                        <div class="flex gap-3">
+                            <button type="button" @click="sync.belum_tasmi = []"
+                                class="text-[11px] font-semibold text-gray-500 underline">Semua sudah ditasmi'</button>
+                            <button type="button" @click="sync.belum_tasmi = [...sync.juz_lulus]"
+                                class="text-[11px] font-semibold text-amber-700 underline">Semua belum ditasmi'</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -191,12 +215,26 @@ const props = defineProps({
 const jmlSudah   = computed(() => props.santriSyncOpsi.filter(s => s.sudah_ada_data).length)
 const jmlSetoran = computed(() => props.santriSyncOpsi.filter(s => s.ada_ziyadah).length)
 
-const sync = reactive({ santri_id: null, juz_lulus: [], last_surah: null, last_ayat: null, pola: 'amma_maju' })
+const sync = reactive({
+    santri_id: null, juz_lulus: [], belum_tasmi: [],
+    last_surah: null, last_ayat: null, pola: 'amma_maju',
+})
 const syncing = ref(false)
 function toggleJuz(j) {
     const i = sync.juz_lulus.indexOf(j)
-    i >= 0 ? sync.juz_lulus.splice(i, 1) : sync.juz_lulus.push(j)
+    if (i >= 0) {
+        sync.juz_lulus.splice(i, 1)
+        // Juz yang tidak jadi dicentang tidak boleh menyisakan tanda "belum tasmi'".
+        sync.belum_tasmi = sync.belum_tasmi.filter(x => x !== j)
+    } else {
+        sync.juz_lulus.push(j)
+    }
 }
+function toggleTasmi(j) {
+    const i = sync.belum_tasmi.indexOf(j)
+    i >= 0 ? sync.belum_tasmi.splice(i, 1) : sync.belum_tasmi.push(j)
+}
+const juzTerurut = computed(() => [...sync.juz_lulus].sort((a, b) => a - b))
 const surahDipilih  = computed(() => props.surahOpsi.find(s => s.nomor === sync.last_surah) || null)
 const ayatMax       = computed(() => surahDipilih.value?.jumlah_ayat ?? 286)
 const santriTerpilih = computed(() => props.santriSyncOpsi.find(s => s.id === sync.santri_id) || null)
@@ -255,7 +293,10 @@ function simpanSync() {
     syncing.value = true
     router.post(route('admin.smart-education.tahfidz.sinkronisasi'), { ...sync }, {
         preserveScroll: true,
-        onSuccess: () => { sync.santri_id = null; sync.juz_lulus = []; sync.last_surah = null; sync.last_ayat = null },
+        onSuccess: () => {
+            sync.santri_id = null; sync.juz_lulus = []; sync.belum_tasmi = []
+            sync.last_surah = null; sync.last_ayat = null
+        },
         onFinish: () => syncing.value = false,
     })
 }
