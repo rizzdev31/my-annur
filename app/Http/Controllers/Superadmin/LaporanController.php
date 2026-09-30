@@ -853,6 +853,173 @@ class LaporanController extends Controller
     }
 
     /** Daftar guru aktif utk selektor laporan. */
+    /**
+     * LAPORAN GURU PENGGANTI (INVAL).
+     *
+     * Isinya HANYA sesi yang diampu guru pengganti — dua sudut pandang:
+     *  1. per sesi  : siapa menggantikan siapa, JP, dan vakasinya
+     *  2. rekap     : ringkasan per guru pengganti (untuk dicocokkan ke slip)
+     *
+     * Jendela waktu bisa mengikuti PERIODE PENGGAJIAN (default, agar sejalan
+     * dengan slip gaji) atau RENTANG TANGGAL bebas untuk penelusuran.
+     *
+     * Catatan kebijakan yang ikut ditampilkan supaya angkanya tidak menyesatkan:
+     *  - hanya pengganti yang DATANG (jp_terlaksana > 0) yang dibayar;
+     *  - sesi yang pengganti-nya sudah ditunjuk tapi tetap tidak terlaksana ikut
+     *    ditampilkan, karena itu berdampak pada kinerja PENGGANTI (bukan guru asli);
+     *  - tarif per JP dibaca per guru (setting vakasi bisa per individu).
+     */
+    public function pengganti(Request $request)
+    {
+        $mode = $request->mode === 'tanggal' ? 'tanggal' : 'periode';
+
+        // ── Jendela waktu ────────────────────────────────────────────────────
+        $periodeList = PeriodePenggajian::orderByDesc('tahun')->orderByDesc('bulan')->get()
+            ->map(fn ($p) => [
+                'id'    => $p->id,
+                'label' => $p->nama_bulan,
+                'mulai' => $p->tanggal_mulai?->toDateString(),
+                'sampai'=> $p->tanggal_selesai?->toDateString(),
+            ])->values();
+
+        $periode = null;
+        if ($mode === 'periode') {
+            $periode = $request->periode_id
+                ? PeriodePenggajian::find($request->periode_id)
+                : (PeriodePenggajian::untukTanggal(now()->toDateString())
+                    ?? PeriodePenggajian::orderByDesc('tanggal_selesai')->first());
+            $mulai   = $periode?->tanggal_mulai ? Carbon::parse($periode->tanggal_mulai) : Carbon::now()->startOfMonth();
+            $selesai = $periode?->tanggal_selesai ? Carbon::parse($periode->tanggal_selesai) : Carbon::now()->endOfMonth();
+            $label   = $periode?->nama_bulan ?? $mulai->locale('id')->isoFormat('MMMM YYYY');
+        } else {
+            $mulai   = Carbon::parse($request->tanggal_awal ?: now()->startOfMonth()->toDateString());
+            $selesai = Carbon::parse($request->tanggal_akhir ?: now()->toDateString());
+            if ($selesai->lt($mulai)) [$mulai, $selesai] = [$selesai, $mulai];
+            if ($mulai->diffInDays($selesai) > 366) $selesai = $mulai->copy()->addDays(366);
+            $label = $mulai->locale('id')->isoFormat('D MMM YYYY') . ' – ' . $selesai->locale('id')->isoFormat('D MMM YYYY');
+        }
+
+        // ── Sesi yang punya guru pengganti ───────────────────────────────────
+        $q = AbsensiMengajar::with([
+                'jadwalMengajar.mataPelajaran', 'jadwalMengajar.kelasRel',
+                'tenagaPendidik.user', 'digantikanOleh.user',
+            ])
+            ->whereNotNull('digantikan_oleh')
+            ->whereBetween('tanggal', [$mulai->toDateString(), $selesai->toDateString()]);
+
+        if ($request->pengganti_id) $q->where('digantikan_oleh', (int) $request->pengganti_id);
+        if ($request->guru_id)      $q->where('tenaga_pendidik_id', (int) $request->guru_id);
+
+        $sesi = $q->orderBy('tanggal')->get();
+
+        if ($request->jenis_kelas) {
+            $sesi = $sesi->filter(fn ($a) => $a->jadwalMengajar?->kelasRel?->jenis === $request->jenis_kelas)->values();
+        }
+
+        // Tarif per JP per guru pengganti (dihitung sekali per guru).
+        $payroll = app(PayrollCalculationService::class);
+        $tarif   = [];
+
+        $rows = $sesi->map(function ($a) use ($payroll, &$tarif) {
+            $jadwal   = $a->jadwalMengajar;
+            $pengganti= $a->digantikanOleh;
+            $pid      = $a->digantikan_oleh;
+
+            if ($pid && !array_key_exists($pid, $tarif)) {
+                $tarif[$pid] = $pengganti ? (float) $payroll->tarifPerJpMengajar($pengganti) : 0.0;
+            }
+
+            $jp      = (int) ($a->jp_terlaksana ?? 0);
+            $datang  = $a->status === 'pengganti' && $jp > 0;
+            $nominal = $datang ? $jp * ($tarif[$pid] ?? 0) : 0;
+
+            $jamMulai   = $a->jam_mulai_aktual   ? substr($a->jam_mulai_aktual, 0, 5)
+                : ($jadwal?->jam_mulai ? substr($jadwal->jam_mulai, 0, 5) : null);
+            $jamSelesai = $a->jam_selesai_aktual ? substr($a->jam_selesai_aktual, 0, 5)
+                : ($jadwal?->jam_selesai ? substr($jadwal->jam_selesai, 0, 5) : null);
+
+            // Status dibaca dari sudut pandang PENGGANTI.
+            [$statusKode, $statusLabel] = match (true) {
+                $datang                          => ['datang', 'Diampu (dibayar)'],
+                $a->status === 'pengganti'        => ['belum_absen', 'Belum diabsen pengganti'],
+                $a->status === 'tidak_terlaksana' => ['tidak_datang', 'Pengganti tidak datang'],
+                default                           => [$a->status, ucfirst(str_replace('_', ' ', (string) $a->status))],
+            };
+
+            return [
+                'id'            => $a->id,
+                'hari'          => $a->tanggal->locale('id')->isoFormat('dddd'),
+                'tanggal'       => $a->tanggal->format('d/m/Y'),
+                'tanggal_raw'   => $a->tanggal->toDateString(),
+                'jam'           => ($jamMulai && $jamSelesai) ? "{$jamMulai} – {$jamSelesai}" : '—',
+                'kelas'         => $jadwal?->kelasRel?->nama ?? $jadwal?->kelas ?? '—',
+                'jenis_kelas'   => $jadwal?->kelasRel?->jenis ?? '—',
+                'mapel'         => $jadwal?->mataPelajaran?->nama
+                    ?? ucfirst((string) ($jadwal?->kelasRel?->jenis ?? '—')),
+                'guru_asli_id'  => $a->tenaga_pendidik_id,
+                'guru_asli'     => $a->tenagaPendidik?->user?->name ?? '—',
+                'pengganti_id'  => $pid,
+                'pengganti'     => $pengganti?->user?->name ?? '—',
+                'jp'            => $jp,
+                'jp_jadwal'     => (int) ($jadwal?->jumlah_jp ?? 0),
+                'tarif'         => $tarif[$pid] ?? 0,
+                'nominal'       => $nominal,
+                'status'        => $statusKode,
+                'status_label'  => $statusLabel,
+                'materi'        => $a->materi,
+            ];
+        })->values();
+
+        // ── Rekap per guru pengganti ─────────────────────────────────────────
+        $rekap = $rows->groupBy('pengganti_id')->map(function ($g) {
+            $datang = $g->where('status', 'datang');
+            return [
+                'pengganti_id' => $g->first()['pengganti_id'],
+                'pengganti'    => $g->first()['pengganti'],
+                'sesi'         => $g->count(),
+                'sesi_datang'  => $datang->count(),
+                'sesi_tidak'   => $g->where('status', 'tidak_datang')->count(),
+                'sesi_belum'   => $g->where('status', 'belum_absen')->count(),
+                'jp'           => (int) $datang->sum('jp'),
+                'tarif'        => (float) ($g->first()['tarif'] ?? 0),
+                'nominal'      => (float) $g->sum('nominal'),
+            ];
+        })->sortByDesc('nominal')->values();
+
+        // Guru yang paling sering digantikan — konteks untuk pimpinan.
+        $palingDigantikan = $rows->groupBy('guru_asli_id')
+            ->map(fn ($g) => ['nama' => $g->first()['guru_asli'], 'sesi' => $g->count()])
+            ->sortByDesc('sesi')->take(5)->values();
+
+        return Inertia::render('Admin/SmartPayroll/Laporan/Pengganti', [
+            'mode'        => $mode,
+            'label'       => $label,
+            'rentang'     => ['mulai' => $mulai->toDateString(), 'selesai' => $selesai->toDateString()],
+            'periodeList' => $periodeList,
+            'periodeId'   => $periode?->id,
+            'guruList'    => $this->guruSelectorList(),
+            'filters'     => [
+                'pengganti_id' => $request->pengganti_id ? (int) $request->pengganti_id : null,
+                'guru_id'      => $request->guru_id ? (int) $request->guru_id : null,
+                'jenis_kelas'  => $request->jenis_kelas,
+                'tanggal_awal' => $mulai->toDateString(),
+                'tanggal_akhir'=> $selesai->toDateString(),
+            ],
+            'rows'      => $rows,
+            'rekap'     => $rekap,
+            'ringkasan' => [
+                'total_sesi'   => $rows->count(),
+                'sesi_datang'  => $rows->where('status', 'datang')->count(),
+                'sesi_tidak'   => $rows->where('status', 'tidak_datang')->count(),
+                'sesi_belum'   => $rows->where('status', 'belum_absen')->count(),
+                'total_jp'     => (int) $rows->where('status', 'datang')->sum('jp'),
+                'total_vakasi' => (float) $rows->sum('nominal'),
+                'jumlah_pengganti' => $rekap->count(),
+                'paling_digantikan'=> $palingDigantikan,
+            ],
+        ]);
+    }
+
     private function guruSelectorList()
     {
         return TenagaPendidik::aktif()->with(['user', 'jabatan'])->get()

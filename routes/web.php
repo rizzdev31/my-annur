@@ -467,6 +467,8 @@ Route::prefix('admin')
                 Route::get('/ringkasan',            [LaporanController::class, 'ringkasan'])->name('ringkasan');
                 Route::get('/kehadiran',            [LaporanController::class, 'kehadiran'])->name('kehadiran');
                 Route::get('/mengajar',             [LaporanController::class, 'mengajar'])->name('mengajar');
+                // Khusus sesi yang diampu guru pengganti (inval)
+                Route::get('/pengganti',            [LaporanController::class, 'pengganti'])->name('pengganti');
                 Route::get('/absensi',              [LaporanController::class, 'absensi'])->name('absensi');
                 Route::get('/penggajian',           [LaporanController::class, 'penggajian'])->name('penggajian');
                 Route::get('/penggajian/{penggajian}/slip', [LaporanController::class, 'slipGaji'])->name('slip-gaji');

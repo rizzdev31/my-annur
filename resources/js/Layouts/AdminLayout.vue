@@ -162,6 +162,7 @@
                     <SidebarSubItem :href="route('admin.smart-payroll.laporan.ringkasan')" label="Ringkasan" />
                     <SidebarSubItem :href="route('admin.smart-payroll.laporan.kehadiran')" label="Kehadiran" />
                     <SidebarSubItem :href="route('admin.smart-payroll.laporan.mengajar')" label="Absensi Mengajar" />
+                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.pengganti')" label="Guru Pengganti" />
                     <SidebarSubItem :href="route('admin.smart-payroll.laporan.absensi')" label="Absensi" />
                     <SidebarSubItem :href="route('admin.smart-payroll.laporan.penggajian')" label="Penggajian" />
                     <SidebarSubItem :href="route('admin.smart-payroll.laporan.vakasi')" label="Vakasi" />
