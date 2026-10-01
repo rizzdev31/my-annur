@@ -11,7 +11,7 @@ class Kelas extends Model
     protected $fillable = [
         'nama',
         'nama_deskriptif', // nama tokoh kelas (mis. "Ibnu Sina") — dikirim ke RamahAnak
-        'jenis',        // sekolah | tahfidz | tahsin
+        'jenis',        // sekolah | pesantren | tahfidz | tahsin
         'level_tahsin', // khusus jenis=tahsin
         'tingkat',
         'tahun_ajaran_id',
@@ -56,12 +56,47 @@ class Kelas extends Model
      * Slot keanggotaan: santri hanya boleh punya SATU kelas aktif per slot.
      * Tahfidz & tahsin satu slot (program Quran) — santri lulus Persiapan Tahfidz
      * pindah ke kelas tahfidz dan otomatis keluar dari kelas tahsinnya.
+     *
+     * PESANTREN slotnya SENDIRI, bukan bergabung dengan sekolah. Kegiatan
+     * pesantren (mis. Muhadharah SMA Putra/Putri) mengumpulkan santri dari
+     * beberapa kelas sekolah sekaligus; bila satu slot dengan sekolah, memasukkan
+     * santri ke kelas pesantren akan MENGELUARKANNYA dari kelas X/XI/XII-nya.
      */
-    public const SLOT = ['sekolah' => ['sekolah'], 'tahfidz' => ['tahfidz', 'tahsin'], 'tahsin' => ['tahfidz', 'tahsin']];
+    public const SLOT = [
+        'sekolah'   => ['sekolah'],
+        'pesantren' => ['pesantren'],
+        'tahfidz'   => ['tahfidz', 'tahsin'],
+        'tahsin'    => ['tahfidz', 'tahsin'],
+    ];
+
+    /**
+     * Jenis yang pembelajarannya berjalan sama seperti sekolah: dijadwalkan di
+     * Jadwal Mengajar umum, memakai mapel tipe `reguler`, jurnal & absensi santri
+     * biasa. Yang membedakan pesantren dari sekolah hanya slot keanggotaannya.
+     */
+    public const JENIS_REGULER = ['sekolah', 'pesantren'];
+
+    /** Label jenis untuk pesan & tampilan. */
+    public const LABEL_JENIS = [
+        'sekolah'   => 'Sekolah',
+        'pesantren' => 'Pesantren',
+        'tahfidz'   => 'Tahfidz',
+        'tahsin'    => 'Tahsin',
+    ];
 
     public function jenisSeslot(): array
     {
         return self::SLOT[$this->jenis] ?? [$this->jenis];
+    }
+
+    /** Nama slot untuk pesan ke pengguna, mis. "kelas sekolah". */
+    public function slotLabel(): string
+    {
+        return match ($this->jenis) {
+            'sekolah'   => 'kelas sekolah',
+            'pesantren' => 'kelas pesantren',
+            default     => 'kelas tahfidz/tahsin',
+        };
     }
 
     public function jadwalMengajar()
@@ -79,6 +114,17 @@ class Kelas extends Model
     public function scopeSekolah($query)
     {
         return $query->where('jenis', 'sekolah');
+    }
+
+    public function scopePesantren($query)
+    {
+        return $query->where('jenis', 'pesantren');
+    }
+
+    /** Sekolah + pesantren — kelas yang dijadwalkan & dijurnal dengan cara yang sama. */
+    public function scopeReguler($query)
+    {
+        return $query->whereIn('jenis', self::JENIS_REGULER);
     }
 
     public function scopeTahfidz($query)

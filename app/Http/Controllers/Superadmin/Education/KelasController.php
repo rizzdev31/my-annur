@@ -39,10 +39,11 @@ class KelasController extends Controller
             'guru'    => TenagaPendidik::aktif()->with('user:id,name')->get()
                 ->map(fn($g) => ['id' => $g->id, 'nama' => $g->user?->name ?? '—'])->values(),
             'summary' => [
-                'total'   => Kelas::count(),
-                'sekolah' => Kelas::sekolah()->count(),
-                'tahfidz' => Kelas::tahfidz()->count(),
-                'tahsin'  => Kelas::tahsin()->count(),
+                'total'     => Kelas::count(),
+                'sekolah'   => Kelas::sekolah()->count(),
+                'pesantren' => Kelas::pesantren()->count(),
+                'tahfidz'   => Kelas::tahfidz()->count(),
+                'tahsin'    => Kelas::tahsin()->count(),
             ],
         ]);
     }
@@ -137,7 +138,7 @@ class KelasController extends Controller
             'kelas' => [
                 'id' => $kelas->id, 'nama' => $kelas->nama, 'jenis' => $kelas->jenis,
                 'level_tahsin' => $kelas->level_tahsin,
-                'slot_label' => $kelas->jenis === 'sekolah' ? 'kelas sekolah' : 'kelas tahfidz/tahsin',
+                'slot_label' => $kelas->slotLabel(),
             ],
             'saran_jk' => $saranJk,
             'santri'   => $santri,
@@ -203,7 +204,7 @@ class KelasController extends Controller
         return $request->validate([
             'nama'            => 'required|string|max:100',
             'nama_deskriptif' => 'nullable|string|max:100',
-            'jenis'           => 'required|in:sekolah,tahfidz,tahsin',
+            'jenis'           => 'required|in:sekolah,pesantren,tahfidz,tahsin',
             'level_tahsin'    => 'nullable|integer|min:1|max:6',
             'tingkat'         => 'nullable|string|max:30',
             'tahun_ajaran_id' => 'nullable|exists:tahun_ajaran,id',

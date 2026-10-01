@@ -81,6 +81,7 @@
                     <select v-model="form.jenis_kelas" :class="inp">
                         <option :value="null">Semua</option>
                         <option value="sekolah">Sekolah / Mapel</option>
+                        <option value="pesantren">Pesantren</option>
                         <option value="tahfidz">Tahfidz</option>
                         <option value="tahsin">Tahsin</option>
                     </select>

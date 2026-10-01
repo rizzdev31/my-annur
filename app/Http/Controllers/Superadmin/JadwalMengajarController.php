@@ -100,8 +100,8 @@ class JadwalMengajarController extends Controller
                     'nama'    => $g->user->name,
                     'jabatan' => $g->jabatan?->nama_jabatan,
                 ]),
-            // Kelas Smart Education (jenis sekolah) untuk pemilihan kelas jadwal.
-            'kelasList'   => Kelas::aktif()->sekolah()->orderBy('nama')
+            // Kelas Smart Education (sekolah & pesantren) untuk pemilihan kelas jadwal.
+            'kelasList'   => Kelas::aktif()->reguler()->orderBy('nama')
                 ->get(['id', 'nama', 'tahun_ajaran_id']),
         ]);
     }

@@ -57,10 +57,8 @@
                         </td>
                         <td class="px-5 py-3.5 hidden md:table-cell">
                             <div v-if="s.kelas.length" class="flex flex-wrap gap-1">
-                                <span v-for="k in s.kelas" :key="k.id" :class="[
-                                    'px-2 py-0.5 rounded-lg text-xs font-medium',
-                                    k.jenis === 'tahfidz' ? 'bg-violet-50 text-violet-700' : 'bg-sky-50 text-sky-700'
-                                ]">{{ k.nama }}</span>
+                                <span v-for="k in s.kelas" :key="k.id"
+                                    :class="['px-2 py-0.5 rounded-lg text-xs font-medium', warnaJenis(k.jenis)]">{{ k.nama }}</span>
                             </div>
                             <span v-else class="text-xs text-gray-400">Belum ada kelas</span>
                         </td>
@@ -188,16 +186,18 @@
                             </div>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Kelas (boleh sekolah & tahfidz)</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Kelas</label>
+                            <p class="text-[11px] text-gray-400 mb-1.5">
+                                Boleh satu kelas tiap kelompok: sekolah, pesantren, dan tahfidz/tahsin.
+                            </p>
                             <div v-if="kelas.length" class="flex flex-wrap gap-2 p-3 rounded-xl border border-gray-200 bg-gray-50/50 max-h-40 overflow-y-auto">
                                 <label v-for="k in kelas" :key="k.id" :class="[
                                     'cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
-                                    form.kelas_ids.includes(k.id)
-                                        ? (k.jenis === 'tahfidz' ? 'bg-violet-600 text-white border-violet-600' : 'bg-indigo-600 text-white border-indigo-600')
+                                    form.kelas_ids.includes(k.id) ? warnaJenisTerpilih(k.jenis)
                                         : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'
                                 ]">
                                     <input type="checkbox" :value="k.id" v-model="form.kelas_ids" class="hidden" />
-                                    {{ k.nama }} <span class="opacity-60">· {{ k.jenis === 'tahfidz' ? 'Tahfidz' : 'Sekolah' }}</span>
+                                    {{ k.nama }} <span class="opacity-60">· {{ labelJenis(k.jenis) }}</span>
                                 </label>
                             </div>
                             <p v-else class="text-xs text-gray-400">Belum ada kelas. Tambahkan di menu Kelas dulu.</p>
@@ -253,6 +253,21 @@ const props = defineProps({
     kelas: { type: Array, default: () => [] },
     summary: { type: Object, default: () => ({}) },
 })
+
+// Label & warna jenis kelas — pesantren berbeda dari sekolah karena boleh
+// berbarengan dengannya, jadi harus terbaca berbeda juga.
+const LABEL_JENIS = { sekolah: 'Sekolah', pesantren: 'Pesantren', tahfidz: 'Tahfidz', tahsin: 'Tahsin' }
+const labelJenis = (j) => LABEL_JENIS[j] ?? j
+const warnaJenis = (j) => ({
+    tahfidz: 'bg-violet-50 text-violet-700',
+    tahsin: 'bg-amber-50 text-amber-700',
+    pesantren: 'bg-emerald-50 text-emerald-700',
+}[j] ?? 'bg-sky-50 text-sky-700')
+const warnaJenisTerpilih = (j) => ({
+    tahfidz: 'bg-violet-600 text-white border-violet-600',
+    tahsin: 'bg-amber-600 text-white border-amber-600',
+    pesantren: 'bg-emerald-600 text-white border-emerald-600',
+}[j] ?? 'bg-indigo-600 text-white border-indigo-600')
 
 const q = ref('')
 const filtered = computed(() => {

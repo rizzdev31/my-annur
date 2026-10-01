@@ -90,8 +90,10 @@ class LaporanController extends Controller
             $sesi = AbsensiMengajar::query()
                 ->when($kelas,  fn($q) => $q->whereHas('jadwalMengajar', fn($j) => $j->where('kelas_id', $kelas->id)))
                 ->when($guruId, fn($q) => $q->where('tenaga_pendidik_id', $guruId))
-                // Tanpa kelas spesifik → batasi ke kelas SEKOLAH (konsisten laporan pembelajaran)
-                ->when(!$kelas, fn($q) => $q->whereHas('jadwalMengajar.kelasRel', fn($k) => $k->where('jenis', 'sekolah')))
+                // Tanpa kelas spesifik → batasi ke kelas SEKOLAH & PESANTREN (konsisten
+                // laporan pembelajaran; kelas tahfidz/tahsin punya laporannya sendiri)
+                ->when(!$kelas, fn($q) => $q->whereHas('jadwalMengajar.kelasRel',
+                    fn($k) => $k->whereIn('jenis', \App\Models\Kelas::JENIS_REGULER)))
                 ->whereBetween('tanggal', [$dari->toDateString(), $sampai->toDateString()])
                 ->with([
                     'jadwalMengajar.mataPelajaran',
@@ -143,7 +145,7 @@ class LaporanController extends Controller
             'periodeLabel' => $dari->locale('id')->isoFormat('D MMM YYYY')
                 . ' – ' . $sampai->locale('id')->isoFormat('D MMM YYYY'),
             'tanggalCetak' => Carbon::today()->locale('id')->isoFormat('D MMMM YYYY'),
-            'kelasOpsi'    => Kelas::aktif()->sekolah()->orderBy('nama')->get(['id', 'nama']),
+            'kelasOpsi'    => Kelas::aktif()->reguler()->orderBy('nama')->get(['id', 'nama']),
             'guruOpsi'     => TenagaPendidik::where('is_aktif', true)->with('user:id,name')->get()
                 ->map(fn($g) => ['id' => $g->id, 'nama' => $g->user?->name])
                 ->filter(fn($g) => !empty($g['nama']))

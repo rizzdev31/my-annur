@@ -71,7 +71,8 @@ class JurnalMengajarController extends Controller
                 'kelas_id' => $request->kelas_id ? (int) $request->kelas_id : null,
                 'guru_id'  => $request->guru_id ? (int) $request->guru_id : null,
             ],
-            'kelasOpsi' => Kelas::aktif()->sekolah()->orderBy('nama')->get(['id', 'nama']),
+            // Sekolah + pesantren: keduanya dijurnal dengan cara yang sama.
+            'kelasOpsi' => Kelas::aktif()->reguler()->orderBy('nama')->get(['id', 'nama']),
             'guruOpsi'  => TenagaPendidik::aktif()->with('user:id,name')->get()
                 ->map(fn($g) => ['id' => $g->id, 'nama' => $g->user?->name ?? '—'])->values(),
             'summary' => [

@@ -7,7 +7,8 @@
             <div>
                 <h2 class="text-xl font-semibold text-gray-900">Kelas</h2>
                 <p class="text-sm text-gray-400 mt-0.5">
-                    {{ summary.sekolah }} kelas sekolah · {{ summary.tahfidz }} kelas tahfidz
+                    {{ summary.sekolah }} sekolah · {{ summary.pesantren }} pesantren ·
+                    {{ summary.tahfidz }} tahfidz · {{ summary.tahsin }} tahsin
                 </p>
             </div>
             <button @click="openCreate"
@@ -49,12 +50,8 @@
                             </p>
                         </td>
                         <td class="px-5 py-3.5">
-                            <span :class="[
-                                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium',
-                                k.jenis === 'tahfidz' ? 'bg-violet-50 text-violet-700'
-                                    : k.jenis === 'tahsin' ? 'bg-amber-50 text-amber-700' : 'bg-sky-50 text-sky-700'
-                            ]">
-                                {{ k.jenis === 'tahfidz' ? 'Tahfidz' : k.jenis === 'tahsin' ? (k.level_tahsin === 6 ? 'Tahsin · Persiapan Tahfidz' : 'Tahsin Lv ' + (k.level_tahsin ?? '?')) : 'Sekolah' }}
+                            <span :class="['inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium', warnaJenis(k.jenis)]">
+                                {{ labelJenis(k) }}
                             </span>
                         </td>
                         <td class="px-5 py-3.5 hidden md:table-cell">
@@ -135,9 +132,17 @@
                                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Jenis <span class="text-red-500">*</span></label>
                                 <select v-model="form.jenis" :class="inputCls(form.errors?.jenis)">
                                     <option value="sekolah">Sekolah</option>
+                                    <option value="pesantren">Pesantren</option>
                                     <option value="tahfidz">Tahfidz</option>
                                     <option value="tahsin">Tahsin</option>
                                 </select>
+                                <!-- Alasan memilih pesantren harus jelas sebelum menyimpan:
+                                     inilah satu-satunya jenis yang boleh berbarengan dengan kelas sekolah. -->
+                                <p v-if="form.jenis === 'pesantren'" class="mt-1 text-[11px] text-emerald-700 leading-snug">
+                                    Kegiatan pesantren (mis. Muhadharah). Santri boleh menjadi anggotanya
+                                    <b>tanpa keluar dari kelas sekolahnya</b> — cocok untuk kelas yang
+                                    menggabungkan beberapa tingkat. Penjadwalan &amp; jurnalnya sama seperti sekolah.
+                                </p>
                             </div>
                             <div v-if="form.jenis === 'tahsin'">
                                 <label class="block text-sm font-medium text-gray-700 mb-1.5">Level Tahsin <span class="text-red-500">*</span></label>
@@ -397,9 +402,25 @@ const props = defineProps({
 const filters = [
     { val: 'semua', label: 'Semua' },
     { val: 'sekolah', label: 'Sekolah' },
+    { val: 'pesantren', label: 'Pesantren' },
     { val: 'tahfidz', label: 'Tahfidz' },
     { val: 'tahsin', label: 'Tahsin' },
 ]
+
+// Label & warna jenis kelas — satu tempat, dipakai tabel maupun daftar tujuan.
+function labelJenis(k) {
+    if (k.jenis === 'tahsin') {
+        return k.level_tahsin === 6 ? 'Tahsin · Persiapan Tahfidz' : 'Tahsin Lv ' + (k.level_tahsin ?? '?')
+    }
+    return { sekolah: 'Sekolah', pesantren: 'Pesantren', tahfidz: 'Tahfidz' }[k.jenis] ?? k.jenis
+}
+function warnaJenis(jenis) {
+    return {
+        tahfidz: 'bg-violet-50 text-violet-700',
+        tahsin: 'bg-amber-50 text-amber-700',
+        pesantren: 'bg-emerald-50 text-emerald-700',
+    }[jenis] ?? 'bg-sky-50 text-sky-700'
+}
 const filter = ref('semua')
 const filtered = computed(() =>
     filter.value === 'semua' ? props.kelas : props.kelas.filter(k => k.jenis === filter.value)
@@ -467,9 +488,10 @@ const kecuali = ref([])               // santri_id yang tinggal kelas
 const naikLoading = ref(false)
 const naikSaving = ref(false)
 
-// Kelas tujuan yang valid: satu slot (sekolah↔sekolah, tahfidz/tahsin↔tahfidz/tahsin)
-// & bukan diri sendiri — Persiapan Tahfidz bisa langsung dinaikkan ke kelas tahfidz.
-const slotOf = (jenis) => (jenis === 'sekolah' ? 'sekolah' : 'quran')
+// Kelas tujuan yang valid: satu slot & bukan diri sendiri — Persiapan Tahfidz bisa
+// langsung dinaikkan ke kelas tahfidz. Pesantren slotnya SENDIRI (santri boleh punya
+// kelas sekolah dan kelas pesantren sekaligus), jadi tujuannya pun hanya pesantren.
+const slotOf = (jenis) => ({ sekolah: 'sekolah', pesantren: 'pesantren' }[jenis] ?? 'quran')
 const kelasTujuanOpsi = computed(() =>
     props.kelas.filter(k => naikSumber.value && slotOf(k.jenis) === slotOf(naikSumber.value.jenis) && k.id !== naikSumber.value.id && k.is_aktif))
 

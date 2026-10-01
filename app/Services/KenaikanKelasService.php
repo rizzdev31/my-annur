@@ -15,9 +15,10 @@ use Illuminate\Support\Facades\DB;
  * Aturan:
  *  1. RIWAYAT DIJAGA. kelas_santri tidak pernah dihapus; keanggotaan lama ditutup
  *     (is_aktif=false + tanggal_keluar), keanggotaan baru dibuka.
- *  2. SATU KELAS AKTIF PER SLOT (Kelas::SLOT): sekolah = 1, program Quran
- *     (tahfidz ∪ tahsin) = 1. Memasukkan santri ke kelas lain di slot yang sama
- *     otomatis MEMINDAHKAN-nya.
+ *  2. SATU KELAS AKTIF PER SLOT (Kelas::SLOT): sekolah = 1, pesantren = 1, program
+ *     Quran (tahfidz ∪ tahsin) = 1. Memasukkan santri ke kelas lain di slot yang
+ *     sama otomatis MEMINDAHKAN-nya; slot berbeda berjalan berdampingan, sehingga
+ *     santri kelas X bisa sekaligus menjadi anggota kelas pesantren.
  *  3. PENCAPAIAN TIDAK BERUBAH KARENA PINDAH: hafalan tahfidz & level/nilai tahsin
  *     melekat pada santri. Level tahsin hanya ditempatkan saat santri tanpa progres
  *     tahsin masuk kelas tahsin. Tahsin → tahfidz memulai hafalan tahfidz baru.
@@ -127,9 +128,13 @@ class KenaikanKelasService
 
         foreach ($kelas->groupBy(fn ($k) => implode('+', $k->jenisSeslot())) as $slot => $daftar) {
             if ($daftar->count() > 1) {
-                throw new \DomainException($slot === 'sekolah'
-                    ? 'Santri hanya boleh punya satu kelas sekolah (dipilih: ' . $daftar->pluck('nama')->implode(', ') . ').'
-                    : 'Santri hanya boleh punya satu kelas tahfidz ATAU tahsin (dipilih: ' . $daftar->pluck('nama')->implode(', ') . ').');
+                $batas = match ($slot) {
+                    'sekolah'   => 'satu kelas sekolah',
+                    'pesantren' => 'satu kelas pesantren',
+                    default     => 'satu kelas tahfidz ATAU tahsin',
+                };
+                throw new \DomainException("Santri hanya boleh punya {$batas} (dipilih: "
+                    . $daftar->pluck('nama')->implode(', ') . ').');
             }
         }
         return $kelas;
@@ -146,7 +151,8 @@ class KenaikanKelasService
             throw new \DomainException('Kelas tujuan tidak boleh sama dengan kelas sumber.');
         }
         if ($sumber->jenisSeslot() !== $tujuan->jenisSeslot()) {
-            throw new \DomainException('Kelas tujuan harus satu kelompok (sekolah ↔ sekolah, tahfidz/tahsin ↔ tahfidz/tahsin).');
+            throw new \DomainException('Kelas tujuan harus satu kelompok (sekolah ↔ sekolah, '
+                . 'pesantren ↔ pesantren, tahfidz/tahsin ↔ tahfidz/tahsin).');
         }
 
         $santriAktif = DB::table('kelas_santri')
