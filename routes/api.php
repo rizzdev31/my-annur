@@ -93,6 +93,8 @@ Route::prefix('v1')->group(function () {
 
                 // Smart Education — absensi santri (jurnal mengajar sekolah)
                 Route::post('/mengajar/absen-santri',    [AbsensiApiController::class, 'absenSantri']);
+                // Koreksi roster sesi kegiatan (libur pembelajaran) — boleh berulang.
+                Route::post('/mengajar/koreksi-kegiatan', [AbsensiApiController::class, 'koreksiRosterKegiatan']);
                 Route::get('/mengajar/{jadwalId}/santri', [AbsensiApiController::class, 'santriKelasJadwal']);
             });
 

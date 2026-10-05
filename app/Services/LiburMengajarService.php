@@ -9,6 +9,7 @@ use App\Models\JadwalMengajar;
 use App\Models\LiburPembelajaran;
 use App\Models\PeriodePenggajian;
 use App\Models\Santri;
+use App\Models\TenagaPendidik;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -367,6 +368,101 @@ class LiburMengajarService
 
         self::lupakanPeta();
         return $hasil;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 4. KOREKSI ROSTER KEGIATAN
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Bolehkah tendik ini mengoreksi roster sesi kegiatan tsb?
+     *
+     * Roster hari kegiatan ditulis sistem (semua hadir), jadi santri yang tidak
+     * ikut tetap tercatat hadir. Yang boleh membetulkan hanya orang yang memang
+     * ada di lapangan: pengampu sesinya, pengganti yang ditunjuk, atau guru piket
+     * hari itu — karena pada hari kegiatan pendampingnya kerap bukan guru jadwal.
+     *
+     * @return string|null  null = boleh; selain itu alasan penolakan (siap tampil).
+     */
+    public function alasanTakBolehKoreksi(AbsensiMengajar $am, ?TenagaPendidik $tp): ?string
+    {
+        if (!$tp) return 'Akun ini bukan tenaga pendidik.';
+
+        if ($am->status !== 'libur' || !$am->libur_pembelajaran_id) {
+            return 'Sesi ini bukan sesi kegiatan — absensinya mengikuti aturan absen santri biasa.';
+        }
+
+        $tgl = $am->tanggal instanceof Carbon ? $am->tanggal->toDateString() : (string) $am->tanggal;
+        if ($this->periodeTerkunci($tgl)) {
+            return 'Periode penggajian tanggal ini sudah terkunci atau slipnya sudah terbit.';
+        }
+
+        $pengampu  = (int) $am->tenaga_pendidik_id === $tp->id;
+        $pengganti = (int) $am->digantikan_oleh === $tp->id;
+        $piket     = \App\Models\PiketJadwal::whereDate('tanggal', $tgl)
+            ->where('tenaga_pendidik_id', $tp->id)->exists();
+
+        if (!$pengampu && !$pengganti && !$piket) {
+            return 'Hanya pengampu sesi, pengganti yang ditunjuk, atau guru piket hari itu yang boleh mengoreksi.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Simpan koreksi roster kegiatan. Boleh berkali-kali (bukan sekali-kunci
+     * seperti absensi santri biasa): kehadiran kegiatan memang dikumpulkan sambil
+     * acara berjalan. Setiap baris yang BERUBAH dicatat siapa pengoreksinya.
+     *
+     * `sumber` tetap 'kegiatan' — harinya memang hari kegiatan, bukan pembelajaran,
+     * sehingga laporan tetap bisa memisahkan keduanya.
+     *
+     * @param  array $rows  [['santri_id' => int, 'status' => string], ...]
+     * @return array{diubah:int, ditambah:int, tetap:int, berubah:Collection}
+     */
+    public function koreksiRoster(AbsensiMengajar $am, array $rows, int $olehUserId): array
+    {
+        $sah = Santri::aktif()->anggotaKelas((int) $am->jadwalMengajar->kelas_id)->pluck('id')->flip();
+        $lama = AbsensiSantri::where('absensi_mengajar_id', $am->id)->get()->keyBy('santri_id');
+
+        $diubah = 0; $ditambah = 0; $tetap = 0;
+        $berubah = collect();
+
+        DB::transaction(function () use ($rows, $sah, $lama, $am, $olehUserId, &$diubah, &$ditambah, &$tetap, &$berubah) {
+            foreach ($rows as $r) {
+                $sid    = (int) $r['santri_id'];
+                $status = $r['status'];
+
+                // Santri dari luar kelas ini diabaikan — id dari klien tidak dipercaya.
+                if (!$sah->has($sid)) continue;
+
+                $baris = $lama->get($sid);
+                if ($baris && $baris->status === $status) { $tetap++; continue; }
+
+                if ($baris) {
+                    $baris->update([
+                        'status'         => $status,
+                        'dikoreksi_oleh' => $olehUserId,
+                        'dikoreksi_pada' => now(),
+                    ]);
+                    $diubah++;
+                } else {
+                    $baris = AbsensiSantri::create([
+                        'absensi_mengajar_id' => $am->id,
+                        'santri_id'           => $sid,
+                        'status'              => $status,
+                        'sumber'              => 'kegiatan',
+                        'catatan'             => $am->liburPembelajaran?->nama,
+                        'dikoreksi_oleh'      => $olehUserId,
+                        'dikoreksi_pada'      => now(),
+                    ]);
+                    $ditambah++;
+                }
+                $berubah->push($baris->fresh());
+            }
+        });
+
+        return ['diubah' => $diubah, 'ditambah' => $ditambah, 'tetap' => $tetap, 'berubah' => $berubah];
     }
 
     // ══════════════════════════════════════════════════════════════════════

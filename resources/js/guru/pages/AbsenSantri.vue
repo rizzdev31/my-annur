@@ -22,8 +22,15 @@ const STATUS = [
     { v: 'sakit', t: 'Sakit', c: 'bg-violet-500' },
     { v: 'alpha', t: 'Alpha', c: 'bg-red-500' },
 ]
-const terkunci = computed(() => d.value?.sudah_isi_santri === true)
-const belumAbsenMengajar = computed(() => !d.value?.absensi_mengajar_id)
+// Sesi KEGIATAN (libur pembelajaran): rosternya ditulis sistem semua hadir,
+// jadi boleh dikoreksi berulang — tidak mengikuti aturan sekali-kunci.
+const kegiatan = computed(() => d.value?.libur_kegiatan === true)
+const bolehKoreksi = computed(() => kegiatan.value && d.value?.boleh_koreksi === true)
+const terkunci = computed(() =>
+    kegiatan.value ? !bolehKoreksi.value : d.value?.sudah_isi_santri === true)
+const belumAbsenMengajar = computed(() => !kegiatan.value && !d.value?.absensi_mengajar_id)
+const adaPerubahan = computed(() =>
+    santri.value.some(s => s.status !== (s._awal ?? s.status)))
 const rekap = computed(() => {
     const r = { hadir: 0, telat: 0, izin: 0, sakit: 0, alpha: 0 }
     santri.value.forEach(s => { if (r[s.status] !== undefined) r[s.status]++ })
@@ -38,7 +45,9 @@ async function load() {
     try {
         const res = (await api.get(`/absensi/mengajar/${jadwalId}/santri`)).data.data
         d.value = res
-        santri.value = (res.santri ?? []).map(s => ({ ...s }))
+        // _awal menyimpan status saat dimuat, supaya hanya perubahan yang dikirim
+        // dan tombol simpan tidak aktif tanpa sebab.
+        santri.value = (res.santri ?? []).map(s => ({ ...s, _awal: s.status }))
     } catch (e) {
         const c = e.response?.data
         toast.error(c?.message || 'Gagal memuat roster santri.')
@@ -55,7 +64,28 @@ function tandaiSemua(v) {
 }
 
 const konfirm = ref(false)
+
+async function simpanKoreksi() {
+    busy.value = true
+    try {
+        const res = await api.post('/absensi/mengajar/koreksi-kegiatan', {
+            absensi_mengajar_id: d.value.absensi_mengajar_id,
+            absensi: santri.value
+                .filter(s => s.status !== s._awal)
+                .map(s => ({ santri_id: s.santri_id, status: s.status })),
+        })
+        konfirm.value = false
+        toast.success(res.data?.message || 'Koreksi tersimpan.')
+        await load()
+    } catch (e) {
+        konfirm.value = false
+        toast.error(e.response?.data?.message || 'Gagal menyimpan koreksi.')
+        await load()
+    } finally { busy.value = false }
+}
+
 async function simpan() {
+    if (kegiatan.value) return simpanKoreksi()
     if (belumAbsenMengajar.value) return toast.warning('Absen mengajar dulu sebelum absen santri.')
     busy.value = true
     try {
@@ -87,7 +117,21 @@ async function simpan() {
                 <p class="text-[12px] text-gray-400">{{ d.kelas }} · {{ d.total_santri }} santri</p>
             </div>
 
-            <div v-if="belumAbsenMengajar" class="rounded-2xl bg-amber-50 border border-amber-100 p-4 mb-4 text-sm text-amber-700">
+            <!-- Sesi kegiatan: jelaskan dari mana angkanya & apa yang perlu dibetulkan -->
+            <div v-if="kegiatan && bolehKoreksi" class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3.5 mb-4">
+                <p class="text-[13px] font-extrabold text-emerald-800">Koreksi Absensi Kegiatan</p>
+                <p class="text-[11px] text-emerald-700 leading-snug mt-1">
+                    Pembelajaran diliburkan karena <b>{{ d.nama_kegiatan }}</b>. Semua santri
+                    sudah tercatat <b>hadir</b> otomatis — kecuali yang izin atau sakit.
+                    Betulkan santri yang <b>tidak ikut kegiatan</b>, lalu simpan.
+                    Bisa dikoreksi berulang kali.
+                </p>
+            </div>
+            <div v-else-if="kegiatan" class="rounded-2xl bg-gray-50 border border-gray-200 p-3.5 mb-4">
+                <p class="text-[13px] font-bold text-gray-700">Absensi Kegiatan — hanya dapat dilihat</p>
+                <p class="text-[11px] text-gray-500 leading-snug mt-1">{{ d.alasan_koreksi }}</p>
+            </div>
+            <div v-else-if="belumAbsenMengajar" class="rounded-2xl bg-amber-50 border border-amber-100 p-4 mb-4 text-sm text-amber-700">
                 Anda belum absen mengajar untuk sesi ini. Lakukan <b>Absen Mengajar</b> dulu, baru bisa absen santri.
             </div>
             <div v-else-if="terkunci" class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 mb-4 text-[13px] font-semibold text-emerald-700 text-center">
@@ -104,6 +148,7 @@ async function simpan() {
                     <span class="px-2 py-0.5 rounded-full bg-red-50 text-red-600">A {{ rekap.alpha }}</span>
                 </div>
                 <button v-if="!terkunci && !belumAbsenMengajar" @click="tandaiSemua('hadir')" class="text-xs font-bold text-[#0C78FF] shrink-0">Semua Hadir</button>
+                <button v-if="kegiatan && bolehKoreksi" @click="tandaiSemua('alpha')" class="text-xs font-bold text-red-500 shrink-0">Semua Alpha</button>
             </div>
 
             <!-- Info auto-terisi dari Perizinan / Smart Health -->
@@ -123,6 +168,9 @@ async function simpan() {
                             <p v-if="s.sakit_health" class="text-[10px] font-bold text-violet-600 truncate">🤒 Sakit · Smart Health</p>
                             <p v-else-if="s.izin_disetujui" class="text-[10px] font-bold text-sky-600 truncate">📝 Izin {{ s.izin_jenis }} · disetujui</p>
                             <p v-else-if="s.nip" class="text-[10px] text-gray-400">NIS {{ s.nip }}</p>
+                            <p v-if="s.dikoreksi_oleh" class="text-[10px] text-gray-400 truncate">
+                                ✎ dikoreksi {{ s.dikoreksi_oleh }}
+                            </p>
                         </div>
                         <div class="flex gap-1 shrink-0">
                             <button v-for="st in STATUS" :key="st.v" @click="setStatus(s, st.v)" :disabled="terkunci || belumAbsenMengajar"
@@ -133,15 +181,25 @@ async function simpan() {
                 </li>
             </ul>
 
-            <!-- Materi + simpan -->
-            <template v-if="!terkunci && !belumAbsenMengajar">
+            <!-- Simpan koreksi kegiatan -->
+            <template v-if="kegiatan && bolehKoreksi">
+                <button @click="konfirm = true" :disabled="busy || !adaPerubahan"
+                    class="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-bold disabled:opacity-60">
+                    {{ adaPerubahan ? 'Simpan Koreksi' : 'Belum ada perubahan' }}
+                </button>
+            </template>
+
+            <!-- Materi + simpan (absensi santri biasa) -->
+            <template v-else-if="!terkunci && !belumAbsenMengajar">
                 <textarea v-model="materi" rows="2" placeholder="Materi/jurnal (opsional)" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3"></textarea>
                 <button @click="konfirm = true" :disabled="busy || !santri.length" class="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-bold disabled:opacity-60">Simpan & Kunci Absensi</button>
             </template>
         </template>
 
         <!-- Konfirmasi -->
-        <BottomSheet v-model="konfirm" title="Simpan Absensi Santri?" subtitle="Setelah disimpan, absensi terkunci & tidak bisa diubah.">
+        <BottomSheet v-model="konfirm"
+            :title="kegiatan ? 'Simpan Koreksi Kegiatan?' : 'Simpan Absensi Santri?'"
+            :subtitle="kegiatan ? 'Masih bisa dikoreksi lagi setelah ini. Wali hanya dikabari untuk santri yang Anda ubah.' : 'Setelah disimpan, absensi terkunci & tidak bisa diubah.'">
             <div class="flex gap-1.5 flex-wrap text-[12px] font-bold mb-4">
                 <span class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600">Hadir {{ rekap.hadir }}</span>
                 <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-600">Telat {{ rekap.telat }}</span>

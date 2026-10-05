@@ -42,7 +42,11 @@ class TahsinApiController extends Controller
             ->get()->keyBy('jadwal_mengajar_id');
 
         $now = TimezoneHelper::now();
-        $data = $jadwal->map(function ($j) use ($absensi, $namaHari, $today, $now) {
+        // Sesi yang pembelajarannya diliburkan karena kegiatan: tidak perlu diabsen.
+        $liburPbm = app(\App\Services\LiburMengajarService::class)
+            ->petaPembelajaran($today->toDateString());
+
+        $data = $jadwal->map(function ($j) use ($absensi, $namaHari, $today, $now, $liburPbm) {
             $isToday = strtolower($j->hari) === $namaHari;
             $am      = $isToday ? $absensi->get($j->id) : null;
             $diinval = $am && $am->digantikan_oleh ? ($am->digantikanOleh?->user?->name ?? 'Guru pengganti') : null;
@@ -74,8 +78,12 @@ class TahsinApiController extends Controller
                 'materi'              => $am?->materi,
                 'catatan'             => $am?->keterangan,
                 'dalam_jam'           => $dalamJam,
-                // Wajib absen HANYA saat dalam jam sesi & belum absen (bukan sepanjang hari).
-                'wajib_absen'         => $dalamJam && $am === null,
+                // Wajib absen HANYA saat dalam jam sesi & belum absen (bukan sepanjang hari),
+                // dan tidak berlaku bila pembelajarannya diliburkan karena kegiatan.
+                'wajib_absen'         => $dalamJam && $am === null && !isset($liburPbm[$j->id]),
+                // Pembelajaran diganti kegiatan — guru tetap masuk, sesi tidak diabsen.
+                'libur_kegiatan'      => $isToday && isset($liburPbm[$j->id]),
+                'nama_kegiatan'       => $isToday ? ($liburPbm[$j->id]->nama ?? null) : null,
             ];
         });
 

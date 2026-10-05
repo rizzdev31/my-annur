@@ -1756,7 +1756,17 @@ class AbsensiApiController extends Controller
         $isPengganti = !$isOwner && \App\Models\AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)
             ->whereDate('tanggal', TimezoneHelper::today())
             ->where('status', 'pengganti')->where('digantikan_oleh', $tp->id)->exists();
-        if (!$isOwner && !$isPengganti) {
+        // Guru piket boleh membuka roster sesi KEGIATAN hari ini: pada hari
+        // kegiatan pendampingnya kerap bukan guru jadwal, dan dialah yang tahu
+        // siapa yang benar-benar ikut.
+        $isPiketKegiatan = !$isOwner && !$isPengganti
+            && \App\Models\PiketJadwal::whereDate('tanggal', TimezoneHelper::today())
+                ->where('tenaga_pendidik_id', $tp->id)->exists()
+            && \App\Models\AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)
+                ->whereDate('tanggal', TimezoneHelper::today())
+                ->where('status', 'libur')->whereNotNull('libur_pembelajaran_id')->exists();
+
+        if (!$isOwner && !$isPengganti && !$isPiketKegiatan) {
             return response()->json(['success' => false, 'message' => 'Jadwal ini bukan milik Anda.'], 403);
         }
 
@@ -1797,6 +1807,29 @@ class AbsensiApiController extends Controller
             'nama'      => $s->nama_lengkap,
         ], $kh->baris($s->id, $konteks, $terisi[$s->id] ?? null)))->values();
 
+        // Sesi kegiatan (libur pembelajaran): rosternya ditulis sistem semua hadir,
+        // jadi boleh dikoreksi berkali-kali oleh yang mendampingi di lapangan —
+        // bukan sekali-kunci seperti absensi santri biasa.
+        $libur   = app(\App\Services\LiburMengajarService::class);
+        $kegiatan = $absensi && $absensi->status === 'libur' && $absensi->libur_pembelajaran_id
+            ? $absensi->liburPembelajaran : null;
+        $alasanKoreksi = $kegiatan ? $libur->alasanTakBolehKoreksi($absensi, $tp) : null;
+
+        // Siapa terakhir mengoreksi tiap santri — supaya koreksi bisa dipertanggungjawabkan.
+        $pengoreksi = $kegiatan
+            ? \App\Models\AbsensiSantri::where('absensi_mengajar_id', $absensi->id)
+                ->whereNotNull('dikoreksi_oleh')->with('dikoreksiOleh:id,name')
+                ->get()->keyBy('santri_id')
+            : collect();
+
+        if ($pengoreksi->isNotEmpty()) {
+            $santri = $santri->map(function ($row) use ($pengoreksi) {
+                $k = $pengoreksi->get($row['santri_id']);
+                $row['dikoreksi_oleh'] = $k?->dikoreksiOleh?->name;
+                return $row;
+            })->values();
+        }
+
         return response()->json([
             'success' => true,
             'data'    => [
@@ -1807,6 +1840,73 @@ class AbsensiApiController extends Controller
                 'sudah_isi_santri'    => $terisi->isNotEmpty(),
                 'total_santri'        => $santri->count(),
                 'santri'              => $santri,
+
+                // ── Sesi kegiatan ────────────────────────────────────────────
+                'libur_kegiatan'  => $kegiatan !== null,
+                'nama_kegiatan'   => $kegiatan?->nama,
+                'boleh_koreksi'   => $kegiatan !== null && $alasanKoreksi === null,
+                'alasan_koreksi'  => $alasanKoreksi,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /absensi/mengajar/koreksi-kegiatan
+     * Koreksi roster sesi KEGIATAN (libur pembelajaran) oleh guru pendamping.
+     *
+     * Dipisah dari absen-santri biasa karena aturannya berbeda:
+     *   - absen santri biasa  : sekali simpan lalu TERKUNCI (integritas KBM);
+     *   - roster kegiatan     : ditulis sistem semua hadir, lalu boleh dibetulkan
+     *                           berulang selama periode gajinya belum terkunci.
+     *
+     * WA ke wali hanya dikirim untuk baris yang BERUBAH — baris 'hadir' buatan
+     * sistem tidak pernah mengirim apa pun (satu hari kegiatan bisa ratusan pesan).
+     */
+    public function koreksiRosterKegiatan(Request $request): JsonResponse
+    {
+        $request->validate([
+            'absensi_mengajar_id' => 'required|exists:absensi_mengajar,id',
+            'absensi'             => 'required|array|min:1',
+            'absensi.*.santri_id' => 'required|integer|exists:santri,id',
+            'absensi.*.status'    => 'required|in:hadir,telat,izin,sakit,alpha',
+        ]);
+
+        $tp = $request->user()->tenagaPendidik;
+        $am = \App\Models\AbsensiMengajar::with(['jadwalMengajar.mataPelajaran', 'liburPembelajaran'])
+            ->findOrFail($request->absensi_mengajar_id);
+
+        $libur  = app(\App\Services\LiburMengajarService::class);
+        $alasan = $libur->alasanTakBolehKoreksi($am, $tp);
+        if ($alasan !== null) {
+            return response()->json(['success' => false, 'message' => $alasan], 403);
+        }
+
+        $hasil = $libur->koreksiRoster($am, $request->absensi, (int) $request->user()->id);
+
+        // Hanya perubahan yang dikabarkan ke wali; aturan anti-ganda ada di service.
+        if ($hasil['berubah']->isNotEmpty()) {
+            $tgl = $am->tanggal instanceof \Carbon\Carbon
+                ? $am->tanggal->toDateString() : (string) $am->tanggal;
+            app(\App\Services\KehadiranSantriService::class)->kirimWa(
+                $hasil['berubah'],
+                $am->liburPembelajaran?->nama ?? 'Kegiatan',
+                $tgl
+            );
+        }
+
+        $rekap = \App\Models\AbsensiSantri::where('absensi_mengajar_id', $am->id)
+            ->selectRaw('status, COUNT(*) n')->groupBy('status')->pluck('n', 'status');
+
+        return response()->json([
+            'success' => true,
+            'message' => $hasil['diubah'] + $hasil['ditambah'] === 0
+                ? 'Tidak ada perubahan.'
+                : 'Koreksi tersimpan: ' . ($hasil['diubah'] + $hasil['ditambah']) . ' santri diperbarui.',
+            'data'    => [
+                'diubah'   => $hasil['diubah'],
+                'ditambah' => $hasil['ditambah'],
+                'tetap'    => $hasil['tetap'],
+                'rekap'    => $rekap,
             ],
         ]);
     }

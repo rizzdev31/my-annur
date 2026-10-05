@@ -14,7 +14,14 @@ class AbsensiSantri extends Model
         'status',     // hadir | telat | izin | sakit | alpha
         'catatan',
         'sumber',     // guru = diisi guru/piket · kegiatan = ditulis sistem saat libur pembelajaran
+        'dikoreksi_oleh',
+        'dikoreksi_pada',
     ];
+
+    protected function casts(): array
+    {
+        return ['dikoreksi_pada' => 'datetime'];
+    }
 
     // ─── Relasi ──────────────────────────────────────────────────────────────
 
@@ -26,6 +33,11 @@ class AbsensiSantri extends Model
     public function santri()
     {
         return $this->belongsTo(Santri::class);
+    }
+
+    public function dikoreksiOleh()
+    {
+        return $this->belongsTo(User::class, 'dikoreksi_oleh');
     }
 
     // ─── Scope ───────────────────────────────────────────────────────────────
