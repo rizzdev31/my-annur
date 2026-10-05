@@ -203,6 +203,7 @@ class LiburMengajarService
     {
         $hasil = [
             'sesi_total' => 0, 'sesi_dibuat' => 0, 'sesi_diperbarui' => 0, 'sesi_dilewati' => 0,
+            'sesi_tetap' => 0,
             'roster_dibuat' => 0, 'dilewati_detail' => [], 'per_tanggal' => [],
             'tanggal_libur_penuh' => [], 'tanggal_terkunci' => [], 'guru_ids' => [],
         ];
@@ -220,7 +221,8 @@ class LiburMengajarService
                 if ($this->periodeTerkunci($tgl))  { $hasil['tanggal_terkunci'][] = $tgl;  continue; }
 
                 $jadwal = $this->jadwalTerdampak($lp, $tgl);
-                $ringkas = ['tanggal' => $tgl, 'sesi' => $jadwal->count(), 'dibuat' => 0, 'diperbarui' => 0, 'dilewati' => 0];
+                $ringkas = ['tanggal' => $tgl, 'sesi' => $jadwal->count(),
+                    'dibuat' => 0, 'diperbarui' => 0, 'dilewati' => 0, 'tetap' => 0];
 
                 foreach ($jadwal as $j) {
                     $hasil['sesi_total']++;
@@ -240,10 +242,24 @@ class LiburMengajarService
 
                     $jp = $lp->hitung_jp ? (int) $j->jumlah_jp : 0;
 
+                    // Sudah diliburkan oleh kegiatan INI → tidak ada yang perlu diubah.
+                    // Tanpa cabang ini, pengisian ulang akan menimpa status_sebelum
+                    // dengan 'libur', sehingga saat kegiatan dibatalkan baris yang
+                    // tadinya DIBUAT sistem ikut "dipulihkan" menjadi libur permanen
+                    // alih-alih dihapus.
+                    if ($am && (int) $am->libur_pembelajaran_id === (int) $lp->id && $am->status === 'libur') {
+                        $hasil['sesi_tetap']++; $ringkas['tetap']++;
+                        $hasil['guru_ids'][$j->tenaga_pendidik_id] = true;
+                        $hasil['roster_dibuat'] += $this->isiRoster($am, $j, $lp, $tgl);
+                        continue;
+                    }
+
                     if ($am) {
                         $am->update([
                             'status'                => 'libur',
-                            'status_sebelum'        => $am->status_sebelum ?: $am->status,
+                            // 'libur' tidak pernah dijadikan status pemulihan.
+                            'status_sebelum'        => $am->status_sebelum
+                                ?: ($am->status === 'libur' ? null : $am->status),
                             'jp_terlaksana'         => $jp,
                             'materi'                => $lp->teksJurnal(),
                             'keterangan'            => $lp->keteranganSesi(),
