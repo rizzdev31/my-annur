@@ -13,6 +13,7 @@ class AbsensiSantri extends Model
         'santri_id',
         'status',     // hadir | telat | izin | sakit | alpha
         'catatan',
+        'sumber',     // guru = diisi guru/piket · kegiatan = ditulis sistem saat libur pembelajaran
     ];
 
     // ─── Relasi ──────────────────────────────────────────────────────────────
@@ -32,5 +33,16 @@ class AbsensiSantri extends Model
     public function scopeStatus($query, string $status)
     {
         return $query->where('status', $status);
+    }
+
+    /** Hanya kehadiran pembelajaran (bukan kehadiran kegiatan). */
+    public function scopePembelajaran($query)
+    {
+        return $query->where('sumber', 'guru');
+    }
+
+    public function scopeKegiatan($query)
+    {
+        return $query->where('sumber', 'kegiatan');
     }
 }

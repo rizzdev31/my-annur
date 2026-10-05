@@ -18,8 +18,18 @@ class IsiLiburMengajar extends Command
     public function handle(LiburMengajarService $svc): int
     {
         $tgl = $this->option('date') ?: TimezoneHelper::today()->toDateString();
+
         $n = $svc->isiLiburTanggal($tgl);
         $this->info("Auto-libur mengajar {$tgl}: {$n} sesi ditandai 'libur'.");
+
+        // Libur PEMBELAJARAN (kegiatan) yang tanggalnya tiba hari ini — saat
+        // kegiatan dibuat, tanggal masa depan sengaja belum ditulis.
+        $p = $svc->isiPembelajaranTanggal($tgl);
+        if ($p['kegiatan'] > 0) {
+            $this->info("Libur pembelajaran {$tgl}: {$p['kegiatan']} kegiatan, "
+                . "{$p['sesi']} sesi, {$p['roster']} absensi santri.");
+        }
+
         return self::SUCCESS;
     }
 }

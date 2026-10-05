@@ -59,8 +59,41 @@ class HariLiburController extends Controller
             'nonaktif'  => $semua->where('is_aktif', false)->count(),
         ];
 
+        // ── Tab "Libur Pembelajaran" (kegiatan) ──────────────────────────────
+        $pembelajaran = \App\Models\LiburPembelajaran::with(['dibuatOleh', 'kelas:id,nama,jenis'])
+            ->whereYear('tanggal', $tahun)
+            ->orderByDesc('tanggal')->get()
+            ->map(fn ($l) => [
+                'id'              => $l->id,
+                'nama'            => $l->nama,
+                'tanggal'         => $l->tanggal->format('d M Y'),
+                'tanggal_raw'     => $l->tanggal->format('Y-m-d'),
+                'tanggal_selesai' => $l->tanggal_selesai?->format('d M Y'),
+                'durasi_hari'     => $l->durasi_hari,
+                'cakupan'         => $l->cakupan,
+                'cakupan_label'   => \App\Models\LiburPembelajaran::CAKUPAN[$l->cakupan] ?? $l->cakupan,
+                'kelas'           => $l->kelas->pluck('nama')->values(),
+                'jenis_kelas'     => $l->jenis_kelas,
+                'jam'             => $l->jam_mulai && $l->jam_selesai
+                    ? substr((string) $l->jam_mulai, 0, 5) . '–' . substr((string) $l->jam_selesai, 0, 5) : null,
+                'materi_jurnal'   => $l->teksJurnal(),
+                'hitung_jp'       => $l->hitung_jp,
+                'isi_absensi_santri' => $l->isi_absensi_santri,
+                'keterangan'      => $l->keterangan,
+                'is_aktif'        => $l->is_aktif,
+                'is_dibatalkan'   => $l->is_dibatalkan,
+                'alasan_pembatalan' => $l->alasan_pembatalan,
+                'sesi_terdampak'  => $l->absensiMengajar()->count(),
+                'dibuat_oleh'     => $l->dibuatOleh?->name,
+                'belum_lewat'     => $l->tanggal_akhir->gte(\App\Services\TimezoneHelper::today()),
+            ]);
+
         return Inertia::render('Admin/SmartPayroll/HariLibur/Index', [
-            'hari_libur' => $semua,
+            'hari_libur'   => $semua,
+            'pembelajaran' => $pembelajaran,
+            'kelas_opsi'   => \App\Models\Kelas::aktif()->orderBy('jenis')->orderBy('nama')
+                ->get(['id', 'nama', 'jenis'])
+                ->map(fn ($k) => ['id' => $k->id, 'nama' => $k->nama, 'jenis' => $k->jenis]),
             'grouped'    => $semua->groupBy('sumber'),
             'summary'    => $summary,
             'tahun'      => $tahun,

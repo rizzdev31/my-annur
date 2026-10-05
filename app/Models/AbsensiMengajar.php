@@ -23,6 +23,8 @@ class AbsensiMengajar extends Model
         'sudah_buka_jurnal',   // Wajib buka link jurnal dulu
         'is_koreksi',
         'dikoreksi_oleh',
+        'libur_pembelajaran_id',  // sesi ini diliburkan oleh kegiatan tsb
+        'status_sebelum',         // status sebelum diliburkan (untuk pemulihan)
     ];
 
     protected function casts(): array
@@ -60,6 +62,11 @@ class AbsensiMengajar extends Model
     public function absensiSantri()
     {
         return $this->hasMany(AbsensiSantri::class);
+    }
+
+    public function liburPembelajaran()
+    {
+        return $this->belongsTo(LiburPembelajaran::class, 'libur_pembelajaran_id');
     }
 
     // ─── Accessor ─────────────────────────────────────────────────────────────

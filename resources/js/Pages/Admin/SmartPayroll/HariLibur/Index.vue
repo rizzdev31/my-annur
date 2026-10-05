@@ -65,7 +65,13 @@
                 <span class="ml-1 text-xs opacity-70">({{ hitungTab(t.key) }})</span>
             </button>
 
-            <template v-if="activeTab !== 'darurat'">
+            <template v-if="activeTab === 'pembelajaran'">
+                <button @click="openPbm"
+                    class="ml-auto inline-flex items-center gap-1.5 px-4 py-2 border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 text-sm font-semibold rounded-xl transition-colors">
+                    + Liburkan Pembelajaran
+                </button>
+            </template>
+            <template v-else-if="activeTab !== 'darurat'">
                 <button @click="openTambah"
                     class="ml-auto inline-flex items-center gap-1.5 px-4 py-2 border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 text-sm font-semibold rounded-xl transition-colors">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -83,8 +89,8 @@
             </p>
         </div>
 
-        <!-- Tabel -->
-        <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <!-- Tabel (libur penuh) -->
+        <div v-if="activeTab !== 'pembelajaran'" class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <table class="w-full">
                 <thead>
                     <tr class="bg-gray-50/50 border-b border-gray-100">
@@ -189,6 +195,83 @@
                     </tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- ════════════ LIBUR PEMBELAJARAN ════════════ -->
+        <div v-if="activeTab === 'pembelajaran'">
+            <div class="mb-4 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-xs text-emerald-800 leading-relaxed">
+                <b>Pembelajaran diganti kegiatan — orangnya tetap masuk.</b> Berbeda dengan libur penuh:
+                absen masuk/pulang guru, jumlah hari kerja penggajian, piket, dan kegiatan wajib
+                <b>tidak terpengaruh</b>. Jurnal sesi terisi nama kegiatan, santri tercatat hadir —
+                kecuali yang izin atau sakit, yang mengikuti Perizinan Santri &amp; Smart Health.
+                JP tetap dihitung, dan kinerja guru tidak terdampak.
+            </div>
+
+            <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-50/50 border-b border-gray-100">
+                            <th class="px-5 py-3.5 text-left text-xs font-semibold text-gray-400 uppercase">Kegiatan &amp; Tanggal</th>
+                            <th class="px-5 py-3.5 text-left text-xs font-semibold text-gray-400 uppercase hidden md:table-cell">Cakupan</th>
+                            <th class="px-5 py-3.5 text-center text-xs font-semibold text-gray-400 uppercase">Sesi</th>
+                            <th class="px-5 py-3.5 text-center text-xs font-semibold text-gray-400 uppercase">Status</th>
+                            <th class="px-5 py-3.5 text-right text-xs font-semibold text-gray-400 uppercase">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        <tr v-for="l in pembelajaran" :key="l.id"
+                            :class="['hover:bg-gray-50/40', l.is_dibatalkan ? 'opacity-60' : '']">
+                            <td class="px-5 py-3.5">
+                                <p class="text-sm font-medium text-gray-800">{{ l.nama }}</p>
+                                <p class="text-xs text-gray-400 mt-0.5">
+                                    {{ l.tanggal }}<span v-if="l.tanggal_selesai"> – {{ l.tanggal_selesai }}</span>
+                                    <span v-if="l.durasi_hari > 1"> · {{ l.durasi_hari }} hari</span>
+                                    <span v-if="l.jam"> · {{ l.jam }}</span>
+                                </p>
+                                <p v-if="l.is_dibatalkan && l.alasan_pembatalan" class="text-[11px] text-red-500 mt-0.5">
+                                    Dibatalkan: {{ l.alasan_pembatalan }}
+                                </p>
+                            </td>
+                            <td class="px-5 py-3.5 hidden md:table-cell">
+                                <span class="text-xs font-medium text-gray-700">{{ l.cakupan_label }}</span>
+                                <p v-if="l.kelas.length" class="text-[11px] text-gray-400 mt-0.5">{{ l.kelas.join(', ') }}</p>
+                                <p v-if="l.jenis_kelas && l.jenis_kelas.length" class="text-[11px] text-gray-400 mt-0.5">
+                                    Jenis: {{ l.jenis_kelas.join(', ') }}
+                                </p>
+                                <p class="text-[11px] text-gray-400 mt-0.5">
+                                    Jurnal: "{{ l.materi_jurnal }}"
+                                    <span v-if="!l.hitung_jp"> · JP tidak dihitung</span>
+                                    <span v-if="!l.isi_absensi_santri"> · tanpa absensi santri</span>
+                                </p>
+                            </td>
+                            <td class="px-5 py-3.5 text-center">
+                                <span class="text-sm font-semibold text-gray-700 tabular-nums">{{ l.sesi_terdampak }}</span>
+                            </td>
+                            <td class="px-5 py-3.5 text-center">
+                                <span v-if="l.is_dibatalkan" class="px-2 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-medium">Dibatalkan</span>
+                                <span v-else-if="l.belum_lewat" class="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-medium">Berjalan</span>
+                                <span v-else class="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium">Selesai</span>
+                            </td>
+                            <td class="px-5 py-3.5 text-right">
+                                <button v-if="!l.is_dibatalkan" @click="openBatalPbm(l)"
+                                    class="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 text-xs font-semibold hover:bg-red-100">
+                                    Batalkan
+                                </button>
+                                <span v-else class="text-xs text-gray-300">—</span>
+                            </td>
+                        </tr>
+                        <tr v-if="!pembelajaran.length">
+                            <td colspan="5" class="px-5 py-12 text-center">
+                                <p class="text-3xl mb-3">📚</p>
+                                <p class="text-sm text-gray-400">Belum ada libur pembelajaran tahun {{ tahun }}</p>
+                                <p class="text-xs text-gray-300 mt-1">
+                                    Pakai ini bila pembelajaran diliburkan karena kegiatan, tetapi guru tetap masuk.
+                                </p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- ════════════ SEMUA MODAL ════════════ -->
@@ -422,6 +505,242 @@
             </div>
         </div>
 
+        <!-- MODAL LIBURKAN PEMBELAJARAN -->
+        <div v-if="showPbm" class="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50">
+            <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-6">
+                <h3 class="text-base font-semibold text-gray-900">Liburkan Pembelajaran</h3>
+                <p class="text-xs text-gray-400 mt-0.5 mb-5">
+                    Guru &amp; santri tetap masuk; pembelajarannya diganti kegiatan.
+                    Absen harian, hari kerja penggajian, dan piket tidak terpengaruh.
+                </p>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Nama Kegiatan <span class="text-red-500">*</span></label>
+                        <input v-model="pbmForm.nama" type="text" placeholder="cth: Peringatan Maulid Nabi"
+                            class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Tanggal <span class="text-red-500">*</span></label>
+                            <input v-model="pbmForm.tanggal" type="date"
+                                class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                                s/d <span class="text-gray-400 font-normal">(opsional)</span>
+                            </label>
+                            <input v-model="pbmForm.tanggal_selesai" type="date" :min="pbmForm.tanggal"
+                                class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                        </div>
+                    </div>
+
+                    <!-- Cakupan -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Cakupan <span class="text-red-500">*</span></label>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button v-for="c in CAKUPAN_OPSI" :key="c.val"
+                                type="button" @click="pbmForm.cakupan = c.val"
+                                :class="['px-3 py-2 rounded-xl text-xs font-semibold border transition-colors',
+                                    pbmForm.cakupan === c.val ? 'bg-emerald-600 text-white border-emerald-600'
+                                        : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300']">
+                                {{ c.label }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Pilih kelas -->
+                    <div v-if="pbmForm.cakupan === 'kelas'">
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                            Kelas yang diliburkan <span class="text-gray-400 font-normal">({{ pbmForm.kelas_ids.length }} dipilih)</span>
+                        </label>
+                        <div class="flex flex-wrap gap-1.5 p-3 rounded-xl border border-gray-200 bg-gray-50/50 max-h-44 overflow-y-auto">
+                            <button v-for="k in kelas_opsi" :key="k.id" type="button"
+                                @click="togglePbmArray('kelas_ids', k.id)"
+                                :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+                                    pbmForm.kelas_ids.includes(k.id) ? 'bg-emerald-600 text-white border-emerald-600'
+                                        : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300']">
+                                {{ k.nama }} <span class="opacity-60">&middot; {{ k.jenis }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Pilih sesi -->
+                    <div v-if="pbmForm.cakupan === 'sesi'">
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                            Sesi pada {{ pbmForm.tanggal }} <span class="text-gray-400 font-normal">({{ pbmForm.jadwal_ids.length }} dipilih)</span>
+                        </label>
+                        <p v-if="sesiLoading" class="text-xs text-gray-400">Memuat sesi&hellip;</p>
+                        <p v-else-if="!sesiOpsi.length" class="text-xs text-gray-400">
+                            Tidak ada jadwal aktif pada tanggal itu.
+                        </p>
+                        <div v-else class="rounded-xl border border-gray-200 divide-y divide-gray-50 max-h-56 overflow-y-auto">
+                            <label v-for="o in sesiOpsi" :key="o.id"
+                                class="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" :checked="pbmForm.jadwal_ids.includes(o.id)"
+                                    @change="togglePbmArray('jadwal_ids', o.id)" class="w-4 h-4 accent-emerald-600" />
+                                <span class="flex-1 min-w-0">
+                                    <span class="block text-xs font-medium text-gray-800 truncate">
+                                        {{ o.jam }} &middot; {{ o.kelas }} &mdash; {{ o.mapel }}
+                                    </span>
+                                    <span class="block text-[11px] text-gray-400 truncate">{{ o.guru }} &middot; {{ o.jp }} JP &middot; {{ o.jenis_kelas }}</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Penyaring tambahan -->
+                    <div v-if="pbmForm.cakupan !== 'sesi'" class="grid md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                                Batasi jenis kelas <span class="text-gray-400 font-normal">(opsional)</span>
+                            </label>
+                            <div class="flex flex-wrap gap-1.5">
+                                <button v-for="j in JENIS_KELAS" :key="j.val" type="button"
+                                    @click="togglePbmArray('jenis_kelas', j.val)"
+                                    :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+                                        pbmForm.jenis_kelas.includes(j.val) ? 'bg-indigo-600 text-white border-indigo-600'
+                                            : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300']">
+                                    {{ j.label }}
+                                </button>
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">
+                                Kosong = semua jenis. Kegiatan sekolah biasanya tidak meliburkan halaqoh.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                                Batasi jam <span class="text-gray-400 font-normal">(opsional)</span>
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <input v-model="pbmForm.jam_mulai" type="time"
+                                    class="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                                <span class="text-gray-400 text-sm">&ndash;</span>
+                                <input v-model="pbmForm.jam_selesai" type="time"
+                                    class="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">
+                                Hanya sesi yang beririsan jam ini yang diliburkan.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                            Teks jurnal <span class="text-gray-400 font-normal">(default: nama kegiatan)</span>
+                        </label>
+                        <input v-model="pbmForm.materi_jurnal" type="text" :placeholder="pbmForm.nama || 'Nama kegiatan'"
+                            class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-2">
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-gray-200 cursor-pointer">
+                            <input v-model="pbmForm.hitung_jp" type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600" />
+                            <span class="text-xs text-gray-600 leading-snug">
+                                <b class="text-gray-800">JP tetap dihitung</b><br />Gaji guru jalan seperti libur biasa.
+                            </span>
+                        </label>
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-gray-200 cursor-pointer">
+                            <input v-model="pbmForm.isi_absensi_santri" type="checkbox" class="mt-0.5 w-4 h-4 accent-emerald-600" />
+                            <span class="text-xs text-gray-600 leading-snug">
+                                <b class="text-gray-800">Isi absensi santri</b><br />Hadir semua; izin &amp; sakit mengikuti datanya.
+                            </span>
+                        </label>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                            Keterangan <span class="text-gray-400 font-normal">(opsional)</span>
+                        </label>
+                        <textarea v-model="pbmForm.keterangan" rows="2"
+                            class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500"></textarea>
+                    </div>
+
+                    <!-- Pratinjau wajib -->
+                    <div class="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <p class="text-xs font-semibold text-amber-800">Pratinjau dampak</p>
+                            <button type="button" @click="hitungPratinjau" :disabled="!pbmValid || pbmPreviewing"
+                                class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50">
+                                {{ pbmPreviewing ? 'Menghitung&hellip;' : 'Hitung' }}
+                            </button>
+                        </div>
+                        <p v-if="pbmError" class="text-xs text-red-600 mt-2">{{ pbmError }}</p>
+                        <template v-else-if="pbmPratinjau">
+                            <ul class="text-xs text-amber-900 mt-2 space-y-1">
+                                <li>&middot; <b>{{ pbmPratinjau.sesi_dibuat + pbmPratinjau.sesi_diperbarui }}</b> sesi akan diliburkan
+                                    (dari {{ pbmPratinjau.sesi_total }} sesi terdampak)</li>
+                                <li>&middot; <b>{{ pbmPratinjau.roster_dibuat }}</b> absensi santri akan terisi</li>
+                                <li v-if="pbmPratinjau.sesi_dilewati">&middot; <b>{{ pbmPratinjau.sesi_dilewati }}</b> sesi dilewati &mdash; sudah diajar guru</li>
+                                <li v-if="pbmPratinjau.tanggal_libur_penuh.length">&middot; dilewati karena sudah libur penuh:
+                                    {{ pbmPratinjau.tanggal_libur_penuh.join(', ') }}</li>
+                                <li v-if="pbmPratinjau.tanggal_terkunci.length" class="text-red-600">&middot; ditolak karena periode penggajian terkunci:
+                                    {{ pbmPratinjau.tanggal_terkunci.join(', ') }}</li>
+                            </ul>
+                            <div v-if="pbmPratinjau.dilewati_detail.length" class="mt-2 pt-2 border-t border-amber-200">
+                                <p class="text-[11px] font-semibold text-amber-800 mb-1">Sesi yang dilewati:</p>
+                                <p v-for="(d, i) in pbmPratinjau.dilewati_detail.slice(0, 6)" :key="i"
+                                    class="text-[11px] text-amber-700">
+                                    {{ d.tanggal }} &middot; {{ d.kelas }} &mdash; {{ d.mapel }} ({{ d.guru }}, {{ d.status }})
+                                </p>
+                                <p v-if="pbmPratinjau.dilewati_detail.length > 6" class="text-[11px] text-amber-600 mt-0.5">
+                                    +{{ pbmPratinjau.dilewati_detail.length - 6 }} lainnya
+                                </p>
+                            </div>
+                            <p v-if="!pbmPratinjau.sesi_total" class="text-xs text-red-600 mt-2">
+                                Tidak ada sesi yang cocok dengan pilihan ini &mdash; periksa tanggal, cakupan, dan jamnya.
+                            </p>
+                        </template>
+                        <p v-else class="text-[11px] text-amber-700 mt-1.5">
+                            Hitung dulu untuk melihat jumlah sesi &amp; absensi yang akan ditulis sebelum menyimpan.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mt-5">
+                    <button @click="closePbm" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">
+                        Batal
+                    </button>
+                    <button @click="simpanPbm" :disabled="!pbmValid || pbmSaving || !pbmPratinjau"
+                        class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50">
+                        {{ pbmSaving ? 'Menyimpan&hellip;' : 'Liburkan' }}
+                    </button>
+                </div>
+                <p v-if="!pbmPratinjau" class="text-[11px] text-gray-400 text-center mt-2">
+                    Hitung pratinjau dulu sebelum menyimpan.
+                </p>
+            </div>
+        </div>
+
+        <!-- MODAL BATALKAN KEGIATAN -->
+        <div v-if="batalPbmTarget" class="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50">
+            <div class="bg-white rounded-2xl w-full max-w-md p-6">
+                <h3 class="text-base font-semibold text-gray-900 mb-1">Batalkan "{{ batalPbmTarget.nama }}"?</h3>
+                <p class="text-xs text-gray-500 leading-relaxed mb-4">
+                    Sesi yang dibuat kegiatan ini akan dihapus, status yang diubah dipulihkan,
+                    dan absensi santri bersumber kegiatan dibersihkan.
+                    <b class="text-gray-700">Catatan yang diisi guru tidak disentuh.</b>
+                </p>
+                <label v-if="batalPbmTarget.durasi_hari > 1" class="flex items-start gap-2.5 mb-3 cursor-pointer">
+                    <input v-model="batalPbmSisanya" type="checkbox" class="mt-0.5 w-4 h-4 accent-amber-600" />
+                    <span class="text-xs text-gray-600 leading-snug">
+                        Hanya batalkan <b>sisa tanggal ke depan</b> &mdash; hari yang sudah berjalan dibiarkan.
+                    </span>
+                </label>
+                <input v-model="batalPbmAlasan" type="text" placeholder="Alasan (opsional)"
+                    class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm mb-4 focus:outline-none focus:border-indigo-500" />
+                <div class="flex gap-2">
+                    <button @click="batalPbmTarget = null" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">
+                        Tutup
+                    </button>
+                    <button @click="kirimBatalPbm" class="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold">
+                        Ya, Batalkan
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- MODAL IMPORT NASIONAL -->
         <div v-if="showImport" class="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50">
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md" @click.stop>
@@ -472,7 +791,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AppConfirm from '@/Components/AppConfirm.vue'
@@ -484,6 +803,8 @@ const props = defineProps({
     summary: { type: Object, default: () => ({}) },
     tahun: { type: Number, default: new Date().getFullYear() },
     nasional_tersedia: { type: Array, default: () => [] },
+    pembelajaran: { type: Array, default: () => [] },
+    kelas_opsi: { type: Array, default: () => [] },
 })
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -530,6 +851,8 @@ const tabs = [
     { key: 'nasional', label: 'Nasional', icon: '🇮🇩' },
     { key: 'pesantren', label: 'Pesantren', icon: '🕌' },
     { key: 'darurat', label: 'Darurat', icon: '🚨' },
+    // Libur pembelajaran: tabel & aturannya sendiri, bukan baris hari_libur.
+    { key: 'pembelajaran', label: 'Libur Pembelajaran', icon: '📚' },
 ]
 
 // ── Computed ──────────────────────────────────────────────────────────────
@@ -551,7 +874,144 @@ const nasionalTersediaValid = computed(() =>
 )
 
 function hitungTab(key) {
+    if (key === 'pembelajaran') return props.pembelajaran.length
     return props.hari_libur.filter(h => h.sumber === key).length
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// LIBUR PEMBELAJARAN (kegiatan)
+// ══════════════════════════════════════════════════════════════════════════
+const showPbm = ref(false)
+const pbmSaving = ref(false)
+const pbmPreviewing = ref(false)
+const pbmPratinjau = ref(null)      // hasil hitung dari server
+const pbmError = ref('')
+const sesiOpsi = ref([])
+const sesiLoading = ref(false)
+
+const hariIniStr = new Date().toISOString().slice(0, 10)
+const blankPbm = () => ({
+    nama: '', tanggal: hariIniStr, tanggal_selesai: '',
+    cakupan: 'semua', kelas_ids: [], jadwal_ids: [], jenis_kelas: [],
+    jam_mulai: '', jam_selesai: '',
+    materi_jurnal: '', hitung_jp: true, isi_absensi_santri: true, keterangan: '',
+})
+const pbmForm = reactive(blankPbm())
+
+const CAKUPAN_OPSI = [
+    { val: 'semua', label: 'Semua pembelajaran' },
+    { val: 'kelas', label: 'Kelas terpilih' },
+    { val: 'sesi', label: 'Sesi terpilih' },
+]
+
+const JENIS_KELAS = [
+    { val: 'sekolah', label: 'Sekolah' },
+    { val: 'pesantren', label: 'Pesantren' },
+    { val: 'tahfidz', label: 'Tahfidz' },
+    { val: 'tahsin', label: 'Tahsin' },
+]
+
+const pbmValid = computed(() => {
+    if (!pbmForm.nama.trim() || !pbmForm.tanggal) return false
+    if (pbmForm.cakupan === 'kelas' && !pbmForm.kelas_ids.length) return false
+    if (pbmForm.cakupan === 'sesi' && !pbmForm.jadwal_ids.length) return false
+    if (!!pbmForm.jam_mulai !== !!pbmForm.jam_selesai) return false
+    return true
+})
+
+function openPbm() {
+    Object.assign(pbmForm, blankPbm())
+    pbmPratinjau.value = null; pbmError.value = ''; sesiOpsi.value = []
+    showPbm.value = true
+}
+function closePbm() { showPbm.value = false }
+
+function togglePbmArray(arr, val) {
+    const i = pbmForm[arr].indexOf(val)
+    i >= 0 ? pbmForm[arr].splice(i, 1) : pbmForm[arr].push(val)
+    pbmPratinjau.value = null       // pilihan berubah → pratinjau basi
+}
+
+// Pratinjau wajib dihitung ulang setiap isian berubah, supaya angka yang
+// dilihat admin selalu milik pilihan yang sedang tampil.
+watch(() => [pbmForm.nama, pbmForm.tanggal, pbmForm.tanggal_selesai, pbmForm.cakupan,
+    pbmForm.jam_mulai, pbmForm.jam_selesai, pbmForm.hitung_jp, pbmForm.isi_absensi_santri],
+    () => { pbmPratinjau.value = null })
+
+watch(() => [pbmForm.tanggal, pbmForm.cakupan], async () => {
+    if (pbmForm.cakupan !== 'sesi' || !pbmForm.tanggal) return
+    sesiLoading.value = true
+    try {
+        const res = await fetch(route('admin.smart-payroll.hari-libur.pembelajaran.opsi-sesi'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json', Accept: 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content ?? '',
+            },
+            body: JSON.stringify({ tanggal: pbmForm.tanggal }),
+        })
+        const j = await res.json()
+        sesiOpsi.value = j?.data?.sesi ?? []
+        pbmForm.jadwal_ids = pbmForm.jadwal_ids.filter(id => sesiOpsi.value.some(o => o.id === id))
+    } catch (_) { sesiOpsi.value = [] } finally { sesiLoading.value = false }
+})
+
+function muatanPbm() {
+    return {
+        ...pbmForm,
+        tanggal_selesai: pbmForm.tanggal_selesai || null,
+        jam_mulai: pbmForm.jam_mulai || null,
+        jam_selesai: pbmForm.jam_selesai || null,
+        materi_jurnal: pbmForm.materi_jurnal || null,
+        keterangan: pbmForm.keterangan || null,
+        kelas_ids: pbmForm.cakupan === 'kelas' ? pbmForm.kelas_ids : [],
+        jadwal_ids: pbmForm.cakupan === 'sesi' ? pbmForm.jadwal_ids : [],
+    }
+}
+
+async function hitungPratinjau() {
+    if (!pbmValid.value) return
+    pbmPreviewing.value = true; pbmError.value = ''; pbmPratinjau.value = null
+    try {
+        const res = await fetch(route('admin.smart-payroll.hari-libur.pembelajaran.preview'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json', Accept: 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content ?? '',
+            },
+            body: JSON.stringify(muatanPbm()),
+        })
+        const j = await res.json()
+        if (!res.ok || !j.success) { pbmError.value = j.message || 'Gagal menghitung pratinjau.'; return }
+        pbmPratinjau.value = j.data
+    } catch (e) {
+        pbmError.value = 'Gagal menghubungi server.'
+    } finally { pbmPreviewing.value = false }
+}
+
+function simpanPbm() {
+    if (!pbmValid.value) return
+    pbmSaving.value = true
+    router.post(route('admin.smart-payroll.hari-libur.pembelajaran.store'), muatanPbm(), {
+        preserveScroll: true,
+        onSuccess: () => { closePbm(); activeTab.value = 'pembelajaran' },
+        onFinish: () => pbmSaving.value = false,
+    })
+}
+
+// ── Pembatalan kegiatan ───────────────────────────────────────────────────
+const batalPbmTarget = ref(null)
+const batalPbmAlasan = ref('')
+const batalPbmSisanya = ref(false)
+
+function openBatalPbm(l) {
+    batalPbmTarget.value = l; batalPbmAlasan.value = ''; batalPbmSisanya.value = false
+}
+function kirimBatalPbm() {
+    if (!batalPbmTarget.value) return
+    router.post(route('admin.smart-payroll.hari-libur.pembelajaran.batalkan', batalPbmTarget.value.id),
+        { alasan: batalPbmAlasan.value, hanya_sisanya: batalPbmSisanya.value },
+        { preserveScroll: true, onSuccess: () => batalPbmTarget.value = null })
 }
 
 // ── Filter tahun ────────────────────────────────────────────────────────────

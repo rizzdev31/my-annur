@@ -228,7 +228,12 @@ class PiketService
                 'ringkasan' => ['libur' => true, 'tidak_terlaksana' => 0, 'perlu_isi' => 0, 'berlangsung' => 0]];
         }
 
-        $jadwal = $svc->jadwalTanggal($today)->filter(fn ($j) => $j->kelas_id);
+        // Sesi yang diliburkan karena kegiatan tidak perlu diisi piket.
+        $diliburkan = app(LiburMengajarService::class)->petaPembelajaran($today);
+
+        $jadwal = $svc->jadwalTanggal($today)
+            ->filter(fn ($j) => $j->kelas_id)
+            ->reject(fn ($j) => isset($diliburkan[$j->id]));
 
         $absensi = AbsensiMengajar::whereDate('tanggal', $today)
             ->whereIn('jadwal_mengajar_id', $jadwal->pluck('id'))

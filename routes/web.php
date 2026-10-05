@@ -34,6 +34,7 @@ use App\Http\Controllers\Superadmin\AbsensiKegiatanController;
 // ── Smart Payroll — Izin & Libur ──────────────────────────────────────────────
 use App\Http\Controllers\Superadmin\PengajuanIzinController;
 use App\Http\Controllers\Superadmin\HariLiburController;
+use App\Http\Controllers\Superadmin\LiburPembelajaranController;
 use App\Http\Controllers\Superadmin\LiburTendikController;
 use App\Http\Controllers\Superadmin\InventarisController;
 use App\Http\Controllers\Superadmin\PerizinanController;
@@ -413,6 +414,17 @@ Route::prefix('admin')
                 [HariLiburController::class, 'toggleAktif'])->name('hari-libur.toggle');
             Route::post('hari-libur/{hariLibur}/batalkan',
                 [HariLiburController::class, 'batalkanDarurat'])->name('hari-libur.batalkan');
+            // Libur PEMBELAJARAN (kegiatan) — tab di halaman yang sama, karena itu
+            // rutenya ikut prefix hari-libur (modul RBAC `kalender_libur`).
+            Route::post('hari-libur/pembelajaran/preview',
+                [LiburPembelajaranController::class, 'preview'])->name('hari-libur.pembelajaran.preview');
+            Route::post('hari-libur/pembelajaran/opsi-sesi',
+                [LiburPembelajaranController::class, 'opsiSesi'])->name('hari-libur.pembelajaran.opsi-sesi');
+            Route::post('hari-libur/pembelajaran',
+                [LiburPembelajaranController::class, 'store'])->name('hari-libur.pembelajaran.store');
+            Route::post('hari-libur/pembelajaran/{liburPembelajaran}/batalkan',
+                [LiburPembelajaranController::class, 'batalkan'])->name('hari-libur.pembelajaran.batalkan');
+
             Route::resource('hari-libur', HariLiburController::class)
                 ->except(['create', 'edit', 'show']);
 

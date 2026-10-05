@@ -899,6 +899,11 @@ class AbsensiApiController extends Controller
             ->first();
         $isHariLibur = $hariLibur !== null;
 
+        // A2. Libur PEMBELAJARAN (kegiatan) — hanya sebagian sesi, jadi dipetakan
+        // per jadwal. Guru tetap masuk kerja; yang diliburkan pembelajarannya.
+        $liburPbm = app(\App\Services\LiburMengajarService::class)
+            ->petaPembelajaran($today->toDateString());
+
         // B. Guru punya pengajuan izin yang disetujui hari ini?
         $izinAktif = \App\Models\PengajuanIzin::where('tenaga_pendidik_id', $tp->id)
             ->where('status', 'disetujui')
@@ -931,6 +936,10 @@ class AbsensiApiController extends Controller
             $jamSelesaiC = Carbon::parse(
                 $today->toDateString().' '.$jdwl->jam_selesai, TimezoneHelper::TZ
             );
+
+            // Sesi yang diliburkan kegiatan sudah/akan dicatat LiburMengajarService
+            // (saat kegiatan dibuat, atau oleh command harian) — jangan ditulis di sini.
+            if (isset($liburPbm[$jdwl->id])) continue;
 
             if ($isHariLibur) {
                 // Hari libur: SEMUA jadwal langsung di-mark 'libur' (tidak perlu tunggu jam selesai)
@@ -970,10 +979,16 @@ class AbsensiApiController extends Controller
         // ── 5. Map jadwal → response ──────────────────────────────────────────
         $data = $jadwalList->map(function ($jadwal)
             use ($absensiAda, $today, $sekarang, $jadwalList, $sudahAbsenIds,
-                 $isHariLibur, $isIzinGuru, $isDinasLuar, $hariLibur, $izinAktif)
+                 $isHariLibur, $isIzinGuru, $isDinasLuar, $hariLibur, $izinAktif, $liburPbm)
         {
             $absensi  = $absensiAda->get($jadwal->id);
             $durMenit = $jadwal->jumlah_jp * 45;
+
+            // Libur sesi ini = libur sehari penuh ATAU pembelajarannya diganti kegiatan.
+            // Semua gerbang aksi di bawah memakai ini, bukan $isHariLibur, supaya
+            // kelas yang diliburkan kegiatan tidak bisa diabsen seperti biasa.
+            $lpSesi      = $liburPbm[$jadwal->id] ?? null;
+            $isLiburSesi = $isHariLibur || $lpSesi !== null;
 
             $jamMulai   = Carbon::parse($today->toDateString().' '.$jadwal->jam_mulai, TimezoneHelper::TZ);
             $jamSelesai = Carbon::parse($today->toDateString().' '.$jadwal->jam_selesai, TimezoneHelper::TZ);
@@ -992,13 +1007,13 @@ class AbsensiApiController extends Controller
             );
 
             // boleh_absen: hanya untuk kondisi normal (bukan libur, bukan izin)
-            $bolehAbsen = !$isHariLibur && !$isIzinGuru
+            $bolehAbsen = !$isLiburSesi && !$isIzinGuru
                 && $dalamWindow && $semuaLebihAwalSudahAbsen && $absensi === null;
 
             // boleh_konfirmasi_izin: saat guru punya izin resmi & jadwal belum dikonfirmasi
             // (berlaku selama jam mengajar belum selesai, atau sudah selesai tapi record masih izin-auto)
             $bolehKonfirmasiIzin = $isIzinGuru && $absensi === null
-                && $semuaLebihAwalSudahAbsen && !$isHariLibur;
+                && $semuaLebihAwalSudahAbsen && !$isLiburSesi;
 
             // Sesi BELUM benar-benar diajar (belum ada absen, atau baru tanda izin,
             // atau pengganti ditunjuk tapi belum mengajar) → masih boleh diatur.
@@ -1010,19 +1025,19 @@ class AbsensiApiController extends Controller
 
             // Saat izin (jenis apa pun, TERMASUK dinas luar): boleh tunjuk/ganti pengganti
             // agar kelas tak kosong — selama sesi belum benar-benar diajar.
-            $bolehTunjukPengganti = $isIzinGuru && !$isHariLibur && $sesiBelumDiajar;
+            $bolehTunjukPengganti = $isIzinGuru && !$isLiburSesi && $sesiBelumDiajar;
 
             // Override "ajar sendiri" meski izin — berlaku untuk SEMUA jenis izin,
             // termasuk dinas luar (keputusan 23 Sep 2026: dinas kerap selesai sebelum
             // jam mengajar, dan tanpa ini JP-nya hangus percuma — 14 sesi / 28 JP).
             // Penjaganya tetap: dalam jam pelajaran & sesi belum benar-benar diajar,
             // ditambah foto + jurnal + absensi santri seperti absen biasa.
-            $bolehOverrideIzin = $isIzinGuru && !$isHariLibur
+            $bolehOverrideIzin = $isIzinGuru && !$isLiburSesi
                 && $dalamWindow && $sesiBelumDiajar;
 
             // Pesan blokir untuk kondisi normal
             $pesanBlokir = null;
-            if (!$isHariLibur && !$isIzinGuru && $absensi === null && !$bolehAbsen) {
+            if (!$isLiburSesi && !$isIzinGuru && $absensi === null && !$bolehAbsen) {
                 if (!$semuaLebihAwalSudahAbsen) {
                     $belum = $jadwalLebihAwal->filter(fn($j) => !in_array($j->id, $sudahAbsenIds))->first();
                     $pesanBlokir = 'Selesaikan absensi '.($belum?->mataPelajaran?->nama ?? 'jadwal sebelumnya')
@@ -1049,8 +1064,12 @@ class AbsensiApiController extends Controller
                 'durasi_menit'   => $durMenit,
 
                 // ── Flags konteks hari ini ───────────────────────────────────
-                'is_hari_libur'  => $isHariLibur,
-                'nama_libur'     => $isHariLibur ? ($hariLibur->nama ?? 'Hari Libur') : null,
+                'is_hari_libur'  => $isLiburSesi,
+                'nama_libur'     => $isHariLibur
+                    ? ($hariLibur->nama ?? 'Hari Libur')
+                    : $lpSesi?->nama,
+                // Pembelajaran diganti kegiatan: guru tetap masuk, sesinya tidak diabsen.
+                'libur_kegiatan' => $lpSesi !== null,
                 'is_izin_guru'   => $isIzinGuru,
                 'info_izin'      => $isIzinGuru ? ($izinAktif->jenisPengajuan?->nama ?? 'Izin') : null,
 

@@ -183,7 +183,13 @@ class SesiMengajarService
         if (!$abaikanTanggalBerlaku && $tanggal < self::BERLAKU_MULAI) return $dibuat;
         if ($this->hariLibur($tanggal)) return $dibuat;
 
+        // Sesi yang diliburkan karena kegiatan (libur pembelajaran) bukan kelalaian
+        // guru — LiburMengajarService yang mencatatnya. Tanpa penyaring ini sesi itu
+        // sempat tercap 'tidak_terlaksana' di papan piket & PWA sebelum dikoreksi.
+        $diliburkan = app(LiburMengajarService::class)->petaPembelajaran($tanggal);
+
         $jadwal = $this->jadwalTanggal($tanggal, $tenagaPendidikId)
+            ->reject(fn ($j) => isset($diliburkan[$j->id]))
             ->filter(fn ($j) => $j->jam_selesai
                 && $now->gt(KebijakanMengajar::batasAbsenSesi($tanggal, (string) $j->jam_selesai)));
         if ($jadwal->isEmpty()) return $dibuat;

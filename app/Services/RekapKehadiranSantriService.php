@@ -68,6 +68,10 @@ class RekapKehadiranSantriService
                 'a.santri_id',
                 'a.status',
                 'a.absensi_mengajar_id as sesi_id',
+                // 'guru' = diisi guru/piket · 'kegiatan' = ditulis sistem saat
+                // pembelajaran diliburkan karena kegiatan. Dipisah di rekap karena
+                // kehadiran kegiatan bukan kehadiran pembelajaran.
+                'a.sumber',
                 'm.tanggal',
                 'j.kelas_id',
                 'k.nama as kelas_nama',
@@ -108,6 +112,14 @@ class RekapKehadiranSantriService
         $persen        = $total   > 0 ? round($ikut / $total * 100, 1) : 0.0;
         $persenEfektif = $efektif > 0 ? round($ikut / $efektif * 100, 1) : 0.0;
 
+        // Kehadiran saat kegiatan (pembelajaran diliburkan) ditulis sistem, bukan
+        // diisi guru. Angka utama tetap memuatnya — santri memang hadir — tetapi
+        // porsinya dilaporkan terpisah supaya persentase pembelajaran murni tetap
+        // bisa dibaca dan tidak terlihat naik tanpa sebab.
+        $pbm       = $baris->where('sumber', '!=', 'kegiatan');
+        $kegiatan  = $total - $pbm->count();
+        $ikutPbm   = $pbm->whereIn('status', ['hadir', 'telat'])->count();
+
         return [
             'hadir' => $hadir,
             'telat' => $telat,
@@ -119,6 +131,10 @@ class RekapKehadiranSantriService
             'persen'         => $persen,
             'persen_efektif' => $persenEfektif,
             'kategori'       => $this->kategori($persen, $persenEfektif, $total),
+            // Rincian sumber
+            'sesi_kegiatan'      => $kegiatan,
+            'total_pembelajaran' => $pbm->count(),
+            'persen_pembelajaran'=> $pbm->count() > 0 ? round($ikutPbm / $pbm->count() * 100, 1) : 0.0,
         ];
     }
 

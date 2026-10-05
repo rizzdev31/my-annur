@@ -128,6 +128,16 @@
                 </div>
             </div>
 
+            <!-- Kehadiran saat pembelajaran diliburkan karena kegiatan ditulis
+                 sistem, bukan diisi guru. Tanpa catatan ini angka di atas bisa
+                 terlihat naik tanpa sebab. -->
+            <p v-if="ringkasan.sesi_kegiatan" class="text-center text-[11px] text-gray-500 mb-5 -mt-3">
+                Termasuk <b>{{ ringkasan.sesi_kegiatan }}</b> catatan dari hari kegiatan
+                (pembelajaran diliburkan). Kehadiran pembelajaran saja:
+                <b>{{ fmt(ringkasan.persen_pembelajaran) }}%</b> dari
+                {{ ringkasan.total_pembelajaran }} sesi.
+            </p>
+
             <div class="flex flex-wrap justify-center gap-2 mb-6 text-xs">
                 <span v-for="s in statusRingkas" :key="s.k"
                     class="px-2.5 py-1 rounded-full border font-semibold" :class="s.cls">

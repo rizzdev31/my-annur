@@ -235,9 +235,13 @@ class RekapMengajarQuranService
             $libur[$tgl] ??= (bool) $this->sesi->hariLibur($tgl);
             if ($libur[$tgl]) continue;
             $hari = TimezoneHelper::namaHariDB($d);
+            // Libur pembelajaran hanya mengenai sebagian sesi, jadi diperiksa
+            // per jadwal — bukan per tanggal seperti libur penuh di atas.
+            $diliburkan = app(LiburMengajarService::class)->petaPembelajaran($tgl);
 
             foreach ($jadwal as $j) {
                 if (strtolower($j->hari) !== $hari) continue;
+                if (isset($diliburkan[$j->id])) continue;
                 if ($j->created_at && $j->created_at->toDateString() > $tgl) continue;
                 if (isset($tercatat[$j->id . '|' . $tgl])) continue;
                 // Belum lewat batas → masih mungkin diisi, belum dihitung.
