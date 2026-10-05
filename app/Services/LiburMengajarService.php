@@ -423,10 +423,19 @@ class LiburMengajarService
         return $n;
     }
 
-    /** Periode penggajian tanggal itu sudah dikunci/difinalisasi? */
+    /**
+     * Tanggal itu tidak boleh diubah lagi?
+     *
+     * Dua sebab, dan yang kedua justru yang nyata terjadi: periode bisa masih
+     * berstatus draft tetapi SLIP GAJINYA SUDAH TERBIT. Mengubah JP sesi di
+     * periode itu membuat slip yang sudah dipegang guru tidak cocok lagi dengan
+     * datanya — persoalan yang sama pernah muncul pada tarif laporan pengganti.
+     */
     private function periodeTerkunci(string $tanggal): bool
     {
         $periode = PeriodePenggajian::untukTanggal($tanggal);
-        return $periode && $periode->dikunci_pada !== null;
+        if (!$periode) return false;
+
+        return $periode->dikunci_pada !== null || $periode->penggajian()->exists();
     }
 }

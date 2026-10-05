@@ -136,8 +136,8 @@ class LiburPembelajaranController extends Controller
         if ($hasil['roster_dibuat'])   $pesan .= ", {$hasil['roster_dibuat']} absensi santri terisi";
         if ($hasil['sesi_dilewati'])   $pesan .= ", {$hasil['sesi_dilewati']} sesi dilewati (sudah diajar)";
         if ($hasil['tanggal_terkunci']) {
-            $pesan .= '. Dilewati karena periode penggajian terkunci: '
-                . implode(', ', $hasil['tanggal_terkunci']);
+            $pesan .= '. Dilewati karena periode penggajiannya sudah terkunci atau slipnya '
+                . 'sudah terbit: ' . implode(', ', $hasil['tanggal_terkunci']);
         }
         if ($lp->tanggal_akhir->gt(TimezoneHelper::today())) {
             $pesan .= '. Tanggal yang belum tiba akan diisi otomatis setiap hari.';

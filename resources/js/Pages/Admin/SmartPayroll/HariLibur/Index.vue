@@ -675,8 +675,8 @@
                                 <li v-if="pbmPratinjau.sesi_dilewati">&middot; <b>{{ pbmPratinjau.sesi_dilewati }}</b> sesi dilewati &mdash; sudah diajar guru</li>
                                 <li v-if="pbmPratinjau.tanggal_libur_penuh.length">&middot; dilewati karena sudah libur penuh:
                                     {{ pbmPratinjau.tanggal_libur_penuh.join(', ') }}</li>
-                                <li v-if="pbmPratinjau.tanggal_terkunci.length" class="text-red-600">&middot; ditolak karena periode penggajian terkunci:
-                                    {{ pbmPratinjau.tanggal_terkunci.join(', ') }}</li>
+                                <li v-if="pbmPratinjau.tanggal_terkunci.length" class="text-red-600">&middot; ditolak &mdash; periode penggajiannya sudah terkunci
+                                    atau slipnya sudah terbit: {{ pbmPratinjau.tanggal_terkunci.join(', ') }}</li>
                             </ul>
                             <div v-if="pbmPratinjau.dilewati_detail.length" class="mt-2 pt-2 border-t border-amber-200">
                                 <p class="text-[11px] font-semibold text-amber-800 mb-1">Sesi yang dilewati:</p>
