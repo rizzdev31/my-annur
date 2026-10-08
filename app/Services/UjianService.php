@@ -412,6 +412,88 @@ class UjianService
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // Inval penjaga (oleh admin)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Penjaga berhalangan → alihkan sesi ini ke guru lain.
+     *
+     * Memakai mekanisme inval yang sudah ada (`digantikan_oleh` pada absensi
+     * mengajar), sehingga: penjaga asli menjadi netral di kinerja, penggantinya
+     * yang dinilai, dan VAKASI ikut pindah ke pengganti dengan nominal penjaga
+     * yang sama (lihat UjianSesi::penjagaAktual()).
+     *
+     * Berbeda dengan inval mengajar biasa, di sini TIDAK disyaratkan adanya izin
+     * resmi: keputusan Bapak 8 Okt 2026 menyerahkan inval ujian sepenuhnya ke
+     * admin — penjaga bisa berhalangan mendadak tanpa pernah mengajukan izin.
+     * Alasannya wajib dicatat sebagai gantinya.
+     *
+     * @throws \DomainException
+     */
+    public function invalPenjaga(UjianSesi $sesi, int $penggantiId, ?string $alasan = null): AbsensiMengajar
+    {
+        if (!$sesi->penjaga_id) {
+            throw new \DomainException('Sesi ini belum punya penjaga — tunjuk penjaga dulu, bukan inval.');
+        }
+        if ($penggantiId === (int) $sesi->penjaga_id) {
+            throw new \DomainException('Pengganti harus guru lain, bukan penjaga yang sama.');
+        }
+        $jadwal = $sesi->jadwal;
+        if (!$jadwal) {
+            throw new \DomainException('Jadwal sesi ini belum terbentuk.');
+        }
+        if ($sesi->vakasi_dibayar) {
+            throw new \DomainException('Vakasi sesi ini sudah dibayar — tidak dapat dialihkan lagi.');
+        }
+        // Penggantinya harus benar-benar bebas: aturannya sama dengan daftar
+        // kandidat, supaya pilihan yang tampil tidak pernah ditolak di sini.
+        if ($tolak = $this->alasanTakBolehJaga($sesi, $penggantiId)) {
+            throw new \DomainException($tolak);
+        }
+
+        $tanggal = $sesi->tanggal->toDateString();
+        $ada = $sesi->absensi();
+
+        // Sesi yang sudah benar-benar dijaga tidak boleh dialihkan — vakasinya
+        // sudah menjadi hak orang yang menjaganya.
+        if ($ada && in_array($ada->status, ['terlaksana', 'hadir'], true)) {
+            throw new \DomainException('Sesi ini sudah diabsen penjaganya — tidak dapat dialihkan.');
+        }
+        if ($ada && $ada->status === 'pengganti' && (int) $ada->jp_terlaksana > 0) {
+            throw new \DomainException('Pengganti sebelumnya sudah menjaga sesi ini.');
+        }
+
+        return DB::transaction(function () use ($sesi, $jadwal, $penggantiId, $tanggal, $alasan) {
+            return AbsensiMengajar::updateOrCreate(
+                ['jadwal_mengajar_id' => $jadwal->id, 'tanggal' => $tanggal],
+                [
+                    'tenaga_pendidik_id' => $sesi->penjaga_id,   // jejak penjaga asli
+                    'digantikan_oleh'    => $penggantiId,        // yang menjaga & dibayar
+                    'status'             => 'pengganti',
+                    'jp_terlaksana'      => 0,                   // belum dijaga → belum dibayar
+                    // Tanpa syarat izin, alasan inilah satu-satunya jejak keputusan admin.
+                    'keterangan'         => 'Inval penjaga ujian'
+                        . ($alasan ? ' — ' . $alasan : ''),
+                ]
+            );
+        });
+    }
+
+    /** Batalkan inval: sesi kembali menjadi tanggung jawab penjaga yang ditunjuk. */
+    public function batalkanInval(UjianSesi $sesi): void
+    {
+        $am = $sesi->absensi();
+        if (!$am || !$am->digantikan_oleh) {
+            throw new \DomainException('Sesi ini tidak sedang di-inval.');
+        }
+        if ($am->status === 'pengganti' && (int) $am->jp_terlaksana > 0) {
+            throw new \DomainException('Pengganti sudah menjaga sesi ini — pembatalan akan menghapus bukti jaganya.');
+        }
+
+        $am->delete();   // kembali ke keadaan "belum ada catatan"; roster ikut terhapus
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // Pembantu
     // ══════════════════════════════════════════════════════════════════════
 

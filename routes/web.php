@@ -59,6 +59,7 @@ use App\Http\Controllers\Superadmin\SettingJenisPengajuanController;
 
 // ── Smart Education ───────────────────────────────────────────────────────────
 use App\Http\Controllers\Superadmin\Education\SantriController;
+use App\Http\Controllers\Superadmin\Education\UjianController;
 use App\Http\Controllers\Superadmin\Education\KelasController;
 use App\Http\Controllers\Superadmin\Education\JurnalMengajarController;
 use App\Http\Controllers\Superadmin\Education\LaporanController as EducationLaporanController;
@@ -603,6 +604,23 @@ Route::prefix('admin')
         // ╚══════════════════════════════════════════════════════════════════╝
 
         Route::prefix('smart-education')->name('smart-education.')->group(function () {
+
+            // ── Ujian Sekolah ─────────────────────────────────────────────
+            // Inval penjaga HANYA dari sini (keputusan 8 Okt 2026): tugas jaga
+            // diatur panitia, guru tidak mencari penggantinya sendiri.
+            Route::get('ujian',   [UjianController::class, 'index'])->name('ujian.index');
+            Route::post('ujian',  [UjianController::class, 'store'])->name('ujian.store');
+            Route::post('ujian/{ujian}/batalkan',      [UjianController::class, 'batalkan'])->name('ujian.batalkan');
+            Route::post('ujian/{ujian}/sinkron-libur', [UjianController::class, 'sinkronLibur'])->name('ujian.sinkron-libur');
+            Route::post('ujian/{ujian}/sesi',          [UjianController::class, 'storeSesi'])->name('ujian.sesi.store');
+            Route::post('ujian/{ujian}/sesi/generate', [UjianController::class, 'generateSesi'])->name('ujian.sesi.generate');
+            Route::post('ujian/{ujian}/sebar-penjaga', [UjianController::class, 'sebarPenjaga'])->name('ujian.sebar-penjaga');
+            Route::delete('ujian/sesi/{ujianSesi}',    [UjianController::class, 'destroySesi'])->name('ujian.sesi.destroy');
+            Route::get('ujian/sesi/{ujianSesi}/calon-penjaga', [UjianController::class, 'calonPenjaga'])->name('ujian.sesi.calon-penjaga');
+            Route::post('ujian/sesi/{ujianSesi}/penjaga',       [UjianController::class, 'tunjukPenjaga'])->name('ujian.sesi.penjaga');
+            Route::post('ujian/sesi/{ujianSesi}/lepas-penjaga', [UjianController::class, 'lepasPenjaga'])->name('ujian.sesi.lepas-penjaga');
+            Route::post('ujian/sesi/{ujianSesi}/inval',         [UjianController::class, 'inval'])->name('ujian.sesi.inval');
+            Route::post('ujian/sesi/{ujianSesi}/batal-inval',   [UjianController::class, 'batalInval'])->name('ujian.sesi.batal-inval');
 
             // ── Santri ────────────────────────────────────────────────────
             Route::get('santri',             [SantriController::class, 'index'])->name('santri.index');

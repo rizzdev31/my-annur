@@ -182,6 +182,12 @@ return [
             'beranda'  => 'admin.smart-education.santri.index',
             'prefix'   => ['admin.smart-education.santri'],
         ],
+        'se_ujian' => [
+            'nama'     => 'Ujian Sekolah',
+            'kategori' => 'Smart Education',
+            'beranda'  => 'admin.smart-education.ujian.index',
+            'prefix'   => ['admin.smart-education.ujian'],
+        ],
         'se_kelas' => [
             'nama'     => 'Kelas',
             'kategori' => 'Smart Education',

@@ -917,7 +917,7 @@ class AbsensiApiController extends Controller
         $isDinasLuar = $isIzinGuru && $izinAktif->getStatusAbsensi() === 'dinas_luar';
 
         // ── 2. Ambil jadwal hari ini ─────────────────────────────────────────
-        $jadwalList = \App\Models\JadwalMengajar::with(['mataPelajaran', 'tahunAjaran'])
+        $jadwalList = \App\Models\JadwalMengajar::with(['mataPelajaran', 'tahunAjaran', 'ujianSesi.ujian:id,nama', 'ujianSesi.kelas:id,nama'])
             ->where('tenaga_pendidik_id', $tp->id)
             ->where('hari', $namaHari)
             ->where('is_aktif', true)
@@ -1072,6 +1072,11 @@ class AbsensiApiController extends Controller
                     : $lpSesi?->nama,
                 // Pembelajaran diganti kegiatan: guru tetap masuk, sesinya tidak diabsen.
                 'libur_kegiatan' => $lpSesi !== null,
+
+                // ── Sesi UJIAN (tugas jaga, bukan mengajar) ──────────────────
+                'is_ujian'       => $jadwal->ujian_sesi_id !== null,
+                'nama_ujian'     => $jadwal->ujianSesi?->ujian?->nama,
+                'ruangan_ujian'  => $jadwal->ujianSesi?->ruangan,
                 'is_izin_guru'   => $isIzinGuru,
                 'info_izin'      => $isIzinGuru ? ($izinAktif->jenisPengajuan?->nama ?? 'Izin') : null,
 

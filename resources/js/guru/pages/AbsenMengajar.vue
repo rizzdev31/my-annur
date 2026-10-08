@@ -195,6 +195,15 @@ async function kirim() {
                                 </span>
                             </div>
 
+                            <!-- Sesi UJIAN: tugas menjaga, bukan mengajar. Alurnya sama
+                                 (absen + absensi santri), hanya istilahnya berbeda. -->
+                            <p v-if="j.is_ujian" class="mt-1.5">
+                                <span class="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full">
+                                    📝 Jaga Ujian{{ j.nama_ujian ? ': ' + j.nama_ujian : '' }}
+                                </span>
+                                <span v-if="j.ruangan_ujian" class="ml-1 text-[10px] text-gray-400">Ruang {{ j.ruangan_ujian }}</span>
+                            </p>
+
                             <!-- Pembelajaran diliburkan karena kegiatan: guru tetap masuk,
                                  sesinya tidak diabsen, tapi roster santrinya boleh dibetulkan. -->
                             <div v-else-if="j.libur_kegiatan" class="mt-2">
