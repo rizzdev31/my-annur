@@ -243,6 +243,12 @@ return [
             'beranda'  => 'admin.smart-education.laporan.kehadiran-santri',
             'prefix'   => ['admin.smart-education.laporan.kehadiran-santri'],
         ],
+        'se_laporan_ujian' => [
+            'nama'     => 'Laporan Pembelajaran: Ujian Sekolah',
+            'kategori' => 'Smart Education',
+            'beranda'  => 'admin.smart-education.laporan.ujian',
+            'prefix'   => ['admin.smart-education.laporan.ujian'],
+        ],
         'se_laporan_mengajar_quran' => [
             'nama'     => 'Laporan Pembelajaran: Mengajar Tahfidz & Tahsin',
             'kategori' => 'Smart Education',

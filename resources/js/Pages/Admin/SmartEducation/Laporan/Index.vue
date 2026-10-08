@@ -123,6 +123,9 @@
                                     <p class="font-semibold text-gray-800 leading-tight">{{ r.guru }}</p>
                                     <p class="text-[11px] text-gray-400 tabular-nums">NIP. {{ r.nip }}</p>
                                     <p class="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#2E3160]/[0.08] text-[#2E3160]">{{ r.mapel }}</p>
+                                    <p v-if="r.is_ujian" class="inline-block ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700">
+                                        UJIAN<span v-if="r.ujian"> · {{ r.ujian }}</span>
+                                    </p>
                                     <p v-if="!kelas" class="text-[10px] text-gray-400 mt-0.5">Kelas: {{ r.kelas }}</p>
                                 </td>
                                 <td class="px-3 py-2.5 text-gray-700 leading-snug">{{ r.deskripsi || '—' }}</td>

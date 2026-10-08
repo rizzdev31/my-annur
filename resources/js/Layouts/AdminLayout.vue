@@ -196,13 +196,18 @@
                     <SidebarSubItem :href="route('admin.smart-education.materi-tahsin.index')" label="Materi" />
                     <SidebarSubItem :href="route('admin.smart-education.tahsin-monitoring.index')" label="Monitoring" />
                 </SidebarGroup>
-                <SidebarGroup v-if="boleh('se_laporan')" icon="chart" label="Laporan"
+                <!-- Kode 'se_laporan' sudah dipecah granular (migration expand);
+                     grup & tiap tautannya kini memakai kode barunya masing-masing,
+                     kalau tidak pemegang hak granular tak pernah melihat menu ini. -->
+                <SidebarGroup v-if="boleh('se_laporan_index','se_laporan_kehadiran_santri','se_laporan_ujian','se_laporan_mengajar_quran','se_laporan_tahfidz','se_laporan_tahsin')"
+                    icon="chart" label="Laporan"
                     :active="isActive('admin.smart-education.laporan')" :collapsed="!sidebarOpen">
-                    <SidebarSubItem :href="route('admin.smart-education.laporan.index')" label="Jurnal Pembelajaran" />
-                    <SidebarSubItem :href="route('admin.smart-education.laporan.kehadiran-santri')" label="Kehadiran Santri" />
-                    <SidebarSubItem :href="route('admin.smart-education.laporan.mengajar-quran')" label="Mengajar Tahfidz & Tahsin" />
-                    <SidebarSubItem :href="route('admin.smart-education.laporan.tahfidz')" label="Tahfidz" />
-                    <SidebarSubItem :href="route('admin.smart-education.laporan.tahsin')" label="Tahsin" />
+                    <SidebarSubItem v-if="boleh('se_laporan_index')" :href="route('admin.smart-education.laporan.index')" label="Jurnal Pembelajaran" />
+                    <SidebarSubItem v-if="boleh('se_laporan_kehadiran_santri')" :href="route('admin.smart-education.laporan.kehadiran-santri')" label="Kehadiran Santri" />
+                    <SidebarSubItem v-if="boleh('se_laporan_ujian')" :href="route('admin.smart-education.laporan.ujian')" label="Ujian Sekolah" />
+                    <SidebarSubItem v-if="boleh('se_laporan_mengajar_quran')" :href="route('admin.smart-education.laporan.mengajar-quran')" label="Mengajar Tahfidz & Tahsin" />
+                    <SidebarSubItem v-if="boleh('se_laporan_tahfidz')" :href="route('admin.smart-education.laporan.tahfidz')" label="Tahfidz" />
+                    <SidebarSubItem v-if="boleh('se_laporan_tahsin')" :href="route('admin.smart-education.laporan.tahsin')" label="Tahsin" />
                 </SidebarGroup>
 
                 <!-- ══ KESISWAAN ═══════════════════════════════════════════ -->
@@ -699,6 +704,7 @@ const menuLinks = computed(() => {
         { label: 'Ekstrakurikuler', href: r('admin.smart-education.ekstrakurikuler.index'), icon: 'academic-cap' },
         { label: 'Jurnal Mengajar', href: r('admin.smart-education.jurnal.index'), icon: 'clipboard' },
         { label: 'Ujian Sekolah', href: r('admin.smart-education.ujian.index'), icon: 'clipboard' },
+        { label: 'Laporan Ujian Sekolah', href: r('admin.smart-education.laporan.ujian'), icon: 'clipboard' },
         { label: 'Sinkron Hafalan Tahfidz', href: r('admin.smart-education.tahfidz.sinkron-hafalan'), icon: 'book' },
         { label: 'Laporan Pembelajaran', href: r('admin.smart-education.laporan.index'), icon: 'chart' },
         { label: 'Laporan Kehadiran Santri', href: r('admin.smart-education.laporan.kehadiran-santri'), icon: 'chart' },

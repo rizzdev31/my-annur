@@ -30,6 +30,7 @@ class JurnalMengajarController extends Controller
             ->with([
                 'jadwalMengajar.mataPelajaran',
                 'jadwalMengajar.kelasRel',
+                'jadwalMengajar.ujianSesi.ujian:id,nama',
                 'tenagaPendidik.user',
                 'absensiSantri.santri:id,nip,nama_lengkap',
             ])
@@ -45,6 +46,11 @@ class JurnalMengajarController extends Controller
                     'kelas'              => $a->jadwalMengajar?->kelasRel?->nama
                                             ?? $a->jadwalMengajar?->kelas ?? '—',
                     'materi'             => $a->materi,
+                    // Sesi ujian tercatat di jurnal kelas masing-masing, dengan
+                    // penanda agar tidak terbaca sebagai pembelajaran biasa.
+                    'is_ujian'           => $a->jadwalMengajar?->ujian_sesi_id !== null,
+                    'ujian'              => $a->jadwalMengajar?->ujianSesi?->ujian?->nama,
+                    'ruangan_ujian'      => $a->jadwalMengajar?->ujianSesi?->ruangan,
                     'jp'                 => $a->jp_terlaksana,
                     'status_sesi'        => $a->status,
                     'foto_url'           => $a->foto_mengajar ? asset('storage/'.$a->foto_mengajar) : null,

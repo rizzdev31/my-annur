@@ -98,6 +98,7 @@ class LaporanController extends Controller
                 ->with([
                     'jadwalMengajar.mataPelajaran',
                     'jadwalMengajar.kelasRel:id,nama',
+                    'jadwalMengajar.ujianSesi.ujian:id,nama',
                     'tenagaPendidik.user',
                     'absensiSantri.santri:id,nama_lengkap',
                 ])
@@ -116,7 +117,12 @@ class LaporanController extends Controller
                     'nip'       => $a->tenagaPendidik?->nip ?? '—',
                     'kelas'     => $a->jadwalMengajar?->kelasRel?->nama ?? $a->jadwalMengajar?->kelas ?? '—',
                     'mapel'     => $a->jadwalMengajar?->mataPelajaran?->nama ?? '—',
-                    'deskripsi' => $a->materi ?: '—',
+                    // Sesi ujian ikut tercatat di jurnal kelas, tetapi harus
+                    // terbaca sebagai UJIAN — bukan seperti pembelajaran biasa.
+                    'is_ujian'  => $a->jadwalMengajar?->ujian_sesi_id !== null,
+                    'ujian'     => $a->jadwalMengajar?->ujianSesi?->ujian?->nama,
+                    'deskripsi' => $a->materi ?: ($a->jadwalMengajar?->ujian_sesi_id
+                        ? 'Ujian: ' . ($a->jadwalMengajar?->ujianSesi?->ujian?->nama ?? '—') : '—'),
                     'kehadiran' => [
                         'total'      => $a->absensiSantri->count(),
                         'hadir'      => $byStatus->get('hadir')?->count() ?? 0,
@@ -196,6 +202,189 @@ class LaporanController extends Controller
     // ══════════════════════════════════════════════════════════════════════
     // LAPORAN TAHFIDZ — per kelas (semua santri) / per anak (1 santri)
     // ══════════════════════════════════════════════════════════════════════
+    /**
+     * LAPORAN UJIAN SEKOLAH — mandiri, tiga sudut pandang sekaligus:
+     *   1. per sesi    : siapa menjaga apa, dijaga atau tidak, kehadiran santrinya
+     *   2. per penjaga : beban & vakasi (untuk dicocokkan ke slip)
+     *   3. per kelas   : berapa sesi dan rata-rata kehadiran santrinya
+     *
+     * Sumber angkanya satu: `ujian_sesi` + catatan absensinya. Penjaga AKTUAL
+     * (pengganti bila di-inval) yang dipakai, sama dengan dasar pembayaran
+     * vakasi — supaya laporan dan slip tidak pernah bercerita berbeda.
+     */
+    public function ujian(Request $request)
+    {
+        $mode = $request->mode === 'tanggal' ? 'tanggal' : 'paket';
+
+        $paketList = \App\Models\Ujian::orderByDesc('tanggal_mulai')->get()
+            ->map(fn ($u) => [
+                'id'     => $u->id,
+                'nama'   => $u->nama,
+                'label'  => $u->nama . ' · ' . $u->tanggal_mulai->locale('id')->isoFormat('D MMM YYYY'),
+                'mulai'  => $u->tanggal_mulai->toDateString(),
+                'sampai' => $u->tanggal_akhir->toDateString(),
+                'dibatalkan' => $u->is_dibatalkan,
+            ])->values();
+
+        $paket = null;
+        if ($mode === 'paket') {
+            $paket = $request->ujian_id
+                ? \App\Models\Ujian::find($request->ujian_id)
+                : \App\Models\Ujian::orderByDesc('tanggal_mulai')->first();
+            $dari   = $paket?->tanggal_mulai ?? Carbon::today()->startOfMonth();
+            $sampai = $paket?->tanggal_akhir ?? Carbon::today();
+            $label  = $paket?->nama ?? 'Belum ada paket ujian';
+        } else {
+            $dari   = Carbon::parse($request->dari   ?: Carbon::today()->startOfMonth()->toDateString());
+            $sampai = Carbon::parse($request->sampai ?: Carbon::today()->toDateString());
+            if ($sampai->lt($dari)) [$dari, $sampai] = [$sampai, $dari];
+            $label  = $dari->locale('id')->isoFormat('D MMM YYYY') . ' – ' . $sampai->locale('id')->isoFormat('D MMM YYYY');
+        }
+
+        $q = \App\Models\UjianSesi::with([
+                'ujian:id,nama,dibatalkan_pada', 'kelas:id,nama', 'mataPelajaran:id,nama',
+                'penjaga.user:id,name', 'jadwal:id,ujian_sesi_id,jumlah_jp',
+            ])
+            ->whereBetween('tanggal', [$dari->toDateString(), $sampai->toDateString()]);
+
+        if ($paket)                 $q->where('ujian_id', $paket->id);
+        if ($request->kelas_id)     $q->where('kelas_id', (int) $request->kelas_id);
+        if ($request->penjaga_id)   $q->where('penjaga_id', (int) $request->penjaga_id);
+
+        $sesi = $q->orderBy('tanggal')->orderBy('jam_mulai')->get();
+
+        // Absensi & roster santri diambil sekali untuk semua sesi (bukan per baris).
+        $idJadwal = $sesi->map(fn ($s) => $s->jadwal?->id)->filter()->values();
+        $absensi  = AbsensiMengajar::with(['digantikanOleh.user:id,name', 'absensiSantri'])
+            ->whereIn('jadwal_mengajar_id', $idJadwal)
+            ->whereBetween('tanggal', [$dari->toDateString(), $sampai->toDateString()])
+            ->get()->keyBy(fn ($a) => $a->jadwal_mengajar_id . '|' . $a->tanggal->toDateString());
+
+        $rows = $sesi->map(function ($s) use ($absensi) {
+            $am = $s->jadwal
+                ? $absensi->get($s->jadwal->id . '|' . $s->tanggal->toDateString())
+                : null;
+
+            $byStatus = $am ? $am->absensiSantri->groupBy('status') : collect();
+            $n = fn ($st) => $byStatus->get($st)?->count() ?? 0;
+            $total = $am ? $am->absensiSantri->count() : 0;
+            $ikut  = $n('hadir') + $n('telat');
+
+            $invalNama = $am?->digantikanOleh?->user?->name;
+            $dijaga = $am && in_array($am->status, ['terlaksana', 'hadir', 'pengganti'], true)
+                && ((int) $am->jp_terlaksana > 0 || $am->jam_mulai_aktual);
+
+            [$kode, $statusLabel] = match (true) {
+                !$s->penjaga_id                         => ['belum_penjaga', 'Belum ada penjaga'],
+                $dijaga && $invalNama                   => ['dijaga_inval', 'Dijaga (inval)'],
+                $dijaga                                 => ['dijaga', 'Dijaga'],
+                $am && $am->status === 'tidak_terlaksana'=> ['tidak_dijaga', 'Tidak dijaga'],
+                $invalNama                              => ['inval', 'Dialihkan (inval)'],
+                default                                 => ['ditugaskan', 'Ditugaskan'],
+            };
+
+            // Vakasi mengikuti penjaga AKTUAL — dasar yang sama dengan payroll.
+            $penerima = $invalNama ?: $s->penjaga?->user?->name;
+
+            return [
+                'id'            => $s->id,
+                'ujian'         => $s->ujian?->nama ?? '—',
+                'tanggal'       => $s->tanggal->toDateString(),
+                'tanggal_label' => $s->tanggal->locale('id')->isoFormat('dd, D MMM YYYY'),
+                'jam'           => $s->jamLabel(),
+                'kelas'         => $s->kelas?->nama ?? '—',
+                'kelas_id'      => $s->kelas_id,
+                'mapel'         => $s->mataPelajaran?->nama ?? '—',
+                'ruangan'       => $s->ruangan,
+                'jp'            => (int) $s->jumlah_jp,
+                'penjaga'       => $s->penjaga?->user?->name ?? '—',
+                'penjaga_id'    => $s->penjaga_id,
+                'inval_oleh'    => $invalNama,
+                'penerima_vakasi' => $penerima,
+                'status'        => $kode,
+                'status_label'  => $statusLabel,
+                'dijaga'        => $dijaga,
+                'jam_mulai_aktual' => $am?->jam_mulai_aktual ? substr($am->jam_mulai_aktual, 0, 5) : null,
+                'materi'        => $am?->materi,
+                'santri'        => [
+                    'total' => $total, 'hadir' => $n('hadir'), 'telat' => $n('telat'),
+                    'izin'  => $n('izin'), 'sakit' => $n('sakit'), 'alpha' => $n('alpha'),
+                    'terisi'=> $total > 0,
+                    'persen'=> $total > 0 ? round($ikut / $total * 100, 1) : null,
+                ],
+                'vakasi'         => (float) $s->nominal_vakasi,
+                'vakasi_dibayar' => (bool) $s->vakasi_dibayar,
+                // Vakasi hanya hak sesi yang benar-benar dijaga.
+                'vakasi_berhak'  => $dijaga ? (float) $s->nominal_vakasi : 0.0,
+            ];
+        })->values();
+
+        // ── Rekap per penjaga (yang BERHAK dibayar) ──────────────────────────
+        $perPenjaga = $rows->filter(fn ($r) => $r['penerima_vakasi'])
+            ->groupBy('penerima_vakasi')
+            ->map(fn ($g, $nama) => [
+                'penjaga'      => $nama,
+                'sesi'         => $g->count(),
+                'dijaga'       => $g->where('dijaga', true)->count(),
+                'tidak_dijaga' => $g->where('status', 'tidak_dijaga')->count(),
+                'belum'        => $g->whereIn('status', ['ditugaskan', 'inval'])->count(),
+                'vakasi'       => (float) $g->sum('vakasi_berhak'),
+                'sudah_dibayar'=> $g->where('vakasi_dibayar', true)->count(),
+            ])->sortByDesc('vakasi')->values();
+
+        // ── Rekap per kelas ──────────────────────────────────────────────────
+        $perKelas = $rows->groupBy('kelas')->map(function ($g, $nama) {
+            $terisi = $g->where('santri.terisi', true);
+            return [
+                'kelas'   => $nama,
+                'sesi'    => $g->count(),
+                'dijaga'  => $g->where('dijaga', true)->count(),
+                'santri'  => (int) $g->max(fn ($r) => $r['santri']['total']),
+                'alpha'   => (int) $g->sum(fn ($r) => $r['santri']['alpha']),
+                'persen'  => $terisi->isNotEmpty()
+                    ? round($terisi->avg(fn ($r) => $r['santri']['persen']), 1) : null,
+            ];
+        })->sortBy('kelas')->values();
+
+        $sesiTerisi = $rows->where('santri.terisi', true);
+
+        return Inertia::render('Admin/SmartEducation/Laporan/Ujian', array_merge($this->kopPayload(), [
+            'mode'       => $mode,
+            'label'      => $label,
+            'paketList'  => $paketList,
+            'paketId'    => $paket?->id,
+            'rows'       => $rows,
+            'perPenjaga' => $perPenjaga,
+            'perKelas'   => $perKelas,
+            'filter'     => [
+                'ujian_id'   => $paket?->id,
+                'kelas_id'   => $request->kelas_id ? (int) $request->kelas_id : null,
+                'penjaga_id' => $request->penjaga_id ? (int) $request->penjaga_id : null,
+                'dari'       => $dari->toDateString(),
+                'sampai'     => $sampai->toDateString(),
+            ],
+            'ringkasan'  => [
+                'sesi'          => $rows->count(),
+                'dijaga'        => $rows->where('dijaga', true)->count(),
+                'tidak_dijaga'  => $rows->where('status', 'tidak_dijaga')->count(),
+                'belum_penjaga' => $rows->where('status', 'belum_penjaga')->count(),
+                'penjaga'       => $rows->pluck('penerima_vakasi')->filter()->unique()->count(),
+                'vakasi'        => (float) $rows->sum('vakasi_berhak'),
+                'roster_kosong' => $rows->where('dijaga', true)->where('santri.terisi', false)->count(),
+                'persen_santri' => $sesiTerisi->isNotEmpty()
+                    ? round($sesiTerisi->avg(fn ($r) => $r['santri']['persen']), 1) : null,
+                'alpha'         => (int) $rows->sum(fn ($r) => $r['santri']['alpha']),
+            ],
+            'periodeLabel' => $dari->locale('id')->isoFormat('D MMM YYYY')
+                . ' – ' . $sampai->locale('id')->isoFormat('D MMM YYYY'),
+            'tanggalCetak' => Carbon::today()->locale('id')->isoFormat('D MMMM YYYY'),
+            'kelasOpsi'    => Kelas::aktif()->reguler()->orderBy('nama')->get(['id', 'nama']),
+            'guruOpsi'     => TenagaPendidik::where('is_aktif', true)->with('user:id,name')->get()
+                ->map(fn ($g) => ['id' => $g->id, 'nama' => $g->user?->name])
+                ->filter(fn ($g) => !empty($g['nama']))->sortBy('nama')->values(),
+        ]));
+    }
+
     public function tahfidz(Request $request)
     {
         $kelasId  = $request->kelas_id ? (int) $request->kelas_id : null;

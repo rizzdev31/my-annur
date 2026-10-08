@@ -91,6 +91,12 @@
                         <td class="px-5 py-3.5">
                             <p class="text-sm font-medium text-gray-800">{{ s.kelas }}</p>
                             <p class="text-xs text-gray-400">{{ s.mapel }}</p>
+                            <!-- Sesi ujian tetap tercatat di jurnal kelas, tapi
+                                 jangan terbaca sebagai pembelajaran biasa. -->
+                            <p v-if="s.is_ujian" class="inline-flex items-center gap-1 mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700">
+                                UJIAN<span v-if="s.ujian" class="font-semibold">· {{ s.ujian }}</span>
+                                <span v-if="s.ruangan_ujian" class="font-normal opacity-70">· R.{{ s.ruangan_ujian }}</span>
+                            </p>
                         </td>
                         <td class="px-5 py-3.5 hidden md:table-cell">
                             <span class="text-sm text-gray-600">{{ s.guru }}</span>
