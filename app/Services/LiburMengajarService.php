@@ -354,6 +354,7 @@ class LiburMengajarService
                     ]);
                     $hasil['sesi_dipulihkan']++;
                 } else {
+                    app(KoreksiPembelajaranService::class)->lepaskanJejakAbsensi($am->id);
                     $am->delete();          // roster lain ikut terhapus (cascade)
                     $hasil['sesi_dihapus']++;
                 }

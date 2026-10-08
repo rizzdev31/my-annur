@@ -490,6 +490,7 @@ class UjianService
             throw new \DomainException('Pengganti sudah menjaga sesi ini — pembatalan akan menghapus bukti jaganya.');
         }
 
+        app(KoreksiPembelajaranService::class)->lepaskanJejakAbsensi($am->id);
         $am->delete();   // kembali ke keadaan "belum ada catatan"; roster ikut terhapus
     }
 
@@ -535,8 +536,11 @@ class UjianService
         $jadwal = $sesi->jadwal;
         if (!$jadwal) return 0;
 
-        $n = AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->count();
-        AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->delete();  // roster ikut (cascade)
+        $idAbsensi = AbsensiMengajar::where('jadwal_mengajar_id', $jadwal->id)->pluck('id');
+        $n = $idAbsensi->count();
+        // Log koreksi ber-FK tanpa cascade — rujukannya dilepas dulu.
+        app(KoreksiPembelajaranService::class)->lepaskanJejakAbsensi($idAbsensi->all());
+        AbsensiMengajar::whereIn('id', $idAbsensi)->delete();  // roster ikut (cascade)
         $jadwal->delete();
 
         return $n;

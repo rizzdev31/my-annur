@@ -395,7 +395,8 @@ class KoreksiPembelajaranService
                 'tenaga_pendidik_id'  => $am->tenaga_pendidik_id,
                 'tanggal'             => $am->tanggal,
                 'tipe_absensi'        => 'mengajar',
-                'absensi_mengajar_id' => $am->id,
+                // Barisnya akan dihapus, jadi jangan dirujuk (FK tanpa cascade).
+                'absensi_mengajar_id' => null,
                 'field_dikoreksi'     => 'digantikan_oleh',
                 'nilai_lama'          => (string) $am->digantikan_oleh,
                 'nilai_baru'          => 'dibatalkan',
@@ -406,6 +407,7 @@ class KoreksiPembelajaranService
 
             // Dihapus, bukan diubah: tanpa catatan, sesi kembali ke keadaan semula
             // dan scheduler akan menilainya ulang apa adanya.
+            $this->lepaskanJejakAbsensi($am->id);
             $am->delete();
         });
     }
@@ -434,6 +436,22 @@ class KoreksiPembelajaranService
     // ══════════════════════════════════════════════════════════════════════
     // Pembantu
     // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Lepaskan rujukan log koreksi dari baris absensi yang akan DIHAPUS.
+     *
+     * `koreksi_absensi.absensi_mengajar_id` ber-foreign key tanpa cascade, jadi
+     * menghapus baris absensi yang pernah dikoreksi akan gagal di tengah jalan
+     * (terjadi nyata saat membatalkan inval). Jejaknya sendiri harus tetap ada —
+     * itu riwayat keputusan — sehingga rujukannya dikosongkan, bukan dihapus.
+     */
+    public function lepaskanJejakAbsensi(int|array $absensiIds): void
+    {
+        $ids = array_filter((array) $absensiIds);
+        if (!$ids) return;
+
+        KoreksiAbsensi::whereIn('absensi_mengajar_id', $ids)->update(['absensi_mengajar_id' => null]);
+    }
 
     /** Guru sedang izin resmi pada tanggal itu? (dipakai UI inval cepat) */
     public function izinAktif(int $tpId, string $tanggal): ?PengajuanIzin
