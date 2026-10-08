@@ -234,8 +234,16 @@ class TahsinApiController extends Controller
         $tersimpan = AbsensiSantri::where('absensi_mengajar_id', $am->id)
             ->pluck('status', 'santri_id')->all();
 
+        // Jendela koreksi: absensi kelas Quran pun boleh diperbaiki guru selama
+        // sesinya masih dalam jendela JP (satu aturan dengan kelas reguler).
+        $koreksi = app(\App\Services\KoreksiPembelajaranService::class);
+        $alasanEdit = $koreksi->alasanGuruTakBolehEdit($am, $tp);
+
         return response()->json(['success' => true, 'data' => array_merge([
             'absensi_mengajar_id' => $am->id,
+            'boleh_edit'          => $alasanEdit === null,
+            'alasan_edit'         => $alasanEdit,
+            'batas_edit'          => $koreksi->batasEdit($am)?->format('H:i'),
             'kelas' => $am->jadwalMengajar?->kelasRel?->nama ?? '—',
             'level' => $am->jadwalMengajar?->kelasRel?->level_tahsin,
         ], $this->rosterPayload($kelasId, $am->tanggal?->toDateString(), $tersimpan))]);
@@ -316,6 +324,21 @@ class TahsinApiController extends Controller
             'boleh_isi'           => true,
             'boleh_nilai'         => true,
             'boleh_tasnif'        => true,
+            // Jendela koreksi kehadiran: sesi yang sudah diabsen masih boleh
+            // diperbaiki selama belum lewat batas JP (satu aturan dengan kelas
+            // reguler). Sesudahnya terkunci, admin yang mengoreksi.
+            'boleh_edit'          => $am !== null
+                && app(\App\Services\KoreksiPembelajaranService::class)
+                    ->alasanGuruTakBolehEdit($am, $tp) === null,
+            'alasan_edit'         => $am !== null
+                ? app(\App\Services\KoreksiPembelajaranService::class)->alasanGuruTakBolehEdit($am, $tp)
+                : null,
+            'batas_edit'          => $am !== null
+                ? app(\App\Services\KoreksiPembelajaranService::class)->batasEdit($am)?->format('H:i')
+                : null,
+            'absensi_tersimpan'   => $am !== null
+                ? AbsensiSantri::where('absensi_mengajar_id', $am->id)->pluck('status', 'santri_id')
+                : [],
         ], $this->rosterPayload($jadwal->kelas_id))]);
     }
 

@@ -25,6 +25,7 @@ async function load() {
         info.value = res.data.data ?? res.data
         santri.value = info.value.santri ?? []
         santri.value.forEach((x) => { if (!absenStatus[x.santri_id]) absenStatus[x.santri_id] = x.status || 'hadir' })
+        catatAbsenAwal()
     } catch (e) {
         error.value = e.response?.data?.message || 'Gagal memuat roster.'
     } finally { loading.value = false }
@@ -191,6 +192,41 @@ const bannerInval = computed(() => {
 // Urutan ketuk: Hadir → Telat → Izin → Sakit → Alpha. Izin & sakit umumnya
 // sudah terisi otomatis dari Perizinan Santri / Smart Health, jadi guru jarang
 // perlu memutar sampai ke sana.
+
+// ── Koreksi kehadiran dalam jendela JP ─────────────────────────────────────
+const editAbsenBuka = ref(false)
+const editAbsenSaving = ref(false)
+const absenAwal = reactive({})
+
+const adaPerubahanAbsen = computed(() =>
+    santri.value.some((x) => absenStatus[x.santri_id] !== absenAwal[x.santri_id]))
+
+function catatAbsenAwal() {
+    santri.value.forEach((x) => {
+        const tersimpan = info.value?.absensi_tersimpan?.[x.santri_id]
+        if (tersimpan) absenStatus[x.santri_id] = tersimpan
+        absenAwal[x.santri_id] = absenStatus[x.santri_id]
+    })
+}
+
+async function simpanKoreksiAbsen() {
+    editAbsenSaving.value = true
+    try {
+        const res = await api.post('/absensi/mengajar/koreksi-absensi', {
+            absensi_mengajar_id: info.value.absensi_mengajar_id,
+            absensi: santri.value
+                .filter((x) => absenStatus[x.santri_id] !== absenAwal[x.santri_id])
+                .map((x) => ({ santri_id: x.santri_id, status: absenStatus[x.santri_id] })),
+        })
+        msg.value = { ok: true, text: res.data?.message || 'Kehadiran diperbarui.' }
+        editAbsenBuka.value = false
+        await load()
+    } catch (e) {
+        msg.value = { ok: false, text: e.response?.data?.message || 'Gagal memperbarui kehadiran.' }
+        await load()
+    } finally { editAbsenSaving.value = false }
+}
+
 const SEQ_ABSEN = ['hadir', 'telat', 'izin', 'sakit', 'alpha']
 const cycleAbsen = (id) => {
     const i = SEQ_ABSEN.indexOf(absenStatus[id])
@@ -244,6 +280,44 @@ const absenColor = (s) => ({
                 </button>
             </div>
 
+
+            <!-- Koreksi kehadiran: sesi sudah diabsen tetapi masih dalam jendela JP.
+                 Banyak guru salah tekan; setelah batas ini terkunci dan admin yang
+                 mengoreksi. -->
+            <div v-if="info.boleh_edit && info.sudah_absen" class="rounded-2xl bg-white border border-amber-200 p-4 mb-4">
+                <button @click="editAbsenBuka = !editAbsenBuka" class="w-full flex items-center justify-between gap-2">
+                    <span class="text-left">
+                        <span class="block text-sm font-bold text-amber-800">Koreksi Kehadiran</span>
+                        <span class="block text-[11px] text-amber-600">
+                            Masih bisa diperbaiki sampai pukul {{ info.batas_edit || '—' }}
+                        </span>
+                    </span>
+                    <span class="text-[11px] font-bold text-amber-700">{{ editAbsenBuka ? 'Tutup' : 'Buka' }}</span>
+                </button>
+
+                <template v-if="editAbsenBuka">
+                    <div class="space-y-1.5 my-3 max-h-64 overflow-y-auto">
+                        <div v-for="s in santri" :key="s.santri_id"
+                            class="flex items-center justify-between gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                            <div class="min-w-0">
+                                <span class="text-sm text-gray-700 truncate block">{{ s.nama }}</span>
+                                <span v-if="s.sakit_health" class="text-[10px] text-violet-600">Smart Health: sedang sakit</span>
+                                <span v-else-if="s.izin_disetujui" class="text-[10px] text-sky-600">Izin disetujui</span>
+                            </div>
+                            <button @click="cycleAbsen(s.santri_id)"
+                                class="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full capitalize transition"
+                                :class="absenColor(absenStatus[s.santri_id])">{{ absenStatus[s.santri_id] }}</button>
+                        </div>
+                    </div>
+                    <button @click="simpanKoreksiAbsen" :disabled="editAbsenSaving || !adaPerubahanAbsen"
+                        class="w-full py-3 rounded-xl bg-amber-600 text-white font-bold text-sm disabled:opacity-60">
+                        {{ editAbsenSaving ? 'Menyimpan…' : (adaPerubahanAbsen ? 'Simpan Perbaikan' : 'Belum ada perubahan') }}
+                    </button>
+                    <p class="text-[10px] text-gray-400 mt-2 leading-snug">
+                        Wali hanya dikabari untuk santri yang statusnya berubah.
+                    </p>
+                </template>
+            </div>
             <div v-if="info.wajib_absen" class="rounded-2xl bg-amber-50 border border-amber-200 p-4 mb-4">
                 <p class="text-sm font-bold text-amber-800 mb-1">Absen Kehadiran Dulu</p>
                 <p class="text-[11px] text-amber-600 mb-3">Ketuk status tiap santri (Hadir → Telat → Izin → Sakit → Alpha), lalu simpan. Santri yang punya izin disetujui atau laporan Smart Health aktif sudah terisi otomatis.</p>

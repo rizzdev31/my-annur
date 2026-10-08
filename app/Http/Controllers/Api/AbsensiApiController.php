@@ -1819,6 +1819,7 @@ class AbsensiApiController extends Controller
         // jadi boleh dikoreksi berkali-kali oleh yang mendampingi di lapangan —
         // bukan sekali-kunci seperti absensi santri biasa.
         $libur   = app(\App\Services\LiburMengajarService::class);
+        $koreksi = app(\App\Services\KoreksiPembelajaranService::class);
         $kegiatan = $absensi && $absensi->status === 'libur' && $absensi->libur_pembelajaran_id
             ? $absensi->liburPembelajaran : null;
         $alasanKoreksi = $kegiatan ? $libur->alasanTakBolehKoreksi($absensi, $tp) : null;
@@ -1854,6 +1855,77 @@ class AbsensiApiController extends Controller
                 'nama_kegiatan'   => $kegiatan?->nama,
                 'boleh_koreksi'   => $kegiatan !== null && $alasanKoreksi === null,
                 'alasan_koreksi'  => $alasanKoreksi,
+
+                // ── Jendela koreksi absensi santri oleh guru ─────────────────
+                // Banyak guru lupa mengisi atau salah tekan. Roster boleh
+                // diperbaiki selama sesinya masih dalam jendela JP; setelah itu
+                // terkunci dan hanya admin yang bisa.
+                'boleh_edit'      => $absensi !== null && $kegiatan === null
+                    && $koreksi->alasanGuruTakBolehEdit($absensi, $tp) === null,
+                'alasan_edit'     => $absensi !== null && $kegiatan === null
+                    ? $koreksi->alasanGuruTakBolehEdit($absensi, $tp) : null,
+                'batas_edit'      => $absensi !== null
+                    ? $koreksi->batasEdit($absensi)?->format('H:i') : null,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /absensi/mengajar/koreksi-absensi
+     * Guru memperbaiki absensi santri (dan materi) sesinya sendiri — HANYA
+     * selama sesinya masih dalam jendela JP (jam_selesai + tenggang).
+     *
+     * Berlaku untuk semua jenis kelas: sekolah, pesantren, tahfidz, dan tahsin.
+     * Semuanya menyimpan absensi di tabel yang sama, jadi aturannya pun satu.
+     * Setelah jendela tutup, roster terkunci dan hanya admin yang bisa — itulah
+     * batas "terkontrol"-nya.
+     */
+    public function koreksiAbsensiGuru(Request $request): JsonResponse
+    {
+        $request->validate([
+            'absensi_mengajar_id' => 'required|exists:absensi_mengajar,id',
+            'absensi'             => 'required|array|min:1',
+            'absensi.*.santri_id' => 'required|integer|exists:santri,id',
+            'absensi.*.status'    => 'required|in:hadir,telat,izin,sakit,alpha',
+            'materi'              => 'nullable|string|max:500',
+        ]);
+
+        $tp = $request->user()->tenagaPendidik;
+        $am = \App\Models\AbsensiMengajar::with(['jadwalMengajar.mataPelajaran', 'liburPembelajaran'])
+            ->findOrFail($request->absensi_mengajar_id);
+
+        $svc = app(\App\Services\KoreksiPembelajaranService::class);
+        if ($alasan = $svc->alasanGuruTakBolehEdit($am, $tp)) {
+            return response()->json([
+                'success' => false, 'message' => $alasan, 'code' => 'DILUAR_JENDELA',
+                'data' => ['batas_edit' => $svc->batasEdit($am)?->format('H:i')],
+            ], 403);
+        }
+
+        $h = $svc->tulisRoster($am, $request->absensi, (int) $request->user()->id);
+
+        // Materi ikut boleh diperbaiki: lupa mengisi jurnal sama lazimnya dengan
+        // salah menandai kehadiran.
+        if ($request->filled('materi')) {
+            $am->update(['materi' => $request->materi]);
+        }
+
+        // Wali hanya dikabari untuk santri yang statusnya BERUBAH.
+        $svc->kabariWali($am, $h['berubah']);
+
+        $rekap = \App\Models\AbsensiSantri::where('absensi_mengajar_id', $am->id)
+            ->selectRaw('status, COUNT(*) n')->groupBy('status')->pluck('n', 'status');
+
+        $n = $h['diubah'] + $h['ditambah'];
+
+        return response()->json([
+            'success' => true,
+            'message' => $n === 0 ? 'Tidak ada perubahan.'
+                : "Absensi diperbarui: {$n} santri. Batas koreksi pukul "
+                    . $svc->batasEdit($am)?->format('H:i') . '.',
+            'data'    => [
+                'diubah' => $h['diubah'], 'ditambah' => $h['ditambah'], 'tetap' => $h['tetap'],
+                'rekap'  => $rekap, 'batas_edit' => $svc->batasEdit($am)?->format('H:i'),
             ],
         ]);
     }

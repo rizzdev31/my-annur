@@ -95,6 +95,8 @@ Route::prefix('v1')->group(function () {
                 Route::post('/mengajar/absen-santri',    [AbsensiApiController::class, 'absenSantri']);
                 // Koreksi roster sesi kegiatan (libur pembelajaran) — boleh berulang.
                 Route::post('/mengajar/koreksi-kegiatan', [AbsensiApiController::class, 'koreksiRosterKegiatan']);
+                // Guru memperbaiki absensi santri sesinya sendiri, dalam jendela JP.
+                Route::post('/mengajar/koreksi-absensi',  [AbsensiApiController::class, 'koreksiAbsensiGuru']);
                 Route::get('/mengajar/{jadwalId}/santri', [AbsensiApiController::class, 'santriKelasJadwal']);
             });
 

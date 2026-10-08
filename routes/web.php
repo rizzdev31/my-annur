@@ -304,6 +304,10 @@ Route::prefix('admin')
                 Route::patch('/koreksi-harian/{absensi}',   [AbsensiController::class, 'koreksiHarian'])->name('koreksi-harian');
                 Route::patch('/koreksi-mengajar/{absensi}', [AbsensiController::class, 'koreksiMengajar'])->name('koreksi-mengajar');
                 Route::get('/koreksi', [AbsensiController::class, 'koreksi'])->name('koreksi.index');
+                // Inval cepat: admin mengalihkan sesi tanpa menunggu izin guru.
+                Route::get('/jadwal/{jadwal}/calon-inval', [AbsensiController::class, 'calonInval'])->name('calon-inval');
+                Route::post('/inval-cepat',               [AbsensiController::class, 'invalCepat'])->name('inval-cepat');
+                Route::post('/batal-inval/{absensi}',     [AbsensiController::class, 'batalInval'])->name('batal-inval');
             });
 
             // ── 2. MONITORING HARIAN ──────────────────────────────────────
@@ -608,6 +612,11 @@ Route::prefix('admin')
             // ── Ujian Sekolah ─────────────────────────────────────────────
             // Inval penjaga HANYA dari sini (keputusan 8 Okt 2026): tugas jaga
             // diatur panitia, guru tidak mencari penggantinya sendiri.
+            // Koreksi pembelajaran (sesi & absensi santri) dari jurnal/laporan.
+            Route::get('jurnal/sesi/{absensi}/roster',          [JurnalMengajarController::class, 'rosterSesi'])->name('jurnal.sesi.roster');
+            Route::post('jurnal/sesi/{absensi}/koreksi',        [JurnalMengajarController::class, 'koreksiSesi'])->name('jurnal.sesi.koreksi');
+            Route::post('jurnal/sesi/{absensi}/koreksi-roster', [JurnalMengajarController::class, 'koreksiRoster'])->name('jurnal.sesi.koreksi-roster');
+
             Route::get('ujian',   [UjianController::class, 'index'])->name('ujian.index');
             Route::post('ujian',  [UjianController::class, 'store'])->name('ujian.store');
             Route::post('ujian/{ujian}/batalkan',      [UjianController::class, 'batalkan'])->name('ujian.batalkan');

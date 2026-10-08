@@ -150,12 +150,29 @@
                         <p class="mt-1">{{ detail.materi }}</p>
                     </div>
 
+                    <!-- Dua jalur koreksi admin: status sesi & absensi santri -->
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <button @click="bukaKoreksiSesi(detail)"
+                            class="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-xs font-semibold">
+                            Koreksi Sesi
+                        </button>
+                        <button @click="bukaKoreksiRoster(detail)"
+                            class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-semibold">
+                            {{ detail.santri.length ? 'Koreksi Absensi Santri' : 'Isi Absensi Santri' }}
+                        </button>
+                        <span v-if="detail.is_koreksi" class="px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-500 text-[11px] font-semibold">
+                            pernah dikoreksi
+                        </span>
+                    </div>
+
                     <div v-if="detail.santri.length" class="space-y-1.5">
                         <div v-for="(st, i) in detail.santri" :key="i"
                             class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50">
                             <div>
                                 <p class="text-sm font-medium text-gray-800">{{ st.nama }}</p>
-                                <p class="text-xs text-gray-400 font-mono">{{ st.nip }}</p>
+                                <p class="text-xs text-gray-400 font-mono">
+                                    {{ st.nip }}<span v-if="st.dikoreksi" class="ml-1 text-gray-300">· dikoreksi</span>
+                                </p>
                             </div>
                             <span :class="['px-2.5 py-1 rounded-lg text-xs font-semibold', badgeStatus(st.status)]">
                                 {{ statusSantriLabel(st.status) }}
@@ -166,11 +183,140 @@
                 </div>
             </div>
         </Transition>
+
+        <!-- ═══════════ MODAL KOREKSI SESI ═══════════ -->
+        <div v-if="kSesi" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
+            <div class="bg-white rounded-2xl w-full max-w-md p-6 max-h-[92vh] overflow-y-auto">
+                <h3 class="text-base font-semibold text-gray-900">Koreksi Sesi</h3>
+                <p class="text-xs text-gray-400 mt-0.5 mb-4">
+                    {{ kSesi.kelas }} — {{ kSesi.mapel }} · {{ formatTgl(kSesi.tanggal) }} · {{ kSesi.guru }}
+                </p>
+
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Status pelaksanaan</label>
+                        <select v-model="fSesi.status" :class="fieldCls + ' w-full'">
+                            <option value="terlaksana">Terlaksana</option>
+                            <option value="tidak_terlaksana">Tidak terlaksana</option>
+                            <option value="pengganti">Diampu pengganti</option>
+                            <option value="izin">Izin (netral)</option>
+                            <option value="libur">Libur (netral)</option>
+                        </select>
+                        <p class="text-[11px] text-gray-400 mt-1">
+                            JP otomatis mengikuti status bila dikosongkan: terlaksana/izin/libur = {{ kSesi.jp_jadwal }} JP,
+                            tidak terlaksana = 0.
+                        </p>
+                    </div>
+                    <div v-if="fSesi.status === 'pengganti'">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Guru pengganti</label>
+                        <select v-model.number="fSesi.digantikan_oleh" :class="fieldCls + ' w-full'">
+                            <option :value="null">— pilih</option>
+                            <option v-for="g in guruOpsi" :key="g.id" :value="g.id">{{ g.nama }}</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">JP</label>
+                            <input v-model.number="fSesi.jp_terlaksana" type="number" min="0" max="20" :class="fieldCls + ' w-full'" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Jam mulai</label>
+                            <input v-model="fSesi.jam_mulai_aktual" type="time" :class="fieldCls + ' w-full'" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Jam selesai</label>
+                            <input v-model="fSesi.jam_selesai_aktual" type="time" :class="fieldCls + ' w-full'" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Materi / jurnal</label>
+                        <textarea v-model="fSesi.materi" rows="2" :class="fieldCls + ' w-full'"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">
+                            Alasan koreksi <span class="text-red-500">*</span>
+                        </label>
+                        <input v-model="fSesi.alasan_koreksi" type="text" placeholder="cth: guru mengajar tapi lupa absen"
+                            :class="fieldCls + ' w-full'" />
+                        <p class="text-[11px] text-gray-400 mt-1">Tercatat di log koreksi beserta nama Anda.</p>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mt-5">
+                    <button @click="kSesi = null" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Batal</button>
+                    <button @click="simpanKoreksiSesi" :disabled="!fSesi.alasan_koreksi || busy"
+                        class="flex-1 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold disabled:opacity-50">
+                        Simpan Koreksi
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ MODAL KOREKSI ABSENSI SANTRI ═══════════ -->
+        <div v-if="kRoster" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
+            <div class="bg-white rounded-2xl w-full max-w-xl p-6 max-h-[92vh] overflow-y-auto">
+                <h3 class="text-base font-semibold text-gray-900">Koreksi Absensi Santri</h3>
+                <p class="text-xs text-gray-400 mt-0.5 mb-3">
+                    {{ kRoster.kelas }} — {{ kRoster.mapel }} · {{ formatTgl(kRoster.tanggal) }} · {{ kRoster.guru }}
+                </p>
+
+                <p v-if="rosterLoading" class="py-8 text-center text-sm text-gray-400">Memuat daftar santri…</p>
+                <template v-else>
+                    <div class="flex flex-wrap items-center gap-2 mb-3">
+                        <button v-for="st in STATUS" :key="st.v" @click="tandaiSemua(st.v)"
+                            :class="['px-2.5 py-1 rounded-lg text-[11px] font-semibold', badgeStatus(st.v)]">
+                            Semua {{ st.t }}
+                        </button>
+                        <span class="ml-auto text-[11px] text-gray-400">{{ rosterBerubah }} perubahan</span>
+                    </div>
+
+                    <div class="rounded-xl border border-gray-200 divide-y divide-gray-50 max-h-72 overflow-y-auto mb-3">
+                        <div v-for="r in rosterRows" :key="r.santri_id" class="flex items-center justify-between gap-2 px-3 py-2">
+                            <div class="min-w-0">
+                                <p class="text-sm text-gray-800 truncate">{{ r.nama }}</p>
+                                <p class="text-[11px] text-gray-400 truncate">
+                                    <span v-if="r.sakit_health">Sakit · Smart Health</span>
+                                    <span v-else-if="r.izin_disetujui">Izin disetujui</span>
+                                    <span v-else-if="!r.tersimpan" class="text-amber-600">belum ada catatan</span>
+                                    <span v-else-if="r.dikoreksi_oleh">dikoreksi {{ r.dikoreksi_oleh }}</span>
+                                    <span v-else>{{ r.nip }}</span>
+                                </p>
+                            </div>
+                            <div class="flex gap-1 shrink-0">
+                                <button v-for="st in STATUS" :key="st.v" @click="r.status = st.v"
+                                    class="w-8 py-1.5 rounded-lg text-[11px] font-bold transition"
+                                    :class="r.status === st.v ? st.c + ' text-white' : 'bg-gray-100 text-gray-400'">
+                                    {{ st.t.charAt(0) }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <input v-model="fRoster.alasan" type="text" placeholder="Alasan koreksi (opsional, masuk log)"
+                        :class="fieldCls + ' w-full mb-2'" />
+                    <label class="flex items-start gap-2.5 mb-4 cursor-pointer">
+                        <input v-model="fRoster.kabari_wali" type="checkbox" class="mt-0.5 w-4 h-4 accent-indigo-600" />
+                        <span class="text-[11px] text-gray-600 leading-snug">
+                            Kabari wali lewat WhatsApp untuk santri yang <b>statusnya berubah</b>
+                            (izin &amp; sakit dari Smart Health tetap dilewati).
+                        </span>
+                    </label>
+                </template>
+
+                <div class="flex gap-2">
+                    <button @click="kRoster = null" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Tutup</button>
+                    <button @click="simpanKoreksiRoster" :disabled="busy || rosterLoading || !rosterBerubah"
+                        class="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50">
+                        {{ rosterBerubah ? `Simpan ${rosterBerubah} Perubahan` : 'Belum ada perubahan' }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </AdminLayout>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
@@ -190,6 +336,91 @@ const f = reactive({
 })
 
 const detail = ref(null)
+const busy = ref(false)
+
+const STATUS = [
+    { v: 'hadir', t: 'Hadir', c: 'bg-emerald-500' },
+    { v: 'telat', t: 'Telat', c: 'bg-amber-500' },
+    { v: 'izin',  t: 'Izin',  c: 'bg-sky-500' },
+    { v: 'sakit', t: 'Sakit', c: 'bg-violet-500' },
+    { v: 'alpha', t: 'Alpha', c: 'bg-red-500' },
+]
+
+// ── Koreksi status sesi ────────────────────────────────────────────────────
+const kSesi = ref(null)
+const fSesi = reactive({
+    status: 'terlaksana', jp_terlaksana: null, jam_mulai_aktual: '', jam_selesai_aktual: '',
+    materi: '', digantikan_oleh: null, alasan_koreksi: '',
+})
+
+function bukaKoreksiSesi(s) {
+    kSesi.value = s
+    Object.assign(fSesi, {
+        status: s.status_sesi === 'hadir' ? 'terlaksana' : s.status_sesi,
+        jp_terlaksana: s.jp ?? null,
+        jam_mulai_aktual: '', jam_selesai_aktual: '',
+        materi: s.materi ?? '', digantikan_oleh: null, alasan_koreksi: '',
+    })
+}
+function simpanKoreksiSesi() {
+    busy.value = true
+    router.post(route('admin.smart-education.jurnal.sesi.koreksi', kSesi.value.id), {
+        ...fSesi,
+        jam_mulai_aktual: fSesi.jam_mulai_aktual || null,
+        jam_selesai_aktual: fSesi.jam_selesai_aktual || null,
+        materi: fSesi.materi || null,
+        digantikan_oleh: fSesi.status === 'pengganti' ? fSesi.digantikan_oleh : null,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => { kSesi.value = null; detail.value = null },
+        onFinish: () => busy.value = false,
+    })
+}
+
+// ── Koreksi absensi santri ────────────────────────────────────────────────
+const kRoster = ref(null)
+const rosterRows = ref([])
+const rosterAwal = ref({})
+const rosterLoading = ref(false)
+const fRoster = reactive({ alasan: '', kabari_wali: false })
+
+const rosterBerubah = computed(() =>
+    rosterRows.value.filter(r => r.status !== rosterAwal.value[r.santri_id]).length)
+
+async function bukaKoreksiRoster(s) {
+    kRoster.value = s; rosterRows.value = []; rosterLoading.value = true
+    fRoster.alasan = ''; fRoster.kabari_wali = false
+    try {
+        const res = await fetch(route('admin.smart-education.jurnal.sesi.roster', s.id),
+            { headers: { Accept: 'application/json' } })
+        const d = (await res.json())?.data
+        rosterRows.value = (d?.santri ?? []).map(r => ({ ...r }))
+        rosterAwal.value = Object.fromEntries(rosterRows.value.map(r => [r.santri_id, r.status]))
+        if (d) Object.assign(kRoster.value, { kelas: d.kelas, mapel: d.mapel, guru: d.guru })
+    } catch (_) { rosterRows.value = [] } finally { rosterLoading.value = false }
+}
+// "Semua X" tidak menimpa santri yang izin disetujui / sakit Smart Health —
+// datanya dari modul lain, bukan tebakan admin.
+function tandaiSemua(v) {
+    rosterRows.value.forEach(r => {
+        if (v === 'hadir' && (r.izin_disetujui || r.sakit_health)) return
+        r.status = v
+    })
+}
+function simpanKoreksiRoster() {
+    busy.value = true
+    router.post(route('admin.smart-education.jurnal.sesi.koreksi-roster', kRoster.value.id), {
+        absensi: rosterRows.value
+            .filter(r => r.status !== rosterAwal.value[r.santri_id])
+            .map(r => ({ santri_id: r.santri_id, status: r.status })),
+        alasan: fRoster.alasan || null,
+        kabari_wali: fRoster.kabari_wali,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => { kRoster.value = null; detail.value = null },
+        onFinish: () => busy.value = false,
+    })
+}
 
 function terapkan() {
     router.get(route('admin.smart-education.jurnal.index'), {

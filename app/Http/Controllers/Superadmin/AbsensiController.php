@@ -287,6 +287,13 @@ class AbsensiController extends Controller
                 'digantikan_oleh'  => $absensi?->digantikan_oleh,
                 'pengganti_nama'   => $absensi?->digantikanOleh?->user?->name,
                 'keterangan'       => $absensi?->keterangan,
+                'guru_id'          => $jadwal->tenaga_pendidik_id,
+                'is_ujian'         => $jadwal->ujian_sesi_id !== null,
+                // Boleh di-inval bila belum benar-benar diajar. Sesi ujian punya
+                // halaman invalnya sendiri.
+                'boleh_inval'      => $jadwal->ujian_sesi_id === null
+                    && !in_array($absensi?->status, ['terlaksana', 'hadir', 'libur'], true)
+                    && !($absensi?->status === 'pengganti' && (int) $absensi->jp_terlaksana > 0),
             ];
         });
 
@@ -311,6 +318,70 @@ class AbsensiController extends Controller
                 ->map(fn($g) => ['id' => $g->id, 'nama' => $g->user?->name ?? '—'])
                 ->sortBy('nama')->values(),
         ]);
+    }
+
+    /**
+     * GET jadwal/{jadwal}/calon-inval — kandidat pengganti + alasan bila tak bisa.
+     */
+    public function calonInval(Request $request, JadwalMengajar $jadwal): \Illuminate\Http\JsonResponse
+    {
+        $tanggal = $request->tanggal ?: TimezoneHelper::today()->toDateString();
+        $svc = app(\App\Services\KoreksiPembelajaranService::class);
+
+        return response()->json(['success' => true, 'data' => [
+            'jadwal' => [
+                'id'    => $jadwal->id,
+                'guru'  => $jadwal->tenagaPendidik?->user?->name ?? '—',
+                'kelas' => $jadwal->kelasRel?->nama ?? $jadwal->kelas,
+                'mapel' => $jadwal->mataPelajaran?->nama ?? '—',
+                'jam'   => substr((string) $jadwal->jam_mulai, 0, 5) . '–' . substr((string) $jadwal->jam_selesai, 0, 5),
+            ],
+            // Admin perlu tahu apakah guru aslinya memang berizin — inval cepat
+            // tidak mensyaratkannya, tetapi informasinya membantu memutuskan.
+            'izin_guru' => $svc->izinAktif((int) $jadwal->tenaga_pendidik_id, $tanggal)?->jenisPengajuan?->nama,
+            'calon'     => $svc->calonInval($jadwal, $tanggal),
+        ]]);
+    }
+
+    /**
+     * POST inval-cepat — admin mengalihkan sesi ke guru lain TANPA menunggu izin
+     * resmi guru aslinya (guru bisa berhalangan mendadak). Alasannya dicatat.
+     */
+    public function invalCepat(Request $request)
+    {
+        $d = $request->validate([
+            'jadwal_id'    => 'required|exists:jadwal_mengajar,id',
+            'tanggal'      => 'required|date',
+            'pengganti_id' => 'required|exists:tenaga_pendidik,id',
+            'alasan'       => 'nullable|string|max:255',
+        ]);
+
+        $jadwal = JadwalMengajar::findOrFail($d['jadwal_id']);
+        try {
+            app(\App\Services\KoreksiPembelajaranService::class)->invalCepat(
+                $jadwal, Carbon::parse($d['tanggal'])->toDateString(),
+                (int) $d['pengganti_id'], Auth::id(), $d['alasan'] ?? null
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $nama = TenagaPendidik::find($d['pengganti_id'])?->user?->name ?? 'Guru pengganti';
+
+        return back()->with('success', "Sesi dialihkan ke {$nama}. "
+            . 'Ia melihat tugas ini di aplikasinya dan JP-nya dibayar setelah mengabsen.');
+    }
+
+    /** POST batal-inval/{absensi} — sesi kembali ke guru pengampunya. */
+    public function batalInval(AbsensiMengajar $absensi)
+    {
+        try {
+            app(\App\Services\KoreksiPembelajaranService::class)->batalkanInval($absensi, Auth::id());
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Inval dibatalkan — sesi kembali ke guru pengampunya.');
     }
 
     /**

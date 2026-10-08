@@ -26,8 +26,16 @@ const STATUS = [
 // jadi boleh dikoreksi berulang — tidak mengikuti aturan sekali-kunci.
 const kegiatan = computed(() => d.value?.libur_kegiatan === true)
 const bolehKoreksi = computed(() => kegiatan.value && d.value?.boleh_koreksi === true)
-const terkunci = computed(() =>
-    kegiatan.value ? !bolehKoreksi.value : d.value?.sudah_isi_santri === true)
+// Sesi biasa: roster yang sudah tersimpan tetap boleh DIPERBAIKI selama sesinya
+// masih dalam jendela JP (jam_selesai + tenggang). Lewat itu, terkunci dan hanya
+// admin yang bisa — inilah batas "terkontrol"-nya.
+const bolehEdit = computed(() => !kegiatan.value && d.value?.boleh_edit === true)
+const batasEdit = computed(() => d.value?.batas_edit ?? null)
+const terkunci = computed(() => {
+    if (kegiatan.value) return !bolehKoreksi.value
+    if (d.value?.sudah_isi_santri) return !bolehEdit.value
+    return false
+})
 const belumAbsenMengajar = computed(() => !kegiatan.value && !d.value?.absensi_mengajar_id)
 const adaPerubahan = computed(() =>
     santri.value.some(s => s.status !== (s._awal ?? s.status)))
@@ -84,8 +92,30 @@ async function simpanKoreksi() {
     } finally { busy.value = false }
 }
 
+async function simpanEdit() {
+    busy.value = true
+    try {
+        const res = await api.post('/absensi/mengajar/koreksi-absensi', {
+            absensi_mengajar_id: d.value.absensi_mengajar_id,
+            absensi: santri.value
+                .filter(s => s.status !== s._awal)
+                .map(s => ({ santri_id: s.santri_id, status: s.status })),
+            materi: materi.value.trim() || undefined,
+        })
+        konfirm.value = false
+        toast.success(res.data?.message || 'Absensi diperbarui.')
+        await load()
+    } catch (e) {
+        konfirm.value = false
+        toast.error(e.response?.data?.message || 'Gagal memperbarui absensi.')
+        await load()
+    } finally { busy.value = false }
+}
+
 async function simpan() {
     if (kegiatan.value) return simpanKoreksi()
+    // Roster sudah ada & masih dalam jendela → ini perbaikan, bukan pengisian baru.
+    if (d.value?.sudah_isi_santri && bolehEdit.value) return simpanEdit()
     if (belumAbsenMengajar.value) return toast.warning('Absen mengajar dulu sebelum absen santri.')
     busy.value = true
     try {
@@ -134,8 +164,19 @@ async function simpan() {
             <div v-else-if="belumAbsenMengajar" class="rounded-2xl bg-amber-50 border border-amber-100 p-4 mb-4 text-sm text-amber-700">
                 Anda belum absen mengajar untuk sesi ini. Lakukan <b>Absen Mengajar</b> dulu, baru bisa absen santri.
             </div>
-            <div v-else-if="terkunci" class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 mb-4 text-[13px] font-semibold text-emerald-700 text-center">
-                ✓ Absensi santri sudah dikunci (final)
+            <!-- Masih dalam jendela: beri tahu batasnya, jangan sampai guru menyangka
+                 sudah terkunci padahal masih bisa diperbaiki. -->
+            <div v-else-if="d.sudah_isi_santri && bolehEdit" class="rounded-2xl bg-amber-50 border border-amber-100 p-3.5 mb-4">
+                <p class="text-[13px] font-extrabold text-amber-800">Masih bisa diperbaiki</p>
+                <p class="text-[11px] text-amber-700 leading-snug mt-1">
+                    Absensi sudah tersimpan, tetapi <b>masih bisa Anda betulkan sampai pukul
+                    {{ batasEdit || '—' }}</b>. Setelah itu terkunci dan perlu bantuan admin.
+                    Wali hanya dikabari untuk santri yang statusnya berubah.
+                </p>
+            </div>
+            <div v-else-if="terkunci" class="rounded-2xl bg-emerald-50 border border-emerald-100 p-3 mb-4">
+                <p class="text-[13px] font-semibold text-emerald-700 text-center">✓ Absensi santri sudah dikunci (final)</p>
+                <p v-if="d.alasan_edit" class="text-[11px] text-gray-500 text-center mt-1">{{ d.alasan_edit }}</p>
             </div>
 
             <!-- Rekap + tandai semua -->
@@ -189,6 +230,16 @@ async function simpan() {
                 </button>
             </template>
 
+            <!-- Perbaikan absensi yang sudah tersimpan (dalam jendela) -->
+            <template v-else-if="d.sudah_isi_santri && bolehEdit">
+                <textarea v-model="materi" rows="2" placeholder="Perbaiki materi/jurnal (opsional)"
+                    class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3"></textarea>
+                <button @click="konfirm = true" :disabled="busy || (!adaPerubahan && !materi.trim())"
+                    class="w-full py-3.5 rounded-2xl bg-amber-600 text-white font-bold disabled:opacity-60">
+                    {{ adaPerubahan ? 'Simpan Perbaikan' : (materi.trim() ? 'Simpan Materi' : 'Belum ada perubahan') }}
+                </button>
+            </template>
+
             <!-- Materi + simpan (absensi santri biasa) -->
             <template v-else-if="!terkunci && !belumAbsenMengajar">
                 <textarea v-model="materi" rows="2" placeholder="Materi/jurnal (opsional)" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3"></textarea>
@@ -198,8 +249,12 @@ async function simpan() {
 
         <!-- Konfirmasi -->
         <BottomSheet v-model="konfirm"
-            :title="kegiatan ? 'Simpan Koreksi Kegiatan?' : 'Simpan Absensi Santri?'"
-            :subtitle="kegiatan ? 'Masih bisa dikoreksi lagi setelah ini. Wali hanya dikabari untuk santri yang Anda ubah.' : 'Setelah disimpan, absensi terkunci & tidak bisa diubah.'">
+            :title="kegiatan ? 'Simpan Koreksi Kegiatan?' : (d?.sudah_isi_santri && bolehEdit ? 'Simpan Perbaikan Absensi?' : 'Simpan Absensi Santri?')"
+            :subtitle="kegiatan
+                ? 'Masih bisa dikoreksi lagi setelah ini. Wali hanya dikabari untuk santri yang Anda ubah.'
+                : (d?.sudah_isi_santri && bolehEdit
+                    ? ('Masih bisa diperbaiki sampai pukul ' + (batasEdit || '—') + '. Wali hanya dikabari untuk santri yang berubah.')
+                    : 'Setelah disimpan, absensi terkunci & tidak bisa diubah.')">
             <div class="flex gap-1.5 flex-wrap text-[12px] font-bold mb-4">
                 <span class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600">Hadir {{ rekap.hadir }}</span>
                 <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-600">Telat {{ rekap.telat }}</span>

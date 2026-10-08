@@ -102,12 +102,26 @@
                             <p v-if="a.status === 'pengganti' && a.pengganti_nama"
                                 class="text-xs text-violet-600 mt-1">🔄 oleh {{ a.pengganti_nama }}</p>
                         </td>
-                        <td class="px-4 py-3.5 text-right">
+                        <td class="px-4 py-3.5 text-right whitespace-nowrap">
                             <button @click="openInput(a)"
                                 :class="[`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors`,
                                     a.sudah_absen ? `border-amber-200 text-amber-600 hover:bg-amber-50` : `border-indigo-200 text-indigo-600 hover:bg-indigo-50`]">
                                 {{ a.sudah_absen ? 'Koreksi' : 'Input' }}
                             </button>
+                            <!-- Inval cepat: admin mengalihkan sesi tanpa menunggu izin guru -->
+                            <button v-if="a.boleh_inval && !a.digantikan_oleh" @click="bukaInval(a)"
+                                class="ml-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-violet-200 text-violet-600 hover:bg-violet-50">
+                                Inval
+                            </button>
+                            <button v-else-if="a.digantikan_oleh && a.boleh_inval" @click="bukaInval(a)"
+                                class="ml-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-violet-200 text-violet-600 hover:bg-violet-50">
+                                Ganti Inval
+                            </button>
+                            <button v-if="a.digantikan_oleh && a.absensi_id && a.boleh_inval" @click="batalInval(a)"
+                                class="ml-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-500 hover:bg-gray-50">
+                                Batal
+                            </button>
+                            <span v-if="a.is_ujian" class="ml-1 text-[10px] font-semibold text-rose-600">ujian</span>
                         </td>
                     </tr>
                     <tr v-if="!absensiFiltered.length">
@@ -117,6 +131,48 @@
                     </tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Modal Inval Cepat -->
+        <div v-if="invalTarget" class="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-6">
+                <h3 class="text-base font-semibold text-gray-900">Inval Cepat</h3>
+                <p class="text-xs text-gray-400 mt-0.5 mb-1">
+                    {{ invalTarget.mata_pelajaran }} · {{ invalTarget.kelas }} ·
+                    {{ (invalTarget.jam_mulai || '').slice(0,5) }}–{{ (invalTarget.jam_selesai || '').slice(0,5) }} ·
+                    guru {{ invalTarget.nama }}
+                </p>
+                <p class="text-[11px] leading-snug rounded-lg px-3 py-2 mb-3"
+                    :class="invalIzin ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'">
+                    <template v-if="invalIzin">Guru pengampu sedang <b>{{ invalIzin }}</b> pada tanggal ini.</template>
+                    <template v-else>
+                        Guru pengampu <b>tidak punya izin resmi</b> hari ini — inval tetap bisa diberikan
+                        karena keputusan ini milik admin, dan alasannya dicatat.
+                    </template>
+                </p>
+
+                <input v-model="fInval.alasan" type="text" placeholder="Alasan (dicatat di log koreksi)"
+                    class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm mb-3" />
+                <input v-model="cariInval" type="text" placeholder="Cari nama guru…"
+                    class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm mb-3" />
+
+                <p v-if="invalLoading" class="py-8 text-center text-sm text-gray-400">Memeriksa jadwal setiap guru…</p>
+                <div v-else class="rounded-xl border border-gray-200 divide-y divide-gray-50 max-h-72 overflow-y-auto">
+                    <button v-for="c in calonTampil" :key="c.id" type="button" :disabled="!c.boleh"
+                        @click="kirimInval(c)"
+                        class="w-full text-left px-3 py-2.5 hover:bg-gray-50 disabled:bg-gray-50/50 disabled:cursor-not-allowed">
+                        <span class="block text-sm font-medium truncate"
+                            :class="c.boleh ? 'text-gray-800' : 'text-gray-400'">{{ c.nama }}</span>
+                        <span v-if="c.alasan" class="block text-[11px] text-red-500">{{ c.alasan }}</span>
+                        <span v-else-if="c.id === invalTarget.digantikan_oleh"
+                            class="block text-[11px] text-violet-600">pengganti saat ini</span>
+                    </button>
+                    <p v-if="!calonTampil.length" class="px-3 py-6 text-center text-sm text-gray-400">Tidak ada guru yang cocok.</p>
+                </div>
+
+                <button @click="invalTarget = null"
+                    class="w-full mt-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Tutup</button>
+            </div>
         </div>
 
         <!-- Modal Input Mengajar -->
@@ -247,6 +303,46 @@ function applyFilter() {
 const showModal = ref(false)
 const mLoading = ref(false)
 const modalTarget = ref(null)
+// ── Inval cepat ────────────────────────────────────────────────────────────
+const invalTarget = ref(null)
+const invalCalon = ref([])
+const invalIzin = ref(null)
+const invalLoading = ref(false)
+const cariInval = ref('')
+const fInval = reactive({ alasan: '' })
+
+const calonTampil = computed(() => {
+    const q = cariInval.value.trim().toLowerCase()
+    return q ? invalCalon.value.filter(c => c.nama.toLowerCase().includes(q)) : invalCalon.value
+})
+
+async function bukaInval(a) {
+    invalTarget.value = a; invalCalon.value = []; invalIzin.value = null
+    cariInval.value = ''; fInval.alasan = ''; invalLoading.value = true
+    try {
+        const res = await fetch(
+            route('admin.smart-payroll.absensi.calon-inval', a.jadwal_id) + '?tanggal=' + props.tanggal,
+            { headers: { Accept: 'application/json' } })
+        const d = (await res.json())?.data
+        invalCalon.value = d?.calon ?? []
+        invalIzin.value = d?.izin_guru ?? null
+    } catch (_) { invalCalon.value = [] } finally { invalLoading.value = false }
+}
+
+function kirimInval(c) {
+    router.post(route('admin.smart-payroll.absensi.inval-cepat'), {
+        jadwal_id: invalTarget.value.jadwal_id,
+        tanggal: props.tanggal,
+        pengganti_id: c.id,
+        alasan: fInval.alasan || null,
+    }, { preserveScroll: true, onSuccess: () => { invalTarget.value = null } })
+}
+
+function batalInval(a) {
+    if (!confirm('Batalkan inval sesi ini? Sesi kembali ke guru pengampunya.')) return
+    router.post(route('admin.smart-payroll.absensi.batal-inval', a.absensi_id), {}, { preserveScroll: true })
+}
+
 const mForm = reactive({ status: 'terlaksana', digantikan_oleh: null, jp_terlaksana: 0, jam_mulai_aktual: '', jam_selesai_aktual: '', materi: '', keterangan: '', alasan_koreksi: '' })
 const mErr = reactive({ alasan: '' })
 

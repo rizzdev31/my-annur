@@ -297,10 +297,18 @@ class TahfidzApiController extends Controller
 
         $payload = $this->rosterPayload($kelasId, $am->tanggal?->toDateString(), $tersimpan);
 
+        // Jendela koreksi: absensi kelas Quran pun boleh diperbaiki guru selama
+        // sesinya masih dalam jendela JP (satu aturan dengan kelas reguler).
+        $koreksi = app(\App\Services\KoreksiPembelajaranService::class);
+        $alasanEdit = $koreksi->alasanGuruTakBolehEdit($am, $tp);
+
         return response()->json([
             'success' => true,
             'data'    => array_merge([
                 'absensi_mengajar_id' => $am->id,
+                'boleh_edit'          => $alasanEdit === null,
+                'alasan_edit'         => $alasanEdit,
+                'batas_edit'          => $koreksi->batasEdit($am)?->format('H:i'),
                 'kelas'               => $am->jadwalMengajar?->kelasRel?->nama ?? $am->jadwalMengajar?->kelas ?? '—',
                 'mapel'               => $am->jadwalMengajar?->mataPelajaran?->nama ?? '—',
             ], $payload),
@@ -394,6 +402,21 @@ class TahfidzApiController extends Controller
                 'boleh_ambil_alih'    => $dalamJam && $am !== null
                     && (new \App\Services\PenggantiMengajarService())->bolehDiambilAlih($am),
                 'boleh_isi'           => true,
+                // Jendela koreksi kehadiran: sesi yang sudah diabsen masih boleh
+                // diperbaiki selama belum lewat batas JP (satu aturan dengan
+                // kelas reguler). Sesudahnya terkunci, admin yang mengoreksi.
+                'boleh_edit'          => $am !== null
+                    && app(\App\Services\KoreksiPembelajaranService::class)
+                        ->alasanGuruTakBolehEdit($am, $tp) === null,
+                'alasan_edit'         => $am !== null
+                    ? app(\App\Services\KoreksiPembelajaranService::class)->alasanGuruTakBolehEdit($am, $tp)
+                    : null,
+                'batas_edit'          => $am !== null
+                    ? app(\App\Services\KoreksiPembelajaranService::class)->batasEdit($am)?->format('H:i')
+                    : null,
+                'absensi_tersimpan'   => $am !== null
+                    ? AbsensiSantri::where('absensi_mengajar_id', $am->id)->pluck('status', 'santri_id')
+                    : [],
                 'jenis_diizinkan'     => ['ziyadah', 'murojaah_wajib', 'murojaah_tambahan'],
                 'boleh_tasmi'         => true,
                 'boleh_sinkron'       => true,
