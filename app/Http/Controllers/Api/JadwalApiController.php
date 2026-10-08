@@ -86,6 +86,7 @@ class JadwalApiController extends Controller
             ->where('hari', $namaHari)
             ->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($today->toDateString())
             ->orderBy('jam_mulai')
             ->get();
 

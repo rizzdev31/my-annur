@@ -46,6 +46,7 @@ class DashboardApiController extends Controller
         $jadwalHariIni = JadwalMengajar::with(['mataPelajaran', 'kelasRel'])
             ->where('tenaga_pendidik_id', $tp->id)->where('hari', $hari)->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($tgl)
             ->orderBy('jam_mulai')->get();
 
         $amToday = AbsensiMengajar::where('tenaga_pendidik_id', $tp->id)->whereDate('tanggal', $tgl)

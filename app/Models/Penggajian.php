@@ -21,6 +21,7 @@ class Penggajian extends Model
         'vakasi_lembur',            // komponen lembur
         'vakasi_piket',             // komponen guru piket
         'vakasi_ekstrakurikuler',   // vakasi pembina ekskul per pertemuan
+        'vakasi_jaga_ujian',        // vakasi penjaga ujian, flat per sesi
         'tunjangan_lainnya',
         'potongan_keterlambatan',
         'potongan_alfa',

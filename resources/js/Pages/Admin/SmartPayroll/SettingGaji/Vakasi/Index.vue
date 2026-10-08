@@ -194,6 +194,9 @@ function badgeTipe(t) {
         lembur: { label: 'Lembur', class: 'bg-orange-50 text-orange-700' },
         piket: { label: 'Guru Piket', class: 'bg-amber-50 text-amber-700' },
         tasmi: { label: "Tasmi' (Tahfidz)", class: 'bg-emerald-50 text-emerald-700' },
+        tasnif: { label: 'Tasnif (Tahsin)', class: 'bg-emerald-50 text-emerald-700' },
+        ekstrakurikuler: { label: 'Ekstrakurikuler', class: 'bg-sky-50 text-sky-700' },
+        jaga_ujian: { label: 'Jaga Ujian (per sesi)', class: 'bg-rose-50 text-rose-700' },
     }[t] ?? { label: t, class: 'bg-gray-100 text-gray-600' }
 }
 

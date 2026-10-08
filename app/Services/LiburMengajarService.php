@@ -56,6 +56,7 @@ class LiburMengajarService
 
         $jadwal = JadwalMengajar::where('hari', $hari)->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($tanggal)->bukanUjian()
             ->get(['id', 'tenaga_pendidik_id', 'jumlah_jp']);
 
         $n = 0;
@@ -152,7 +153,10 @@ class LiburMengajarService
 
         $q = JadwalMengajar::with(['kelasRel:id,nama,jenis', 'mataPelajaran:id,nama,tipe', 'tenagaPendidik.user:id,name'])
             ->where('hari', $hari)->where('is_aktif', true)
-            ->whereHas('tahunAjaran', fn ($s) => $s->where('is_aktif', true));
+            ->whereHas('tahunAjaran', fn ($s) => $s->where('is_aktif', true))
+            // Sesi UJIAN tidak boleh ikut diliburkan — ia justru PENGGANTI
+            // pembelajaran yang diliburkan.
+            ->berlakuPada($tanggal)->bukanUjian();
 
         if ($lp->cakupan === 'kelas') {
             $ids = $lp->kelas()->pluck('kelas.id');

@@ -113,6 +113,7 @@ class NotifikasiReminder extends Command
         $n = 0;
         $sesiHariIni = JadwalMengajar::where('hari', $namaHari)
             ->where('is_aktif', true)
+            ->berlakuPada($today)
             ->with(['tenagaPendidik.user', 'mataPelajaran'])
             ->get();
 

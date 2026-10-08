@@ -175,6 +175,7 @@ class LiburPembelajaranController extends Controller
         $rows = \App\Models\JadwalMengajar::with(['kelasRel:id,nama,jenis', 'mataPelajaran:id,nama', 'tenagaPendidik.user:id,name'])
             ->where('hari', $hari)->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
+            ->berlakuPada($d['tanggal'])->bukanUjian()
             ->orderBy('jam_mulai')->get()
             ->map(fn ($j) => [
                 'id'          => $j->id,

@@ -166,7 +166,7 @@ class SettingGajiController extends Controller
     {
         $data = $request->validate([
             'nama'                   => 'required|string|max:100',
-            'tipe_aktivitas'         => 'required|in:absen_harian,absen_mengajar,tugas_jabatan,tugas_tambahan,lembur,piket,tasmi,tasnif,ekstrakurikuler',
+            'tipe_aktivitas'         => 'required|in:absen_harian,absen_mengajar,tugas_jabatan,tugas_tambahan,lembur,piket,tasmi,tasnif,ekstrakurikuler,jaga_ujian',
             'satuan'                 => 'required|in:per_hari,per_jp,per_tugas,per_jam,per_bulan,per_pertemuan',
             'nominal'                => 'required|numeric|min:0',
             // Khusus lembur:

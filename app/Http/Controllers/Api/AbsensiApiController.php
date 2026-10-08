@@ -922,6 +922,8 @@ class AbsensiApiController extends Controller
             ->where('hari', $namaHari)
             ->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($today->toDateString())
+            ->berlakuPada($today->toDateString())
             // Tahfidz & Tahsin punya alur sendiri (halaman terpisah) — kecualikan di sini.
             ->whereHas('mataPelajaran', fn($q) => $q->where('tipe', 'reguler')->orWhereNull('tipe'))
             ->orderBy('jam_mulai')
@@ -1107,6 +1109,7 @@ class AbsensiApiController extends Controller
             $lain = \App\Models\JadwalMengajar::with(['mataPelajaran', 'kelasRel'])
                 ->where('tenaga_pendidik_id', $tp->id)->where('hari', $namaHari)->where('is_aktif', true)
                 ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+                ->berlakuPada($today->toDateString())
                 ->whereHas('mataPelajaran', fn($q) => $q->whereIn('tipe', ['tahfidz', 'tahsin']))
                 ->orderBy('jam_mulai')->get();
 

@@ -229,6 +229,7 @@ class PenggantiMengajarService
         $sendiri = JadwalMengajar::with(['mataPelajaran:id,tipe', 'kelasRel:id,nama,tingkat'])
             ->where('tenaga_pendidik_id', $tpId)
             ->where('hari', $jadwal->hari)->where('is_aktif', true)
+            ->berlakuPada($tanggal->toDateString())
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
             ->where('jam_mulai', '<', $jadwal->jam_selesai)
             ->where('jam_selesai', '>', $jadwal->jam_mulai)

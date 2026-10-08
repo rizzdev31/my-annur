@@ -40,7 +40,7 @@ class JadwalMengajarController extends Controller
         // Ambil semua jadwal, diformat untuk Vue
         $hariOrder = ['senin','selasa','rabu','kamis','jumat','sabtu','ahad'];
 
-        $semuaJadwal = JadwalMengajar::with([
+        $semuaJadwal = JadwalMengajar::bukanUjian()->with([
                 'tenagaPendidik.user',
                 'mataPelajaran',
                 'tahunAjaran',
@@ -136,6 +136,7 @@ class JadwalMengajarController extends Controller
             ->where('tahun_ajaran_id', $data['tahun_ajaran_id'])
             ->where('hari', $data['hari'])
             ->where('is_aktif', true)
+            ->bukanUjian()
             ->where('jam_mulai', '<', $data['jam_selesai'])
             ->where('jam_selesai', '>', $data['jam_mulai'])
             ->exists();

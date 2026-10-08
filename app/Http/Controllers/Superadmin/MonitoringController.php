@@ -76,6 +76,7 @@ class MonitoringController extends Controller
             ->where('hari', $namaHari)->where('is_aktif', true)
             ->whereIn('tenaga_pendidik_id', $guruIds)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($tanggal)
             ->get()->groupBy('tenaga_pendidik_id');
 
         // Hari libur

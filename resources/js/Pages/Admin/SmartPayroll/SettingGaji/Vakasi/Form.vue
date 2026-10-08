@@ -275,6 +275,7 @@ const tipeOpts = [
     { value: 'tasmi', label: 'Tasmi\' (Tahfidz)', desc: 'Flat per tasmi juz yang diuji penguji' },
     { value: 'tasnif', label: 'Tasnif (Tahsin)', desc: 'Flat per ujian kenaikan level' },
     { value: 'ekstrakurikuler', label: 'Ekstrakurikuler', desc: 'Flat per pertemuan ekskul (absensi terisi)' },
+    { value: 'jaga_ujian', label: 'Jaga Ujian', desc: 'Flat per sesi ujian yang dijaga (inval dibayar sama)' },
 ]
 
 const lingkupOpts = [
@@ -294,6 +295,7 @@ const satuanAll = {
     tasmi: [{ value: 'per_tugas', label: 'Per Tasmi (flat)' }],
     tasnif: [{ value: 'per_tugas', label: 'Per Tasnif (flat)' }],
     ekstrakurikuler: [{ value: 'per_pertemuan', label: 'Per Pertemuan (flat)' }],
+    jaga_ujian: [{ value: 'per_pertemuan', label: 'Per Sesi Ujian (flat)' }],
 }
 
 const satuanByTipe = computed(() => satuanAll[form.tipe_aktivitas] ?? [])

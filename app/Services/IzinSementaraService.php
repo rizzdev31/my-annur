@@ -78,6 +78,7 @@ class IzinSementaraService
         return JadwalMengajar::with(['mataPelajaran', 'kelasRel'])
             ->where('tenaga_pendidik_id', $guru->id)
             ->where('hari', $hari)
+            ->berlakuPada($tanggal)
             ->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
             ->where('jam_mulai', '<', $akhir)

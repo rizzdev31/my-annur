@@ -113,6 +113,7 @@ class EskalasiPimpinanService
             ->whereIn('tenaga_pendidik_id', $guruIds)
             ->where('hari', $namaHari)->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($today)
             ->get();
         if ($jadwal->isEmpty()) return 0;
 

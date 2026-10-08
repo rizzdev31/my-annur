@@ -122,6 +122,15 @@ class PayrollCalculationService
             Log::warning("Payroll [{$guru->id}] vakasi_ekstrakurikuler error: " . $e->getMessage());
         }
 
+        // Flat per SESI jaga ujian yang benar-benar dijaga (inval dibayar sama).
+        $vakasiJagaUjian = ['total' => 0, 'detail' => []];
+        try {
+            $vakasiJagaUjian = $this->hitungVakasiJagaUjian($guru, $tanggalMulai, $tanggalSelesai, $periode->id);
+        } catch (\Throwable $e) {
+            $errors[] = "Vakasi jaga ujian: " . $e->getMessage();
+            Log::warning("Payroll [{$guru->id}] vakasi_jaga_ujian error: " . $e->getMessage());
+        }
+
         // ── 7. Potongan ───────────────────────────────────────────────────────
         $potongan = ['keterlambatan' => 0, 'alfa' => 0, 'tetap' => 0, 'lainnya' => 0, 'detail' => []];
         try {
@@ -195,7 +204,8 @@ class PayrollCalculationService
             + $vakasiPesertaKegiatan['total'] // FIX Bug 1: peserta kegiatan masuk ke total
             + $vakasiLembur['total']
             + $vakasiPiket['total']
-            + $vakasiEkskul['total'];
+            + $vakasiEkskul['total']
+            + $vakasiJagaUjian['total'];
 
         $totalPotongan = $potongan['keterlambatan']
             + $potongan['alfa']
@@ -240,6 +250,7 @@ class PayrollCalculationService
             'vakasi_lembur'             => $vakasiLembur['total'],
             'vakasi_piket'              => $vakasiPiket['total'],
             'vakasi_ekstrakurikuler'    => $vakasiEkskul['total'],
+            'vakasi_jaga_ujian'         => $vakasiJagaUjian['total'],
             'tunjangan_lainnya'         => 0,
 
             // Potongan
@@ -282,6 +293,7 @@ class PayrollCalculationService
                 ...$vakasiLembur['detail'],
                 ...$vakasiPiket['detail'],
                 ...$vakasiEkskul['detail'],
+                ...$vakasiJagaUjian['detail'],
                 ...$potongan['detail'],
                 ...$detailPotonganGuru,   // potongan gaji per-guru (murni)
                 // Detail penyesuaian liburan (jika ada) — transparan di slip
@@ -580,10 +592,14 @@ class PayrollCalculationService
         // JP MENGAJAR PENGGANTI: sesi guru lain yang digantikan oleh guru ini.
         // Dibayar ke pengganti (digantikan_oleh) setelah ia absen (jp_terlaksana > 0).
         // Guru asli tidak dibayar karena baris ber-status 'pengganti' (di luar query atas).
+        // Sesi UJIAN dikecualikan: penjaga (termasuk penggantinya saat di-inval)
+        // dibayar PER SESI lewat vakasi jaga ujian, bukan per JP. Tanpa penyaring
+        // ini satu sesi ujian terbayar dua kali.
         $pengganti = AbsensiMengajar::where('digantikan_oleh', $guru->id)
             ->whereBetween('tanggal', [$mulai->toDateString(), $selesai->toDateString()])
             ->where('status', 'pengganti')
             ->where('jp_terlaksana', '>', 0)
+            ->whereHas('jadwalMengajar', fn ($q) => $q->whereNull('ujian_sesi_id'))
             ->get();
         $jpPengganti = (int) $pengganti->sum('jp_terlaksana');
 
@@ -639,6 +655,62 @@ class PayrollCalculationService
                 'referensi_ids'    => $rekapMengajar['ids'] ?? [],
             ]],
         ];
+    }
+
+    /**
+     * Vakasi JAGA UJIAN — flat PER SESI yang benar-benar dijaga.
+     *
+     * Yang dibayar adalah penjaga AKTUAL: bila sesinya di-inval, penggantinya
+     * yang menerima, dengan nominal vakasi penjaga yang sama (keputusan 8 Okt
+     * 2026). Nominalnya memakai snapshot saat penunjukan, sehingga perubahan
+     * tarif tidak mengubah slip yang sudah terbit.
+     *
+     * Sesi yang belum diabsen penjaganya tidak dibayar — sama perlakuannya
+     * dengan mengajar: tidak ada bukti hadir, tidak ada vakasi.
+     */
+    private function hitungVakasiJagaUjian(TenagaPendidik $guru, Carbon $mulai, Carbon $selesai, ?int $periodeId = null): array
+    {
+        $sesi = \App\Models\UjianSesi::with(['ujian:id,nama', 'kelas:id,nama', 'mataPelajaran:id,nama', 'jadwal:id,ujian_sesi_id'])
+            ->whereBetween('tanggal', [$mulai->toDateString(), $selesai->toDateString()])
+            ->whereHas('ujian', fn ($q) => $q->whereNull('dibatalkan_pada'))
+            ->where(fn ($q) => $q->where('penjaga_id', $guru->id)
+                ->orWhereHas('jadwal.absensiMengajar', fn ($a) => $a->where('digantikan_oleh', $guru->id)))
+            ->orderBy('tanggal')->orderBy('jam_mulai')->get();
+
+        $total = 0.0; $details = []; $ids = [];
+
+        foreach ($sesi as $s) {
+            // Pemilik vakasi ditentukan oleh siapa yang benar-benar menjaga.
+            if ($s->penjagaAktual() !== $guru->id) continue;
+            if (!$s->sudahDijaga()) continue;
+
+            $nominal = (float) $s->nominal_vakasi;
+            $total  += $nominal;
+            $ids[]   = $s->id;
+
+            $inval = $s->penjaga_id !== $guru->id ? ' (inval)' : '';
+            $details[] = [
+                'tipe'             => 'vakasi_jaga_ujian',
+                'keterangan'       => 'Jaga ujian ' . ($s->kelas?->nama ?? '—') . ' — '
+                    . ($s->mataPelajaran?->nama ?? '—') . ' · '
+                    . $s->tanggal->toDateString() . ' ' . $s->jamLabel() . $inval,
+                'jumlah_satuan'    => 1,
+                'satuan'           => 'sesi',
+                'nilai_per_satuan' => $nominal,
+                'subtotal'         => $nominal,
+                'referensi_ids'    => [$s->id],
+            ];
+        }
+
+        // Tandai terbayar agar sesi tidak dibayar ulang bila periode digenerate lagi.
+        if ($periodeId && $ids) {
+            \App\Models\UjianSesi::whereIn('id', $ids)->update([
+                'vakasi_dibayar'     => true,
+                'dibayar_periode_id' => $periodeId,
+            ]);
+        }
+
+        return ['total' => $total, 'detail' => $details];
     }
 
     // ─── Vakasi Peserta Kegiatan ──────────────────────────────────────────────
@@ -1040,6 +1112,8 @@ class PayrollCalculationService
             'penyesuaian_liburan', 'lainnya',
             // Ditambah 26 Sep 2026 — sebelumnya jatuh ke 'lainnya' di slip.
             'vakasi_piket', 'vakasi_ekstrakurikuler', 'potongan_guru',
+            // Ditambah 8 Okt 2026 — vakasi penjaga ujian (flat per sesi).
+            'vakasi_jaga_ujian',
         ];
 
         if (in_array($tipe, $valid, true)) {

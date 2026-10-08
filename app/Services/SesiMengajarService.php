@@ -152,7 +152,8 @@ class SesiMengajarService
             ->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
             ->whereHas('tenagaPendidik', fn ($q) => $q->where('is_aktif', true))
-            ->whereDate('created_at', '<=', $tanggal)
+            // Masa berlaku jadwal: sesi ujian hanya berlaku pada tanggalnya sendiri.
+            ->berlakuPada($tanggal)
             ->when($tenagaPendidikId, fn ($q) => $q->where('tenaga_pendidik_id', $tenagaPendidikId))
             ->orderBy('jam_mulai')
             ->get();

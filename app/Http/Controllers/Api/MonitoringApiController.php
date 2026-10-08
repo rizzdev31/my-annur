@@ -92,6 +92,7 @@ class MonitoringApiController extends Controller
                 ->whereIn('tenaga_pendidik_id', $guruIds)
                 ->where('hari', $namaHari)->where('is_aktif', true)
                 ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+                ->berlakuPada($tanggal)
                 ->orderBy('jam_mulai')->get();
 
             $am = \App\Models\AbsensiMengajar::with('digantikanOleh.user:id,name')
@@ -278,6 +279,7 @@ class MonitoringApiController extends Controller
             ->whereIn('tenaga_pendidik_id', $guruIds)
             ->where('hari', $namaHari)->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($tanggal)
             ->orderBy('jam_mulai')->get();
 
         $absensi = \App\Models\AbsensiMengajar::with('digantikanOleh.user:id,name')

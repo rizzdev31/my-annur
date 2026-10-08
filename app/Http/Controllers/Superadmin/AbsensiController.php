@@ -249,6 +249,7 @@ class AbsensiController extends Controller
             ->where('hari', $namaHari)
             ->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn($q) => $q->where('is_aktif', true))
+            ->berlakuPada($tanggal)
             ->when($search, fn($q) => $q->whereHas('tenagaPendidik.user', fn($u) =>
                 $u->where('name', 'like', "%{$search}%")
             ))
