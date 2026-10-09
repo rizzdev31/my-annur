@@ -71,6 +71,23 @@ use Illuminate\Support\Facades\DB;
 class KinerjaCalculationService
 {
     /**
+     * Sejak kapan kelas mapel WAJIB punya absensi santri agar sesinya dihitung
+     * dilaporkan (selain materi/jurnal).
+     *
+     * Sebelumnya bukti kelas sekolah/pesantren hanya `materi`, sehingga roster
+     * santri tidak berbobot apa pun: sesi bermateri tanpa absensi santri lolos
+     * 100%, sedangkan sesi yang rosternya lengkap tapi materinya kosong justru
+     * dihitung lalai. Terukur 9 Okt 2026: 67 sesi (10,3%) dalam 30 hari lolos
+     * seperti itu, 32 di antaranya milik satu guru.
+     *
+     * Tanggalnya di MASA DEPAN atas keputusan pimpinan: aturan baru tidak
+     * dipakai mundur supaya skor September–Oktober tidak berubah dan guru
+     * diberi tahu lebih dahulu. Sesi sebelum tanggal ini tetap dinilai dengan
+     * aturan lama.
+     */
+    public const WAJIB_ROSTER_MAPEL_SEJAK = '2026-11-01';
+
+    /**
      * Batas hitung: hari kerja yang SUDAH BERJALAN (s/d kemarin), tidak pernah
      * melewati akhir bulan. Bulan lampau otomatis = sebulan penuh.
      * Dipakai bersama hitungRekap() dan preview() supaya angka di aplikasi guru
@@ -591,6 +608,7 @@ class KinerjaCalculationService
             'belum_materi'     => $bukti['belum_materi'],
             'belum_roster'     => $bukti['belum_roster'],
             'belum_roster_mapel' => $bukti['belum_roster_mapel'],
+            'gagal_roster_mapel' => $bukti['gagal_roster_mapel'],
             'sesi_quran'       => $bukti['sesi_quran'],
             'sesi_mapel'       => $bukti['sesi_mapel'],
             'sesi_jadwal'      => $sesiJadwal,
@@ -682,6 +700,7 @@ class KinerjaCalculationService
                         // Belum mengurangi skor; ditampilkan agar sesi mapel yang
                         // absensi santrinya tak pernah diisi tidak lagi tak terlihat.
                         'belum_roster_mapel' => $k3['belum_roster_mapel'] ?? 0,
+                        'gagal_roster_mapel' => $k3['gagal_roster_mapel'] ?? 0,
                         'log_submitted'   => $k3['log_submitted'],
                         'target_log'      => $k3['target_log'] ?? 0,
                     ],
@@ -728,13 +747,13 @@ class KinerjaCalculationService
         $kosong = [
             'dilaporkan'   => collect(),
             'belum_materi' => 0, 'belum_roster' => 0,
-            // Kelas mapel yang MATERINYA ada tetapi roster santrinya kosong.
-            // Tidak mengurangi skor (lihat catatan di bawah), tetapi harus
-            // terlihat: tanpa angka ini, tidak ada satu pun tempat di sistem
-            // yang memberitahu bahwa absensi santri sebuah sesi tak pernah
-            // diisi. Terukur 67 sesi (10,3%) dalam 30 hari per 9 Okt 2026,
-            // 32 di antaranya milik satu guru.
+            // Seluruh sesi mapel yang roster santrinya kosong — untuk dipantau,
+            // termasuk sesi sebelum kebijakan berlaku. Tanpa angka ini tidak ada
+            // satu pun tempat di sistem yang memberitahu bahwa absensi santri
+            // sebuah sesi tak pernah diisi.
             'belum_roster_mapel' => 0,
+            // Bagian yang benar-benar mengurangi skor (sesudah tanggal berlaku).
+            'gagal_roster_mapel' => 0,
             'sesi_quran'   => 0, 'sesi_mapel'   => 0,
         ];
         if ($absensiList->isEmpty()) return $kosong;
@@ -770,20 +789,28 @@ class KinerjaCalculationService
             }
 
             $hasil['sesi_mapel']++;
-            if ($adaMateri) $hasil['dilaporkan'][$a->id] = true;
-            else            $hasil['belum_materi']++;
+            $rosterKosong = !$adaRoster->has($a->id);
+            if ($rosterKosong) $hasil['belum_roster_mapel']++;
+            if ($rosterKosong && $adaMateri
+                && $a->tanggal
+                && Carbon::parse($a->tanggal)->toDateString() >= self::WAJIB_ROSTER_MAPEL_SEJAK) {
+                // Yang BENAR-BENAR mengurangi skor; dipisah dari penghitung
+                // pemantauan di atas supaya penjelasan ke guru tidak menuduh
+                // sesi lama yang saat itu belum diwajibkan.
+                $hasil['gagal_roster_mapel']++;
+            }
 
-            // Hanya DICATAT, belum mempengaruhi skor.
-            //
-            // Untuk kelas mapel, bukti yang diterima sampai sekarang hanya
-            // `materi`; roster santri tidak diperiksa sama sekali. Akibatnya
-            // timpang: sesi dengan materi tetapi tanpa absensi santri lolos
-            // 100%, sementara sesi yang rosternya lengkap tapi materinya kosong
-            // dihitung "belum dilaporkan" — padahal absensi santri justru inti
-            // pembelajaran. Menjadikannya bukti wajib akan menurunkan skor 23
-            // guru secara retroaktif, jadi keputusannya milik pimpinan, bukan
-            // diputuskan di sini.
-            if (!$adaRoster->has($a->id)) $hasil['belum_roster_mapel']++;
+            // Sejak WAJIB_ROSTER_MAPEL_SEJAK, kelas mapel butuh DUA bukti.
+            // Sebelum tanggal itu materi saja cukup — aturan baru tidak
+            // dipakai mundur (lihat catatan pada konstantanya).
+            $wajibRoster = $a->tanggal
+                && Carbon::parse($a->tanggal)->toDateString() >= self::WAJIB_ROSTER_MAPEL_SEJAK;
+
+            if ($adaMateri && !($wajibRoster && $rosterKosong)) {
+                $hasil['dilaporkan'][$a->id] = true;
+            } elseif (!$adaMateri) {
+                $hasil['belum_materi']++;
+            }
         }
 
         return $hasil;
@@ -879,20 +906,31 @@ class KinerjaCalculationService
             $belum        = max(0, (int) $k3['sesi_jadwal'] - (int) $k3['sesi_dilaporkan']);
             $belumMateri  = (int) ($k3['belum_materi'] ?? 0);
             $belumRoster  = (int) ($k3['belum_roster'] ?? 0);
+            // Sesi mapel yang materinya ada tetapi absensi santrinya kosong,
+            // dan sudah masuk masa berlaku kewajiban roster.
+            $rosterMapel  = (int) ($k3['gagal_roster_mapel'] ?? 0);
 
             // Bentuk bukti berbeda per jenis pembelajaran, jadi sebabnya ditulis
             // sesuai yang benar-benar harus diisi guru bersangkutan.
             $rincian = [];
             if ($belumMateri > 0) $rincian[] = "{$belumMateri} sesi pelajaran belum ada materi/jurnal";
+            if ($rosterMapel > 0) $rincian[] = "{$rosterMapel} sesi pelajaran belum ada absensi santrinya";
             if ($belumRoster > 0) $rincian[] = "{$belumRoster} sesi tahfidz/tahsin belum ada absensi santrinya";
-            $sisa = $belum - $belumMateri - $belumRoster;
+            $sisa = $belum - $belumMateri - $belumRoster - $rosterMapel;
             if ($sisa > 0) $rincian[] = "{$sisa} sesi belum terlaksana/dilaporkan";
 
-            $saran = $belumRoster > 0 && $belumMateri === 0
-                ? 'Isi absensi santri tiap pertemuan tahfidz/tahsin — itu yang dihitung, bukan materi.'
-                : ($belumRoster > 0
-                    ? 'Kelas pelajaran: isi materi/jurnal. Tahfidz & tahsin: cukup isi absensi santri (atau catatan setoran).'
-                    : 'Isi materi/jurnal setiap selesai mengajar — absen saja belum dihitung.');
+            if ($rosterMapel > 0 && $belumMateri === 0 && $belumRoster === 0) {
+                $saran = 'Materi/jurnal sudah terisi — yang belum adalah absensi santrinya. '
+                    . 'Sejak ' . Carbon::parse(self::WAJIB_ROSTER_MAPEL_SEJAK)->translatedFormat('F Y')
+                    . ', sesi pelajaran dihitung dilaporkan bila materi DAN absensi santri terisi.';
+            } elseif ($belumRoster > 0 && $belumMateri === 0 && $rosterMapel === 0) {
+                $saran = 'Isi absensi santri tiap pertemuan tahfidz/tahsin — itu yang dihitung, bukan materi.';
+            } elseif ($belumRoster > 0 || $rosterMapel > 0) {
+                $saran = 'Kelas pelajaran: isi materi/jurnal DAN absensi santri. '
+                    . 'Tahfidz & tahsin: cukup absensi santri (atau catatan setoran).';
+            } else {
+                $saran = 'Isi materi/jurnal setiap selesai mengajar — absen saja belum dihitung.';
+            }
 
             $f[] = [
                 'komponen' => 'Laporan mengajar',
