@@ -58,15 +58,21 @@ class BukuTamuController extends Controller
             'asal'         => 'required|string|min:3|max:255',
             'pekerjaan'    => 'required|string|min:2|max:180',
             // Email WAJIB (keputusan 9 Okt 2026): notulensi dikirim lewat email.
-            'email'        => 'required|email:rfc,dns|max:180',
+            // Hanya format yang divalidasi di sini; keberadaan domainnya diperiksa
+            // service agar bisa dilewati saat DNS sendiri sedang bermasalah.
+            'email'        => 'required|email:rfc|max:180',
             'tanda_tangan' => 'required|string',
         ], [
-            'email.dns'           => 'Domain email tidak ditemukan. Mohon periksa kembali alamat email Anda.',
             'tanda_tangan.required' => 'Tanda tangan belum diisi.',
         ]);
 
+        $svc = app(BukuTamuService::class);
+        if ($pesanEmail = $svc->alasanEmailDitolak($d['email'])) {
+            return back()->withErrors(['email' => $pesanEmail])->withInput();
+        }
+
         try {
-            $tamu = app(BukuTamuService::class)->simpanTamu($kegiatan, $d, $request);
+            $tamu = $svc->simpanTamu($kegiatan, $d, $request);
         } catch (\DomainException $e) {
             return back()->withErrors(['nama' => $e->getMessage()])->withInput();
         }

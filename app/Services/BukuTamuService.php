@@ -143,6 +143,38 @@ class BukuTamuService
     // Pembantu
     // ══════════════════════════════════════════════════════════════════════
 
+    /**
+     * Apakah domain email tamu benar-benar bisa menerima surat?
+     *
+     * Penting karena notulensi dikirim lewat email: salah ketik seperti
+     * "gmial.com" baru ketahuan berbulan kemudian saat pengiriman gagal, dan
+     * setiap kiriman gagal memakan kuota email.
+     *
+     * TIDAK memakai aturan `email:dns` bawaan Laravel: bila DNS kontainer
+     * sedang tak bisa dihubungi, aturan itu menolak SEMUA alamat dan tamu di
+     * lokasi acara gagal mengisi sama sekali. Di sini, bila DNS-nya sendiri
+     * yang bermasalah, pemeriksaan dilewati — lebih baik satu alamat salah
+     * lolos daripada seluruh buku tamu lumpuh.
+     *
+     * @return string|null  null = diterima; selain itu pesan untuk tamu
+     */
+    public function alasanEmailDitolak(string $email): ?string
+    {
+        $domain = Str::after(Str::lower(trim($email)), '@');
+        if ($domain === '' || !str_contains($email, '@')) {
+            return 'Alamat email tidak valid.';
+        }
+        if (!function_exists('checkdnsrr')) return null;
+
+        // Patokan: bila domain yang pasti ada pun tak terbaca, DNS-nya bermasalah.
+        $dnsSehat = @checkdnsrr('gmail.com', 'MX');
+        if (!$dnsSehat) return null;
+
+        if (@checkdnsrr($domain, 'MX') || @checkdnsrr($domain, 'A')) return null;
+
+        return 'Domain email "' . $domain . '" tidak ditemukan. Mohon periksa kembali alamat email Anda.';
+    }
+
     /** Ringkasan untuk kartu admin. */
     public function ringkasan(KegiatanTamu $kegiatan): array
     {
