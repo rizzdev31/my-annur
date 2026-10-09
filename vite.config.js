@@ -10,6 +10,7 @@ export default defineConfig({
                 'resources/js/app.js',       // Admin (Inertia)
                 'resources/js/guru/main.js',  // Guru mobile-web (PWA SPA)
                 'resources/js/santri/main.js', // Santri/Wali portal (PWA SPA)
+                'resources/css/tamu.css',     // Buku tamu publik (hanya CSS, tanpa bundel admin)
             ],
             refresh: true,
         }),

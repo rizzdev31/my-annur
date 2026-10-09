@@ -14,7 +14,7 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Buku Tamu — {{ $kegiatan->nama }}</title>
     <link rel="icon" href="{{ asset('logo.png') }}">
-    @vite(['resources/css/app.css'])
+    @vite(['resources/css/tamu.css'])
     <style>
         /* Kanvas tanda tangan: cegah halaman tergeser saat menggambar. */
         #ttd { touch-action: none; }

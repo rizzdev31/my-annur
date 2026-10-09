@@ -1,0 +1,15 @@
+/* Halaman buku tamu publik — berkas CSS mandiri, TANPA bundel admin.
+   Tamu membuka tautan ini di jaringan lokasi acara, jadi yang dimuat hanya
+   Tailwind seperlunya (lihat vite.config.js: entri 'resources/css/tamu.css'). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+    body {
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+}

@@ -10,7 +10,7 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Terima kasih — {{ $kegiatan->nama }}</title>
     <link rel="icon" href="{{ asset('logo.png') }}">
-    @vite(['resources/css/app.css'])
+    @vite(['resources/css/tamu.css'])
 </head>
 <body class="min-h-full bg-slate-100 antialiased">
 <div class="mx-auto w-full max-w-lg px-4 py-10">
