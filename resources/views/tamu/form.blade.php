@@ -234,6 +234,23 @@
         if (petunjuk) petunjuk.classList.remove('hidden');
     });
 
+    // Kanvas mengikuti devicePixelRatio supaya tidak kabur di layar, tetapi
+    // menyimpan apa adanya membuat berkasnya besar: 50 tanda tangan beresolusi
+    // tinggi membengkakkan PDF daftar hadir sampai belasan MB. Jadi ekspornya
+    // dinormalkan ke ukuran cetak yang wajar.
+    const LEBAR_EKSPOR = 560, TINGGI_EKSPOR = 240;
+    function ekspor() {
+        const kecil = document.createElement('canvas');
+        kecil.width = LEBAR_EKSPOR;
+        kecil.height = TINGGI_EKSPOR;
+        const k = kecil.getContext('2d');
+        // Latar putih: PNG transparan tampak hitam di beberapa pembaca PDF.
+        k.fillStyle = '#ffffff';
+        k.fillRect(0, 0, LEBAR_EKSPOR, TINGGI_EKSPOR);
+        k.drawImage(kanvas, 0, 0, LEBAR_EKSPOR, TINGGI_EKSPOR);
+        return kecil.toDataURL('image/png');
+    }
+
     form.addEventListener('submit', (e) => {
         // Satu titik atau kotak kosong bukan tanda tangan — tolak di sini supaya
         // tamu tidak perlu menunggu bolak-balik ke server.
@@ -242,7 +259,7 @@
             alert('Mohon tanda tangani pada kotak yang tersedia.');
             return;
         }
-        ladang.value = kanvas.toDataURL('image/png');
+        ladang.value = ekspor();
         tombol.disabled = true;
         tombol.textContent = 'Menyimpan…';
     });
