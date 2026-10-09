@@ -168,6 +168,12 @@ return [
                 'admin.smart-payroll.laporan.export',
             ],
         ],
+        'buku_tamu' => [
+            'nama'     => 'Buku Tamu',
+            'kategori' => 'Penggajian & Laporan',
+            'beranda'  => 'admin.smart-payroll.buku-tamu.index',
+            'prefix'   => ['admin.smart-payroll.buku-tamu'],
+        ],
         'kalender_libur' => [
             'nama'     => 'Kalender Libur',
             'kategori' => 'Penggajian & Laporan',

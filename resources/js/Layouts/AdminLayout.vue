@@ -100,7 +100,7 @@
                 </template>
 
                 <!-- ══ SMART PAYROLL ════════════════════════════════════════ -->
-                <SidebarSection v-if="sidebarOpen && boleh('absensi','monitoring','kinerja','tugas_jabatan','tugas_tambahan','absensi_kegiatan','lembur','pengajuan_izin','gaji_periode','gaji_data','gaji_laporan','kalender_libur')" label="Smart Payroll" />
+                <SidebarSection v-if="sidebarOpen && boleh('absensi','monitoring','kinerja','tugas_jabatan','tugas_tambahan','absensi_kegiatan','lembur','pengajuan_izin','gaji_periode','gaji_data','gaji_laporan','kalender_libur','buku_tamu')" label="Smart Payroll" />
 
                 <!-- 1. Absensi -->
                 <SidebarGroup v-if="boleh('absensi')" icon="clock" label="Absensi" :active="isActive('admin.smart-payroll.absensi')"
@@ -151,6 +151,9 @@
                     <SidebarSubItem :href="route('admin.smart-payroll.hari-libur.index')" label="Hari Libur" />
                     <SidebarSubItem :href="route('admin.smart-payroll.libur-tendik.index')" label="Libur Individu" />
                 </SidebarGroup>
+                <SidebarItem v-if="boleh('buku_tamu')" :href="route('admin.smart-payroll.buku-tamu.index')"
+                    icon="users" label="Buku Tamu"
+                    :active="isActive('admin.smart-payroll.buku-tamu')" :collapsed="!sidebarOpen" />
                 <SidebarGroup v-if="boleh('gaji_periode','gaji_data')" icon="dollar" label="Penggajian"
                     :active="isActive('admin.smart-payroll.penggajian') || isActive('admin.smart-payroll.periode')"
                     :collapsed="!sidebarOpen">
@@ -682,6 +685,7 @@ const menuLinks = computed(() => {
         { label: 'Lembur', href: r('admin.smart-payroll.lembur.index'), icon: 'clipboard' },
         { label: 'Pengajuan Izin', href: r('admin.smart-payroll.pengajuan-izin.index'), icon: 'inbox' },
         { label: 'Hari Libur', href: r('admin.smart-payroll.hari-libur.index'), icon: 'ban' },
+        { label: 'Buku Tamu', href: r('admin.smart-payroll.buku-tamu.index'), icon: 'users' },
         { label: 'Libur Individu', href: r('admin.smart-payroll.libur-tendik.index'), icon: 'calendar' },
         { label: 'Periode Gaji', href: r('admin.smart-payroll.periode.index'), icon: 'dollar' },
         { label: 'Data Gaji', href: r('admin.smart-payroll.penggajian.index'), icon: 'dollar' },

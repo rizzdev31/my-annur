@@ -34,6 +34,7 @@ use App\Http\Controllers\Superadmin\AbsensiKegiatanController;
 // ── Smart Payroll — Izin & Libur ──────────────────────────────────────────────
 use App\Http\Controllers\Superadmin\PengajuanIzinController;
 use App\Http\Controllers\Superadmin\HariLiburController;
+use App\Http\Controllers\Superadmin\BukuTamuController;
 use App\Http\Controllers\Superadmin\LiburPembelajaranController;
 use App\Http\Controllers\Superadmin\LiburTendikController;
 use App\Http\Controllers\Superadmin\InventarisController;
@@ -89,6 +90,18 @@ Route::get('/', function () {
 // GURU MOBILE-WEB (PWA SPA) — semua rute /guru/* dilayani shell SPA;
 // routing internal ditangani Vue Router. Auth lewat API token (bukan session).
 // ─────────────────────────────────────────────────────────────────────────────
+// ── BUKU TAMU (PUBLIK) ───────────────────────────────────────────────────────
+// Satu-satunya pintu tanpa login. Dibatasi laju per IP: cukup lapang untuk
+// antrean tamu di meja penerima, tetapi menutup pengisian otomatis beruntun.
+Route::prefix('tamu')->name('tamu.')->group(function () {
+    Route::get('/{token}', [\App\Http\Controllers\Publik\BukuTamuController::class, 'show'])
+        ->middleware('throttle:60,1')->name('form');
+    Route::post('/{token}', [\App\Http\Controllers\Publik\BukuTamuController::class, 'store'])
+        ->middleware('throttle:8,1')->name('simpan');
+    Route::get('/{token}/sukses', [\App\Http\Controllers\Publik\BukuTamuController::class, 'sukses'])
+        ->middleware('throttle:60,1')->name('sukses');
+});
+
 Route::get('/guru/{any?}', fn () => view('guru'))
     ->where('any', '.*')
     ->name('guru');
@@ -409,6 +422,16 @@ Route::prefix('admin')
             Route::post('pengajuan-izin/{pengajuanIzin}/sementara-batal', [PengajuanIzinController::class, 'sementaraBatal'])->name('pengajuan-izin.sementara-batal');
             Route::resource('pengajuan-izin', PengajuanIzinController::class)
                 ->only(['index', 'create', 'store', 'show']);
+
+            // ── BUKU TAMU ─────────────────────────────────────────────────
+            Route::prefix('buku-tamu')->name('buku-tamu.')->group(function () {
+                Route::get('/',  [BukuTamuController::class, 'index'])->name('index');
+                Route::post('/', [BukuTamuController::class, 'store'])->name('store');
+                Route::get('/{kegiatanTamu}',          [BukuTamuController::class, 'show'])->name('show');
+                Route::put('/{kegiatanTamu}',          [BukuTamuController::class, 'update'])->name('update');
+                Route::patch('/{kegiatanTamu}/toggle', [BukuTamuController::class, 'toggle'])->name('toggle');
+                Route::get('/{kegiatanTamu}/cetak',    [BukuTamuController::class, 'cetak'])->name('cetak');
+            });
 
             // ── 6. HARI LIBUR ─────────────────────────────────────────────
             Route::post('hari-libur/darurat',
