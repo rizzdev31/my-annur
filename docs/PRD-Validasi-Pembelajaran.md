@@ -295,11 +295,21 @@ Jadi absensi santri — inti pembelajaran, dan sumber Laporan Kehadiran Santri �
 tidak berbobot apa pun, sementara catatan materi yang sifatnya pelengkap
 menentukan skor. Guru di atas berskor laporan sempurna dengan 0 roster.
 
-**Yang dikerjakan:** `belum_roster_mapel` dihitung dan dibawa ke rincian
-komponen administrasi — **tanpa mengubah skor**. Menjadikannya bukti wajib
-menurunkan skor **23 guru** secara retroaktif (19 di antaranya hanya 1–4 sesi),
-jadi itu keputusan pimpinan, bukan keputusan teknis. **Masih menunggu
-keputusan.**
+**Keputusan pimpinan 9 Okt 2026: absensi santri menjadi bukti WAJIB, tetapi
+TIDAK berlaku mundur.** `KinerjaCalculationService::WAJIB_ROSTER_MAPEL_SEJAK =
+'2026-11-01'`. Sesi sebelum tanggal itu tetap dinilai dengan aturan lama
+(materi saja), sehingga skor September–Oktober tidak berubah dan guru bisa
+diberi tahu lebih dahulu — menjadikannya retroaktif akan menurunkan skor **23
+guru** sekaligus (19 di antaranya hanya 1–4 sesi).
+
+Dua penghitung sengaja dipisah: `belum_roster_mapel` (semua sesi tanpa roster,
+untuk dipantau sejak sekarang) dan `gagal_roster_mapel` (yang benar-benar
+mengurangi skor, hanya sesudah tanggal berlaku) — tanpa pemisahan itu,
+penjelasan ke guru akan menuduh sesi lama yang saat itu belum diwajibkan.
+Penjelasan di aplikasi guru kini berbunyi "N sesi pelajaran belum ada absensi
+santrinya" beserta bulan mulai berlakunya.
+
+**Sisa pekerjaan non-teknis:** beri tahu guru sebelum 1 November.
 
 ## Temuan B — "21 inval tanpa catatan": PALSU
 
