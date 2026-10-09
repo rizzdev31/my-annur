@@ -1,6 +1,8 @@
 # PRD — Validasi Pembelajaran (Validator)
 
-**Status:** DITUNDA — hasil brainstorm 3 Oktober 2026, belum dikerjakan
+**Status:** DITUNDA — brainstorm 3 Okt 2026; **sinyal anomali sudah diukur di
+produksi 9 Okt 2026 (lihat bagian akhir) dan hasilnya mengubah arah: mesin risiko
+tidak punya bahan, yang tersisa sidak berbasis sampel acak.**
 **Tujuan:** mengetahui kebenaran guru mengajar atau tidak
 **Terkait:** [PRD-Override-Pembelajaran.md](PRD-Override-Pembelajaran.md), [PRD-Guru-Piket.md](PRD-Guru-Piket.md)
 
@@ -197,3 +199,77 @@ Sebelum membangun apa pun: **ukur sinyal anomalinya di data nyata** — berapa s
 yang diabsen borongan di akhir hari, berapa yang jam mulainya jauh dari jadwal,
 berapa guru tercatat di dua kelas bersamaan. Hasilnya menentukan apakah mesin
 risiko punya bahan, atau yang dibutuhkan murni sidak acak.
+
+---
+
+# HASIL PENGUKURAN — 9 Oktober 2026
+
+Dijalankan di produksi, hanya baca. Jendela **9 Sep – 9 Okt 2026**: 1.533 baris
+`absensi_mengajar`, populasi uji **1.221 sesi** yang diakui mengajar
+(`terlaksana`+`pengganti`, tanpa libur pembelajaran & tanpa sesi ujian) di
+**27 hari aktif** → **45,2 sesi/hari**.
+
+Catatan metode: selisih waktu dihitung di PHP, bukan SQL — MySQL kontainer
+berjalan UTC sementara aplikasi Asia/Jakarta. Dan **4,6% baris dibuat sistem
+lebih dulu** (inval/kegiatan) lalu diisi guru, sehingga `created_at`-nya bukan
+saat guru menekan absen; untuk baris itu dipakai `updated_at`.
+
+## Sinyal yang TIDAK dikuasai guru — praktis kosong
+
+| Sinyal | Hasil | Tafsir |
+|---|---|---|
+| Pencatatan borongan (≥2 sesi berjadwal beda dalam ≤120 detik) | **6 sesi (0,5%)**, 3 gugus | tidak ada bahan |
+| Melewati batas pencatatan (`jam_selesai` + 15 mnt) | **0 sesi (0,0%)** | **mustahil secara struktural** — `KebijakanMengajar::batasAbsenSesi()` sudah menutup pintunya. 97,6% dicatat sebelum sesi selesai, 2,4% dalam masa tenggang |
+| Dicatat jauh sebelum jadwal (>30 mnt di muka) | **1 sesi (0,1%)** | tidak ada bahan |
+| Dicatat pada tanggal berbeda | **0 sesi** | tidak ada bahan |
+| Satu guru dua kelas pada jam bertabrakan | 42 sesi / 21 pasangan (3,4%) | **bukan kecurangan**: 100% `tahsin × tahsin`, 13 pasangan jadwal yang sama berulang 1,6×, didominasi satu guru → **cacat/kesengajaan JADWAL**, bukan temuan validasi |
+
+**Kekeliruan yang hampir masuk laporan:** pengukuran pertama memakai jarak dari
+`jam_mulai` dan memunculkan "3,5% telat 1–3 jam". Itu palsu — sesi 2–3 JP memang
+panjang. Diukur terhadap batas yang benar (`jam_selesai` + 15 menit), angkanya
+**nol**.
+
+## Sinyal yang ada bahannya — tetapi semuanya buatan guru sendiri
+
+| Sinyal | Hasil | Catatan |
+|---|---|---|
+| Tanpa roster santri | **75 sesi (6,1%)** | semuanya kelas **reguler** (11,5% dari 653 sesi reguler); tahfidz & tahsin **0%**. **Satu guru menyumbang 32 dari 75 (43%)** |
+| Pengganti (inval) tanpa materi | **21 dari 73 (28,8%)** | |
+| Tanpa materi | 618 (50,6%) | **568 di antaranya struktural** (tahfidz 334 + tahsin 234 tidak memakai materi). Sisa nyata: **50 sesi reguler** |
+| Tanpa foto | 569 (46,6%) | reguler **99,8% berfoto**; tahfidz & tahsin **0%** — memang tidak diminta |
+
+## Kesimpulan: mesin risiko tidak punya bahan
+
+Gabungan seluruh sinyal: **168 sesi (13,8%)**, 6,2/hari aktif; 88,7% hanya
+memiliki satu sinyal. Dengan sampel acak 12% sesi bersih → antrian ±**10,9
+sesi/hari**, cukup untuk **2 validator** berkuota 6/hari. Jadi **bebannya
+terjangkau** — tetapi isi antriannya salah jenis.
+
+Tiga alasan:
+
+1. **Sinyal independen habis.** Yang benar-benar di luar kuasa guru (borongan,
+   telat catat, catat di muka) berjumlah **7 sesi dalam 30 hari**. Penyebabnya
+   justru baik: jendela absen per sesi sudah ketat, jadi tidak ada ruang
+   menyeleweng dari waktu pencatatan.
+2. **Sisanya validasi teater.** `tanpa_roster`, `pengganti_tanpa_catatan`,
+   `tanpa_materi` semuanya memeriksa **kelengkapan catatan guru**, bukan
+   kebenaran mengajarnya — persis risiko yang sudah diprediksi dokumen ini.
+3. **Sinyal tidak menunjuk orang.** 29 dari 34 guru (85,3%) punya ≥1 sinyal; 5
+   teratas hanya 55,4%. Jadi antrian berbasis risiko tidak menyaring siapa pun —
+   ia hanya mengantre hampir semua orang.
+
+**Untuk kelas Quran, risiko bahkan buta total:** tahfidz + tahsin = 568 sesi
+(47% populasi) dengan 0% foto, tanpa materi, dan 0% sesi tanpa roster. Tidak ada
+satu pun sinyal yang bisa membedakan halaqoh yang berjalan dari yang tidak.
+
+## Usul arah setelah pengukuran
+
+1. **Jangan bangun mesin risiko.** Tidak ada bahannya. Kalau validasi tetap
+   diinginkan, intinya **sidak berbasis sampel acak** — sederhana, dan justru itu
+   satu-satunya bukti independen menurut temuan ini.
+2. **Tiga temuan di bawah ini bisa dibereskan tanpa fitur baru sama sekali:**
+   satu guru dengan 32 sesi tanpa roster, 21 inval tanpa catatan, dan jadwal
+   tahsin bertabrakan milik satu guru (perlu dipastikan: memang memegang dua
+   halaqoh sekaligus, atau salah input jadwal).
+3. **Bila durasi mengajar ingin dinilai, wajibkan menutup sesi lebih dulu.**
+   `jam_selesai_aktual` hanya 5,9% pada jendela ini.
