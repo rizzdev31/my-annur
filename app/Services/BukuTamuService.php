@@ -39,6 +39,15 @@ class BukuTamuService
      */
     public const JEDA_KIRIM_DETIK = 6;
 
+    /**
+     * Setelah berapa menit baris "menunggu" dianggap macet dan boleh diantre ulang.
+     *
+     * Harus lebih panjang daripada waktu antrean terburuk (100 tamu × 6 detik
+     * = 10 menit) agar klik kirim kedua tidak menggandakan email yang masih
+     * dalam perjalanan.
+     */
+    private const MENIT_MACET = 30;
+
     // ══════════════════════════════════════════════════════════════════════
     // Kegiatan
     // ══════════════════════════════════════════════════════════════════════
@@ -239,12 +248,26 @@ class BukuTamuService
         $kandidat = match ($mode) {
             'gagal' => $semua->where('email_status', 'gagal'),
             'semua' => $semua,
-            default => $semua->whereIn('email_status', ['belum', 'menunggu', 'gagal', 'duplikat']),
+            // "menunggu" TIDAK ikut diantre ulang selama masih segar: kalau
+            // superadmin menekan kirim dua kali sementara antrean belum habis,
+            // tamu yang sama akan menerima dua email. Yang sudah menggantung
+            // lebih dari MENIT_MACET (pekerja mati, antrean dibersihkan) tetap
+            // boleh diulang, supaya tidak ada tamu yang terkunci selamanya.
+            default => $semua->filter(fn ($t) => in_array($t->email_status, ['belum', 'gagal', 'duplikat'], true)
+                || ($t->email_status === 'menunggu'
+                    && $t->updated_at
+                    && $t->updated_at->lt(now()->subMinutes(self::MENIT_MACET)))),
         };
 
         if ($kandidat->isEmpty()) {
-            throw new \DomainException($mode === 'gagal'
-                ? 'Tidak ada pengiriman yang gagal.'
+            if ($mode === 'gagal') {
+                throw new \DomainException('Tidak ada pengiriman yang gagal.');
+            }
+            // Bedakan "sudah selesai semua" dari "masih dalam perjalanan" —
+            // kalau disamakan, superadmin mengira pengirimannya tidak jalan.
+            throw new \DomainException($semua->where('email_status', 'menunggu')->isNotEmpty()
+                ? 'Masih ada ' . $semua->where('email_status', 'menunggu')->count()
+                    . ' email dalam antrean pengiriman. Tunggu beberapa menit, lalu segarkan halaman ini.'
                 : 'Semua tamu sudah menerima notulensi. Gunakan "kirim ulang ke semua" bila naskahnya direvisi.');
         }
 
