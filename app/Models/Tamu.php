@@ -12,7 +12,7 @@ class Tamu extends Model
     protected $table = 'tamu';
 
     protected $fillable = [
-        'kegiatan_tamu_id', 'nomor_urut', 'nama', 'asal', 'pekerjaan', 'email',
+        'kegiatan_tamu_id', 'nomor_urut', 'nama', 'asal', 'pekerjaan', 'email', 'telepon',
         'tanda_tangan', 'ip', 'perangkat', 'diisi_pada',
         'email_status', 'email_terkirim_pada', 'email_error',
         'konfirmasi_terkirim_pada', 'konfirmasi_error',
@@ -40,6 +40,27 @@ class Tamu extends Model
     public function kegiatan()
     {
         return $this->belongsTo(KegiatanTamu::class, 'kegiatan_tamu_id');
+    }
+
+    /**
+     * Nomor tersimpan ternormalkan (`6281…`); tampilkan dalam bentuk yang
+     * dikenali orang Indonesia agar mudah dicocokkan dengan kontak di ponsel.
+     */
+    public function getTeleponTampilAttribute(): ?string
+    {
+        if (blank($this->telepon)) return null;
+
+        if (str_starts_with($this->telepon, '62')) {
+            return '0' . substr($this->telepon, 2);
+        }
+
+        return '+' . $this->telepon;
+    }
+
+    /** Tautan chat WhatsApp. Null bila nomor tidak ada. */
+    public function getWaUrlAttribute(): ?string
+    {
+        return blank($this->telepon) ? null : 'https://wa.me/' . $this->telepon;
     }
 
     public function getTandaTanganUrlAttribute(): ?string

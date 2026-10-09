@@ -119,6 +119,8 @@ class BukuTamuController extends Controller
             'asal'         => $t->asal,
             'pekerjaan'    => $t->pekerjaan,
             'email'        => $t->email,
+            'telepon'      => $t->telepon_tampil,
+            'wa_url'       => $t->wa_url,
             'tanda_tangan' => $t->tanda_tangan_url,
             'diisi_pada'   => $t->diisi_pada?->format('d M Y H:i'),
             'email_status' => $t->email_status,

@@ -123,6 +123,21 @@
                         </p>
                     </div>
 
+                    <div>
+                        <label for="telepon" class="mb-1.5 block text-sm font-semibold text-slate-700">
+                            Nomor HP / WhatsApp
+                            <span class="ml-1 font-normal text-slate-400">(tidak wajib)</span>
+                        </label>
+                        {{-- inputmode tel: papan tuts angka langsung terbuka di ponsel. --}}
+                        <input id="telepon" name="telepon" type="tel" inputmode="tel"
+                               autocomplete="tel" value="{{ old('telepon') }}"
+                               placeholder="cth: 081234567890"
+                               class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
+                        <p class="mt-1.5 text-xs leading-relaxed text-slate-500">
+                            Hanya dipakai bila panitia perlu menghubungi Anda terkait kegiatan ini.
+                        </p>
+                    </div>
+
                     {{-- Tanda tangan --}}
                     <div>
                         <div class="mb-1.5 flex items-end justify-between">
@@ -143,11 +158,37 @@
                     </div>
                 </div>
 
-                {{-- Pemberitahuan penggunaan data: kami mengumpulkan email. --}}
-                <p class="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
-                    Data yang Anda isikan digunakan untuk daftar hadir kegiatan dan pengiriman
-                    notulensi melalui email. Data tidak dibagikan ke pihak lain.
-                </p>
+                {{--
+                    Pernyataan perlindungan data. Ditulis rinci karena halaman ini
+                    mengumpulkan email, nomor HP, dan TANDA TANGAN — tamu berhak tahu
+                    persis dipakai untuk apa sebelum menekan kirim, bukan setelahnya.
+                --}}
+                <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5">
+                    <p class="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                        <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24"
+                             stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                        </svg>
+                        Data Anda Aman
+                    </p>
+                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-600">
+                        Data yang Anda isikan disimpan secara aman pada sistem resmi
+                        {{ $kegiatan->penyelenggara ?: 'Pondok Pesantren An-Nur' }} dan digunakan
+                        sesuai ketentuan yang berlaku, yaitu: pencatatan daftar hadir kegiatan,
+                        pengiriman notulensi/hasil kegiatan melalui email, dan keperluan
+                        komunikasi panitia terkait kegiatan ini.
+                    </p>
+                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-600">
+                        Data <span class="font-semibold">tidak diperjualbelikan</span> dan
+                        <span class="font-semibold">tidak dibagikan kepada pihak lain</span>
+                        di luar keperluan di atas. Daftar tamu tidak ditampilkan pada halaman
+                        ini, sehingga data Anda tidak dapat dilihat tamu lain.
+                    </p>
+                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                        Dengan menekan tombol di bawah, Anda menyetujui ketentuan tersebut.
+                    </p>
+                </div>
 
                 <button type="submit" id="tombol-kirim"
                         class="mt-4 w-full rounded-2xl bg-sky-600 px-4 py-4 text-base font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-60">

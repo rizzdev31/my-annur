@@ -61,6 +61,11 @@ class BukuTamuController extends Controller
             // Hanya format yang divalidasi di sini; keberadaan domainnya diperiksa
             // service agar bisa dilewati saat DNS sendiri sedang bermasalah.
             'email'        => 'required|email:rfc|max:180',
+            // Nomor HP/WhatsApp OPSIONAL: pelengkap, bukan tumpuan. Tamu yang
+            // enggan memberi nomor tetap harus bisa mencatatkan kehadiran.
+            // Bentuknya dibebaskan di sini (tamu menulis dengan segala rupa);
+            // service yang menormalkan dan menolak yang janggal.
+            'telepon'      => 'nullable|string|max:30',
             'tanda_tangan' => 'required|string',
         ], [
             'tanda_tangan.required' => 'Tanda tangan belum diisi.',
@@ -69,6 +74,14 @@ class BukuTamuController extends Controller
         $svc = app(BukuTamuService::class);
         if ($pesanEmail = $svc->alasanEmailDitolak($d['email'])) {
             return back()->withErrors(['email' => $pesanEmail])->withInput();
+        }
+
+        // Normalkan di sini juga supaya keluhan nomor menempel pada kolomnya
+        // sendiri, bukan muncul di bawah kolom Nama.
+        try {
+            $d['telepon'] = $svc->rapikanTelepon($d['telepon'] ?? null);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['telepon' => $e->getMessage()])->withInput();
         }
 
         try {

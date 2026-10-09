@@ -217,6 +217,13 @@
                         <td class="px-3 py-3 text-sm text-gray-600 hidden lg:table-cell">{{ t.pekerjaan }}</td>
                         <td class="px-3 py-3">
                             <p class="text-xs text-gray-600 break-all">{{ t.email }}</p>
+                            <!-- Nomor langsung dapat diklik ke WhatsApp: panitia biasanya
+                                 perlu menghubungi tamu, bukan menyalin nomornya. -->
+                            <a v-if="t.wa_url" :href="t.wa_url" target="_blank" rel="noopener"
+                                class="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:underline">
+                                {{ t.telepon }}
+                                <span class="text-[9px] font-normal text-gray-400">WhatsApp ↗</span>
+                            </a>
                             <span v-if="t.email_status !== 'belum'"
                                 :class="['inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold', badge(t.email_status)]">
                                 {{ t.email_label }}<template v-if="t.email_terkirim"> · {{ t.email_terkirim }}</template>

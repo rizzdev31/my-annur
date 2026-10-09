@@ -64,7 +64,7 @@
                 <th>Nama Lengkap</th>
                 <th>Alamat / Instansi</th>
                 <th>Pekerjaan / Jabatan</th>
-                <th>Email</th>
+                <th>Email / No. HP</th>
                 <th>Tanda Tangan</th>
             </tr>
         </thead>
@@ -75,7 +75,14 @@
                     <td>{{ $t->nama }}</td>
                     <td>{{ $t->asal }}</td>
                     <td>{{ $t->pekerjaan }}</td>
-                    <td style="font-size:8.5px">{{ $t->email }}</td>
+                    {{-- Nomor ditumpuk di bawah email, bukan kolom ke-7: A4 tegak
+                         sudah penuh dengan 6 kolom dan tabelnya akan terhimpit. --}}
+                    <td style="font-size:8.5px">
+                        {{ $t->email }}
+                        @if ($t->telepon_tampil)
+                            <br><span style="color:#4b5563">{{ $t->telepon_tampil }}</span>
+                        @endif
+                    </td>
                     <td class="ttd">
                         @php($ttd = $t->tandaTanganDataUri())
                         @if ($ttd)

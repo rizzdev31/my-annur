@@ -95,7 +95,8 @@ class BukuTamuService
     /**
      * Simpan satu tamu. Nomor urut diberikan sistem.
      *
-     * @param  array  $d  nama, asal, pekerjaan, email, tanda_tangan (data-URL PNG)
+     * @param  array  $d  nama, asal, pekerjaan, email, telepon (opsional),
+     *                    tanda_tangan (data-URL PNG)
      * @throws \DomainException
      */
     public function simpanTamu(KegiatanTamu $kegiatan, array $d, ?Request $request = null): Tamu
@@ -104,10 +105,14 @@ class BukuTamuService
             throw new \DomainException($alasan);
         }
 
+        // Nomor dinormalkan SEBELUM berkas tanda tangan ditulis: nomor yang
+        // janggal harus ditolak tanpa meninggalkan berkas menggantung.
+        $telepon = $this->rapikanTelepon($d['telepon'] ?? null);
+
         $relatif = $this->simpanTandaTangan($d['tanda_tangan'], $kegiatan);
 
         try {
-            $tamu = DB::transaction(function () use ($kegiatan, $d, $request, $relatif) {
+            $tamu = DB::transaction(function () use ($kegiatan, $d, $request, $relatif, $telepon) {
                 // Kunci baris kegiatannya, bukan tabel tamu: dua tamu yang menekan
                 // kirim pada detik yang sama tidak boleh mendapat nomor yang sama.
                 $terkunci = KegiatanTamu::whereKey($kegiatan->id)->lockForUpdate()->first();
@@ -121,6 +126,7 @@ class BukuTamuService
                     'asal'             => $this->rapikan($d['asal']),
                     'pekerjaan'        => $this->rapikan($d['pekerjaan']),
                     'email'            => Str::lower(trim($d['email'])),
+                    'telepon'          => $telepon,
                     'tanda_tangan'     => $relatif,
                     'ip'               => $request?->ip(),
                     'perangkat'        => Str::limit((string) $request?->userAgent(), 240, ''),
@@ -411,6 +417,40 @@ class BukuTamuService
             'duplikat'  => $tamu->where('email_status', 'duplikat')->count(),
             'konfirmasi'=> $tamu->whereNotNull('konfirmasi_terkirim_pada')->count(),
         ];
+    }
+
+    /**
+     * Normalkan nomor HP/WhatsApp menjadi hanya angka berawalan kode negara.
+     *
+     * Tamu menulis nomor dengan segala rupa: `0812-3456-7890`,
+     * `+62 812 3456 7890`, `62812...`, `(031) 8921...`. Kalau disimpan apa
+     * adanya, tautan wa.me tidak bisa dibentuk dan satu orang bisa tercatat
+     * dengan dua bentuk nomor yang sama. Jadi dinormalkan sekali di sini.
+     *
+     * @throws \DomainException bila nomor terlalu pendek/panjang untuk masuk akal
+     */
+    public function rapikanTelepon(?string $nomor): ?string
+    {
+        if (blank($nomor)) return null;
+
+        $angka = preg_replace('/\D+/', '', $nomor);
+        if ($angka === '') return null;
+
+        // 0812… → 62812…  ·  812… → 62812…  ·  62812… / 971… dibiarkan apa adanya
+        // (nomor luar negeri tetap diterima, tamu undangan bisa dari mana saja).
+        if (str_starts_with($angka, '0')) {
+            $angka = '62' . ltrim($angka, '0');
+        } elseif (str_starts_with($angka, '8')) {
+            $angka = '62' . $angka;
+        }
+
+        $panjang = strlen($angka);
+        if ($panjang < 9 || $panjang > 15) {
+            throw new \DomainException('Nomor HP/WhatsApp sepertinya belum lengkap. '
+                . 'Mohon tulis seperti 081234567890, atau kosongkan bila tidak ingin mengisi.');
+        }
+
+        return $angka;
     }
 
     /** Rapikan isian tamu: spasi ganda & huruf kapital asal-asalan. */
