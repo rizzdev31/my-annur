@@ -154,14 +154,17 @@ sebagai gantinya.
 
 ## Yang BELUM dikerjakan (lanjutan)
 
+Diperiksa ulang di produksi **9 Oktober 2026** — status di bawah ini hasil
+pembacaan basis data, bukan ingatan.
+
 | # | Item | Catatan |
 |---|---|---|
-| 1 | **Nominal vakasi "Jaga Ujian"** | Setting Vakasi masih kosong → vakasi laporan Rp 0. Harus diisi sebelum paket ujian pertama. |
-| 2 | **Alpha ujian & WA wali ujian** | Ditunda atas keputusan 8 Okt. Saat ini roster ujian memakai alur absensi biasa. |
-| 3 | **Kehadiran ujian dibedakan di laporan** | Pola sudah ada dari `absensi_santri.sumber` (kegiatan); belum diterapkan untuk ujian. |
-| 4 | **Ruang gabungan / beberapa pengawas per ruang** | Model sekarang satu penjaga satu kelas (keputusan 8 Okt). |
-| 5 | **Koreksi roster kegiatan massal** | 316 baris `tasmi_lulus` tanpa setoran tasmi — keputusan kebijakan belum diambil (lihat memori sinkron hafalan). |
-| 6 | **Validasi pembelajaran (validator)** | Dibrainstorm, ditunda. Lihat PRD terpisah. |
+| 1 | **Nominal vakasi "Jaga Ujian"** | **Masih kosong** (0 baris `setting_vakasi` bertipe `jaga_ujian`) → vakasi penjaga Rp 0. Belum menimbulkan kerugian karena **belum ada paket ujian dibuat** (0 paket / 0 sesi), tetapi wajib diisi sebelum paket pertama. |
+| 2 | **Alpha ujian & WA wali ujian** | Belum. Ditunda atas keputusan 8 Okt; roster ujian memakai alur absensi biasa. |
+| 3 | **Kehadiran ujian dibedakan di laporan** | Belum — `absensi_santri.sumber` masih `enum('guru','kegiatan')`. Polanya sudah terbukti pada kegiatan, tinggal diterapkan. |
+| 4 | **Ruang gabungan / beberapa pengawas per ruang** | Belum, sesuai keputusan 8 Okt (satu penjaga satu kelas). |
+| 5 | **Keputusan kebijakan 318 baris `tasmi_lulus`** | **Bukan bagian koreksi roster kegiatan** — ini urusan sinkron hafalan tahfidz (baris berstatus lulus tasmi tanpa setoran tasmi). Jumlahnya **318** per 9 Okt (sebelumnya 316), jadi **terus bertambah** selama kebijakannya belum diputuskan: makin lama, makin besar yang harus dibereskan. Lihat memori sinkron hafalan. |
+| 6 | **Validasi pembelajaran (validator)** | Belum ada apa pun di kode: tabel `validator`/`validasi`/`validasi_riwayat` tidak ada, `ValidatorService`/`ValidasiService`/`RisikoSesiService` tidak ada, modul RBAC `validasi` belum terdaftar. Lihat PRD terpisah — masih menunggu 6 keputusan. |
 
 ## Uji produksi
 

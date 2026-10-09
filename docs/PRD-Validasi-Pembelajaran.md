@@ -176,6 +176,11 @@ jadi sumber konflik, bukan alat kebenaran.
    atau pulang lebih awal. Bila validasi ingin menilai itu, menutup sesi harus
    diwajibkan lebih dulu. Dan kelas tahfidz/tahsin **0% berfoto** (509 sesi).
 
+   **Diukur ulang 9 Okt 2026: justru turun menjadi 4,7%** (72 dari 1.533 sesi
+   30 hari terakhir). Jadi bukan kebiasaan yang sedang membaik — menutup sesi
+   memang tidak dijalankan. Setiap rancangan validasi yang bergantung pada durasi
+   aktual harus dianggap **tidak punya data** sampai penutupan sesi diwajibkan.
+
 ## Keputusan yang masih dibutuhkan
 
 1. Cakupan: semua sesi, atau risiko + sampel? (usul: yang kedua, kuota 5–8/hari)
