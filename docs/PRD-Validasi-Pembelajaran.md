@@ -267,9 +267,68 @@ satu pun sinyal yang bisa membedakan halaqoh yang berjalan dari yang tidak.
 1. **Jangan bangun mesin risiko.** Tidak ada bahannya. Kalau validasi tetap
    diinginkan, intinya **sidak berbasis sampel acak** — sederhana, dan justru itu
    satu-satunya bukti independen menurut temuan ini.
-2. **Tiga temuan di bawah ini bisa dibereskan tanpa fitur baru sama sekali:**
-   satu guru dengan 32 sesi tanpa roster, 21 inval tanpa catatan, dan jadwal
-   tahsin bertabrakan milik satu guru (perlu dipastikan: memang memegang dua
-   halaqoh sekaligus, atau salah input jadwal).
+2. **Tiga temuan ditindaklanjuti tanpa fitur baru — hasilnya di bawah.**
 3. **Bila durasi mengajar ingin dinilai, wajibkan menutup sesi lebih dulu.**
    `jam_selesai_aktual` hanya 5,9% pada jendela ini.
+
+---
+
+# TINDAK LANJUT TIGA TEMUAN — 9 Oktober 2026
+
+Ditelusuri sampai akarnya, lalu diperbaiki. Teruji di produksi **25/25**.
+
+## Temuan A — sesi mapel tanpa roster: akarnya di KINERJA, bukan satu guru
+
+Pelakunya memang terpusat (satu guru: **32 dari 41 sesinya**, 78%), tetapi
+sebabnya struktural. Untuk kelas sekolah/pesantren, satu-satunya bukti yang
+diperiksa `buktiLaporanSesi()` adalah kolom **`materi`**; roster santri **tidak
+diperiksa sama sekali**. Akibatnya timpang:
+
+| Keadaan sesi mapel | Jumlah | Kata kinerja |
+|---|---|---|
+| materi ADA, roster KOSONG | 67 (10,3%) | **lolos 100%** |
+| roster ADA, materi kosong | 42 (6,4%) | dihitung **belum dilaporkan** |
+| keduanya ada | 536 (82,1%) | lolos |
+| keduanya kosong | 8 (1,2%) | belum dilaporkan |
+
+Jadi absensi santri — inti pembelajaran, dan sumber Laporan Kehadiran Santri —
+tidak berbobot apa pun, sementara catatan materi yang sifatnya pelengkap
+menentukan skor. Guru di atas berskor laporan sempurna dengan 0 roster.
+
+**Yang dikerjakan:** `belum_roster_mapel` dihitung dan dibawa ke rincian
+komponen administrasi — **tanpa mengubah skor**. Menjadikannya bukti wajib
+menurunkan skor **23 guru** secara retroaktif (19 di antaranya hanya 1–4 sesi),
+jadi itu keputusan pimpinan, bukan keputusan teknis. **Masih menunggu
+keputusan.**
+
+## Temuan B — "21 inval tanpa catatan": PALSU
+
+Dibongkar per tipe: reguler **4 dari 56 (7%)** — sama dengan garis dasar sesi
+reguler biasa (7,7%), jadi bukan gejala khusus inval. Sisanya **17 sesi Qur'an
+yang memang tidak pernah memakai kolom `materi`**, dan ketika diperiksa dengan
+bukti yang benar: **17 punya roster santri, 9 punya setoran tahfidz, 0 tanpa
+bukti apa pun.**
+
+Kekeliruan ada pada definisi sinyal saya, bukan pada datanya. **Tidak ada yang
+perlu diperbaiki di produk.**
+
+## Temuan C — dua halaqoh satu jam: SAH, dan penjaganya salah tempat
+
+Dikonfirmasi user, dan datanya cocok: satu pengampu memegang **Tahsin Level 5
+(1 santri)** bersama **Persiapan Tahfidz level 6 (3 santri)** pada jam yang
+sama, 8 slot per pekan — kelompok kecil berbeda level dalam satu majelis. Hanya
+terjadi pada tahsin; tahfidz dan reguler **0 slot ganda**.
+
+Yang ditemukan saat memeriksa kodenya justru dua hal lain:
+
+1. **Jalur pembuatannya memang tidak memeriksa tumpang tindih** (generator
+   Tahfidz/Tahsin) — dan itu benar, jangan ditambahi penjaga. Hanya ditambahkan
+   **laporan jumlah slot yang berbarengan** pada pesan hasil generate, supaya
+   halaqoh ganda karena salah pilih kelas tetap terlihat.
+2. **`JadwalMengajarController::update()` sama sekali tidak memeriksa bentrok**,
+   padahal `store()` memeriksa. Penjaganya bisa dilewati hanya dengan membuat
+   slot bersih lalu menggeser jamnya lewat edit. **Lubang nyata, sekarang
+   ditutup**: satu `alasanBentrok()` dipakai kedua jalur, mengecualikan dirinya
+   sendiri saat update, dan pesannya kini menyebut kelas serta jam penghalangnya
+   (sebelumnya hanya "Jadwal bentrok!" tanpa petunjuk). Sesi berurutan
+   (10:20–11:30 lalu 11:30–12:40) tetap diterima.
