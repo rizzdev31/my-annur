@@ -15,16 +15,27 @@ class Tamu extends Model
         'kegiatan_tamu_id', 'nomor_urut', 'nama', 'asal', 'pekerjaan', 'email',
         'tanda_tangan', 'ip', 'perangkat', 'diisi_pada',
         'email_status', 'email_terkirim_pada', 'email_error',
+        'konfirmasi_terkirim_pada', 'konfirmasi_error',
     ];
 
     protected function casts(): array
     {
         return [
-            'nomor_urut'          => 'integer',
-            'diisi_pada'          => 'datetime',
-            'email_terkirim_pada' => 'datetime',
+            'nomor_urut'               => 'integer',
+            'diisi_pada'               => 'datetime',
+            'email_terkirim_pada'      => 'datetime',
+            'konfirmasi_terkirim_pada' => 'datetime',
         ];
     }
+
+    /** Label status pengiriman notulensi untuk tampilan admin. */
+    public const LABEL_EMAIL = [
+        'belum'    => 'Belum dikirim',
+        'menunggu' => 'Dalam antrean',
+        'terkirim' => 'Terkirim',
+        'gagal'    => 'Gagal',
+        'duplikat' => 'Alamat ganda',
+    ];
 
     public function kegiatan()
     {

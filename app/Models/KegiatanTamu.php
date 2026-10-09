@@ -15,7 +15,7 @@ class KegiatanTamu extends Model
     protected $fillable = [
         'nama', 'deskripsi', 'tanggal', 'tanggal_selesai', 'lokasi', 'penyelenggara',
         'token', 'is_dibuka', 'dibuka_sampai',
-        'notulensi', 'notulensi_dikirim_pada', 'dibuat_oleh',
+        'notulensi', 'notulensi_dikirim_pada', 'notulensi_dikirim_oleh', 'dibuat_oleh',
     ];
 
     protected function casts(): array
@@ -41,6 +41,11 @@ class KegiatanTamu extends Model
         return $this->belongsTo(User::class, 'dibuat_oleh');
     }
 
+    public function notulensiDikirimOleh()
+    {
+        return $this->belongsTo(User::class, 'notulensi_dikirim_oleh');
+    }
+
     // ─── Turunan ─────────────────────────────────────────────────────────────
 
     public static function tokenBaru(): string
@@ -60,6 +65,30 @@ class KegiatanTamu extends Model
     public function tautanPublik(): string
     {
         return url('/tamu/' . $this->token);
+    }
+
+    /**
+     * Notulensi (teks biasa) menjadi paragraf HTML yang aman.
+     *
+     * Satu tempat saja, dipakai email maupun halaman web notulensi — kalau
+     * keduanya memformat sendiri, tamu bisa menerima email yang berbeda dari
+     * yang terbaca di tautan. Isinya ditulis superadmin, tapi tetap di-escape:
+     * notulensi dikirim ke puluhan alamat luar, jadi tidak boleh ada jalan
+     * untuk menyisipkan HTML/skrip sekali pun lewat salah tempel.
+     */
+    public function notulensiHtml(): string
+    {
+        $teks = trim((string) $this->notulensi);
+        if ($teks === '') return '';
+
+        $paragraf = preg_split('/\n\s*\n/', str_replace("\r\n", "\n", $teks));
+
+        return collect($paragraf)
+            ->map(fn ($p) => trim($p))
+            ->filter()
+            ->map(fn ($p) => '<p style="margin:0 0 14px;font-size:14px;line-height:1.75;color:#334155;">'
+                . nl2br(e($p)) . '</p>')
+            ->implode('');
     }
 
     /** Rentang tanggal untuk tampilan. */

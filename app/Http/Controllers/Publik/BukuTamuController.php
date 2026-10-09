@@ -99,4 +99,20 @@ class BukuTamuController extends Controller
             'email'    => $request->session()->get('tamu_email'),
         ]);
     }
+
+    /**
+     * Versi web notulensi — pengganti lampiran PDF di email.
+     *
+     * Hanya terbuka setelah notulensi BENAR-BENAR dikirim. Tautan kegiatan
+     * beredar di grup WA peserta, jadi naskah yang masih digarap superadmin
+     * tidak boleh ikut terbaca di sana; sebelum dikirim, alamat ini 404.
+     */
+    public function notulensi(string $token)
+    {
+        $kegiatan = KegiatanTamu::where('token', $token)->firstOrFail();
+
+        abort_if(blank($kegiatan->notulensi) || !$kegiatan->notulensi_dikirim_pada, 404);
+
+        return view('tamu.notulensi', ['kegiatan' => $kegiatan]);
+    }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Jobs\KirimKonfirmasiTamuJob;
+use App\Jobs\KirimNotulensiTamuJob;
 use App\Models\KegiatanTamu;
 use App\Models\Tamu;
 use Illuminate\Http\Request;
@@ -26,6 +28,16 @@ class BukuTamuService
 
     /** Panjang minimal data PNG agar bukan kanvas kosong / satu titik. */
     private const MIN_TTD_BYTE = 1_500;
+
+    /**
+     * Jeda antar email dalam antrean (detik).
+     *
+     * Hostinger Business Email membatasi jumlah kiriman per jam. Mengirim 50
+     * notulensi serentak berisiko ditolak massal — dan kiriman yang ditolak
+     * tetap memakan kuota. 6 detik ≈ 600 email/jam, aman untuk acara terbesar
+     * sekalipun, dan 50 tamu tetap tuntas dalam ±5 menit.
+     */
+    public const JEDA_KIRIM_DETIK = 6;
 
     // ══════════════════════════════════════════════════════════════════════
     // Kegiatan
@@ -86,7 +98,7 @@ class BukuTamuService
         $relatif = $this->simpanTandaTangan($d['tanda_tangan'], $kegiatan);
 
         try {
-            return DB::transaction(function () use ($kegiatan, $d, $request, $relatif) {
+            $tamu = DB::transaction(function () use ($kegiatan, $d, $request, $relatif) {
                 // Kunci baris kegiatannya, bukan tabel tamu: dua tamu yang menekan
                 // kirim pada detik yang sama tidak boleh mendapat nomor yang sama.
                 $terkunci = KegiatanTamu::whereKey($kegiatan->id)->lockForUpdate()->first();
@@ -111,6 +123,15 @@ class BukuTamuService
             Storage::disk('public')->delete($relatif);
             throw $e;
         }
+
+        // Konfirmasi dikirim SETELAH transaksi selesai, lewat antrean. Tamu
+        // tidak boleh menunggu SMTP: di lokasi acara jaringannya lemah, dan
+        // email gagal tidak boleh membatalkan pencatatan kehadirannya.
+        if ($this->emailSiap()) {
+            KirimKonfirmasiTamuJob::dispatch($tamu->id)->afterCommit();
+        }
+
+        return $tamu;
     }
 
     /**
@@ -137,6 +158,182 @@ class BukuTamuService
         Storage::disk('public')->put($nama, $biner);
 
         return $nama;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Notulensi & pengiriman email
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Apakah sistem benar-benar bisa mengirim email?
+     *
+     * Ini bukan pemeriksaan basa-basi. Tanpa MAIL_* di `.env`, Laravel jatuh ke
+     * pengirim `log`: `Mail::send()` SUKSES, tidak ada kesalahan apa pun, dan
+     * setiap tamu akan ditandai "terkirim" padahal tidak ada satu pun email
+     * yang keluar. Jadi pengiriman diblokir sejak awal, bukan dibiarkan
+     * "berhasil" secara palsu.
+     *
+     * @return string|null  null = siap; selain itu alasan untuk superadmin
+     */
+    public function alasanEmailBelumSiap(): ?string
+    {
+        $pengirim = config('mail.default');
+
+        if (in_array($pengirim, ['log', 'array', null], true)) {
+            return 'Pengiriman email belum diaktifkan di server (MAIL_MAILER masih "' . ($pengirim ?: 'kosong')
+                . '"). Isi pengaturan SMTP di server terlebih dahulu, lalu muat ulang kontainer aplikasi.';
+        }
+
+        if ($pengirim === 'smtp') {
+            if (blank(config('mail.mailers.smtp.host'))) {
+                return 'Alamat server SMTP (MAIL_HOST) belum diisi di server.';
+            }
+            if (blank(config('mail.mailers.smtp.username')) || blank(config('mail.mailers.smtp.password'))) {
+                return 'Akun SMTP (MAIL_USERNAME / MAIL_PASSWORD) belum diisi di server.';
+            }
+        }
+
+        if (blank(config('mail.from.address'))) {
+            return 'Alamat pengirim (MAIL_FROM_ADDRESS) belum diisi di server.';
+        }
+
+        return null;
+    }
+
+    public function emailSiap(): bool
+    {
+        return $this->alasanEmailBelumSiap() === null;
+    }
+
+    /** Simpan/perbarui naskah notulensi. Tidak mengirim apa pun. */
+    public function simpanNotulensi(KegiatanTamu $kegiatan, ?string $naskah): KegiatanTamu
+    {
+        $kegiatan->update(['notulensi' => filled($naskah) ? trim($naskah) : null]);
+
+        return $kegiatan->refresh();
+    }
+
+    /**
+     * Antre pengiriman notulensi ke alamat email para tamu.
+     *
+     * @param  string  $mode  'belum' = semua yang belum pernah terkirim ·
+     *                        'gagal' = hanya yang gagal ·
+     *                        'semua' = kirim ulang ke semua (naskah direvisi)
+     * @return array{dikirim:int,duplikat:int,dilewati:int}
+     * @throws \DomainException
+     */
+    public function kirimNotulensi(KegiatanTamu $kegiatan, string $mode = 'belum', ?int $userId = null): array
+    {
+        if ($alasan = $this->alasanEmailBelumSiap()) {
+            throw new \DomainException($alasan);
+        }
+        if (blank($kegiatan->notulensi)) {
+            throw new \DomainException('Notulensi belum ditulis. Simpan naskahnya dulu sebelum dikirim.');
+        }
+
+        $semua = $kegiatan->tamu()->get();
+        if ($semua->isEmpty()) {
+            throw new \DomainException('Belum ada tamu yang mengisi buku tamu kegiatan ini.');
+        }
+
+        $kandidat = match ($mode) {
+            'gagal' => $semua->where('email_status', 'gagal'),
+            'semua' => $semua,
+            default => $semua->whereIn('email_status', ['belum', 'menunggu', 'gagal', 'duplikat']),
+        };
+
+        if ($kandidat->isEmpty()) {
+            throw new \DomainException($mode === 'gagal'
+                ? 'Tidak ada pengiriman yang gagal.'
+                : 'Semua tamu sudah menerima notulensi. Gunakan "kirim ulang ke semua" bila naskahnya direvisi.');
+        }
+
+        // Alamat yang sudah benar-benar menerima — jangan dikirimi dua kali,
+        // kecuali memang kirim-ulang-semua.
+        $sudahTerkirim = $mode === 'semua'
+            ? collect()
+            : $semua->where('email_status', 'terkirim')->pluck('email')->map(fn ($e) => Str::lower($e))->unique();
+
+        $dikirim = 0;
+        $duplikat = 0;
+        $urutan = 0;
+
+        // Satu alamat boleh mengisi dua kali di acara yang sama (keputusan
+        // user), tapi orangnya satu — cukup satu email. Baris lainnya ditandai
+        // "duplikat", bukan "terkirim", agar laporan tidak mengaku mengirim
+        // sesuatu yang tidak dikirim.
+        foreach ($kandidat->groupBy(fn ($t) => Str::lower($t->email)) as $alamat => $baris) {
+            $baris = $baris->sortBy('nomor_urut')->values();
+
+            if ($sudahTerkirim->contains($alamat)) {
+                foreach ($baris as $t) {
+                    $t->update(['email_status' => 'duplikat', 'email_error' => null]);
+                    $duplikat++;
+                }
+                continue;
+            }
+
+            $utama = $baris->first();
+            $utama->update(['email_status' => 'menunggu', 'email_error' => null]);
+
+            KirimNotulensiTamuJob::dispatch($utama->id)
+                ->delay(now()->addSeconds($urutan * self::JEDA_KIRIM_DETIK));
+
+            $dikirim++;
+            $urutan++;
+
+            foreach ($baris->skip(1) as $t) {
+                $t->update(['email_status' => 'duplikat', 'email_error' => null]);
+                $duplikat++;
+            }
+        }
+
+        $kegiatan->update([
+            'notulensi_dikirim_pada'  => TimezoneHelper::now(),
+            'notulensi_dikirim_oleh'  => $userId,
+        ]);
+
+        return [
+            'dikirim'  => $dikirim,
+            'duplikat' => $duplikat,
+            'dilewati' => $semua->count() - $kandidat->count(),
+        ];
+    }
+
+    /**
+     * Kirim satu email uji ke alamat yang dipilih superadmin.
+     *
+     * Dijalankan LANGSUNG (tanpa antrean) supaya kesalahan SMTP terlihat
+     * seketika di layar — kalau lewat antrean, salah kata sandi baru terbaca di
+     * log pekerja, dan superadmin mengira sudah beres lalu mengirim ke 50 tamu.
+     *
+     * @throws \DomainException
+     */
+    public function ujiKirim(KegiatanTamu $kegiatan, string $email): void
+    {
+        if ($alasan = $this->alasanEmailBelumSiap()) {
+            throw new \DomainException($alasan);
+        }
+        if (blank($kegiatan->notulensi)) {
+            throw new \DomainException('Tulis dan simpan notulensinya dulu agar ada yang bisa diuji.');
+        }
+
+        // Tamu contoh — tidak disimpan ke basis data.
+        $contoh = new Tamu([
+            'nama'       => 'Contoh Penerima (uji kirim)',
+            'asal'       => '—',
+            'pekerjaan'  => '—',
+            'email'      => $email,
+            'nomor_urut' => 0,
+        ]);
+        $contoh->setRelation('kegiatan', $kegiatan);
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($email)
+                ->send(new \App\Mail\NotulensiKegiatan($kegiatan, $contoh));
+        } catch (\Throwable $e) {
+            throw new \DomainException('Gagal mengirim: ' . Str::limit($e->getMessage(), 200, ''));
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -178,14 +375,18 @@ class BukuTamuService
     /** Ringkasan untuk kartu admin. */
     public function ringkasan(KegiatanTamu $kegiatan): array
     {
-        $tamu = $kegiatan->tamu()->get(['id', 'email', 'email_status']);
+        $tamu = $kegiatan->tamu()->get(['id', 'email', 'email_status', 'konfirmasi_terkirim_pada']);
 
         return [
             'tamu'      => $tamu->count(),
-            'email'     => $tamu->pluck('email')->unique()->count(),
+            // Alamat unik = jumlah email yang benar-benar akan terkirim.
+            'email'     => $tamu->pluck('email')->map(fn ($e) => Str::lower($e))->unique()->count(),
             'terkirim'  => $tamu->where('email_status', 'terkirim')->count(),
             'gagal'     => $tamu->where('email_status', 'gagal')->count(),
-            'menunggu'  => $tamu->whereIn('email_status', ['belum', 'menunggu'])->count(),
+            'menunggu'  => $tamu->where('email_status', 'menunggu')->count(),
+            'belum'     => $tamu->where('email_status', 'belum')->count(),
+            'duplikat'  => $tamu->where('email_status', 'duplikat')->count(),
+            'konfirmasi'=> $tamu->whereNotNull('konfirmasi_terkirim_pada')->count(),
         ];
     }
 

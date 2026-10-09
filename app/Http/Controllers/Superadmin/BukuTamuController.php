@@ -122,8 +122,14 @@ class BukuTamuController extends Controller
             'tanda_tangan' => $t->tanda_tangan_url,
             'diisi_pada'   => $t->diisi_pada?->format('d M Y H:i'),
             'email_status' => $t->email_status,
+            'email_label'  => \App\Models\Tamu::LABEL_EMAIL[$t->email_status] ?? $t->email_status,
             'email_error'  => $t->email_error,
+            'email_terkirim' => $t->email_terkirim_pada?->format('d M Y H:i'),
+            'konfirmasi'   => $t->konfirmasi_terkirim_pada?->format('d M Y H:i'),
+            'konfirmasi_error' => $t->konfirmasi_error,
         ]);
+
+        $svc = app(BukuTamuService::class);
 
         return Inertia::render('Admin/BukuTamu/Show', [
             'kegiatan' => [
@@ -138,10 +144,73 @@ class BukuTamuController extends Controller
                 'dibuka_sampai' => $kegiatanTamu->dibuka_sampai?->format('Y-m-d H:i'),
                 'notulensi'     => $kegiatanTamu->notulensi,
                 'notulensi_dikirim' => $kegiatanTamu->notulensi_dikirim_pada?->format('d M Y H:i'),
+                'notulensi_pengirim' => $kegiatanTamu->notulensiDikirimOleh?->name,
+                'tautan_notulensi'  => $kegiatanTamu->notulensi_dikirim_pada
+                    ? url('/tamu/' . $kegiatanTamu->token . '/notulensi') : null,
             ],
             'tamu'      => $tamu,
-            'ringkasan' => app(BukuTamuService::class)->ringkasan($kegiatanTamu),
+            'ringkasan' => $svc->ringkasan($kegiatanTamu),
+            // Dipajang sebagai peringatan di layar: tanpa SMTP di server,
+            // tombol kirim memang tidak akan bekerja — lebih baik terlihat
+            // sejak awal daripada setelah 50 tamu ditandai gagal.
+            'email_siap'   => $svc->emailSiap(),
+            'email_alasan' => $svc->alasanEmailBelumSiap(),
+            'jeda_kirim'   => BukuTamuService::JEDA_KIRIM_DETIK,
         ]);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Notulensi
+    // ══════════════════════════════════════════════════════════════════════
+
+    public function simpanNotulensi(Request $request, KegiatanTamu $kegiatanTamu)
+    {
+        $d = $request->validate([
+            'notulensi' => 'nullable|string|max:40000',
+        ]);
+
+        app(BukuTamuService::class)->simpanNotulensi($kegiatanTamu, $d['notulensi'] ?? null);
+
+        return back()->with('success', 'Notulensi disimpan. Belum dikirim ke tamu.');
+    }
+
+    public function kirimNotulensi(Request $request, KegiatanTamu $kegiatanTamu)
+    {
+        $d = $request->validate([
+            'mode' => 'required|in:belum,gagal,semua',
+        ]);
+
+        try {
+            $hasil = app(BukuTamuService::class)
+                ->kirimNotulensi($kegiatanTamu, $d['mode'], Auth::id());
+        } catch (\DomainException $e) {
+            return back()->withErrors(['notulensi' => $e->getMessage()]);
+        }
+
+        $pesan = $hasil['dikirim'] . ' email notulensi masuk antrean pengiriman'
+            . ' (bertahap, ±' . BukuTamuService::JEDA_KIRIM_DETIK . ' detik per email).';
+        if ($hasil['duplikat'] > 0) {
+            $pesan .= ' ' . $hasil['duplikat'] . ' baris dilewati karena alamatnya sama dengan tamu lain.';
+        }
+
+        return back()->with('success', $pesan);
+    }
+
+    /** Uji kirim ke alamat sendiri sebelum menyasar seluruh tamu. */
+    public function ujiKirim(Request $request, KegiatanTamu $kegiatanTamu)
+    {
+        $d = $request->validate([
+            'email' => 'required|email:rfc|max:180',
+        ]);
+
+        try {
+            app(BukuTamuService::class)->ujiKirim($kegiatanTamu, $d['email']);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['uji_email' => $e->getMessage()]);
+        }
+
+        return back()->with('success', 'Email uji terkirim ke ' . $d['email']
+            . '. Periksa kotak masuk (dan folder Spam) sebelum mengirim ke seluruh tamu.');
     }
 
     /** Daftar hadir siap arsip: PDF ber-kop dengan gambar tanda tangan. */

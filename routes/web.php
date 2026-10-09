@@ -100,6 +100,10 @@ Route::prefix('tamu')->name('tamu.')->group(function () {
         ->middleware('throttle:8,1')->name('simpan');
     Route::get('/{token}/sukses', [\App\Http\Controllers\Publik\BukuTamuController::class, 'sukses'])
         ->middleware('throttle:60,1')->name('sukses');
+    // Versi web notulensi — pengganti lampiran PDF pada email. 404 selama
+    // notulensinya belum dikirim, jadi naskah garapan tidak bocor ke peserta.
+    Route::get('/{token}/notulensi', [\App\Http\Controllers\Publik\BukuTamuController::class, 'notulensi'])
+        ->middleware('throttle:60,1')->name('notulensi');
 });
 
 Route::get('/guru/{any?}', fn () => view('guru'))
@@ -431,6 +435,12 @@ Route::prefix('admin')
                 Route::put('/{kegiatanTamu}',          [BukuTamuController::class, 'update'])->name('update');
                 Route::patch('/{kegiatanTamu}/toggle', [BukuTamuController::class, 'toggle'])->name('toggle');
                 Route::get('/{kegiatanTamu}/cetak',    [BukuTamuController::class, 'cetak'])->name('cetak');
+                // Notulensi: simpan naskah dulu, kirim belakangan — dua aksi
+                // terpisah supaya naskah bisa digarap bertahap tanpa risiko
+                // terkirim setengah jadi.
+                Route::put('/{kegiatanTamu}/notulensi',       [BukuTamuController::class, 'simpanNotulensi'])->name('notulensi');
+                Route::post('/{kegiatanTamu}/notulensi/kirim',[BukuTamuController::class, 'kirimNotulensi'])->name('notulensi.kirim');
+                Route::post('/{kegiatanTamu}/notulensi/uji',  [BukuTamuController::class, 'ujiKirim'])->name('notulensi.uji');
             });
 
             // ── 6. HARI LIBUR ─────────────────────────────────────────────
