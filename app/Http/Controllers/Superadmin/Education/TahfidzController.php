@@ -254,7 +254,7 @@ class TahfidzController extends Controller
         $setting = SettingTahfidz::get();
         $pola    = $setting->pola_jadwal ?: SettingTahfidz::POLA_DEFAULT;
 
-        $dibuat = 0; $lewat = 0;
+        $dibuat = 0; $lewat = 0; $berbarengan = 0;
         foreach ($pola as $hari => $sesiList) {
             foreach ((array) $sesiList as $sesi) {
                 [$mulai, $selesai] = $setting->jamSesi($sesi);
@@ -264,6 +264,17 @@ class TahfidzController extends Controller
                     ->where('jam_mulai', $mulai)->where('kelas_id', $kelas->id)
                     ->where('is_aktif', true)->exists();
                 if ($ada) { $lewat++; continue; }
+
+                // Satu pengampu MEMANG boleh membimbing beberapa kelompok kecil
+                // berbeda level sekaligus dalam satu majelis, jadi ini tidak
+                // ditolak — hanya dihitung lalu dilaporkan, supaya halaqoh ganda
+                // karena salah pilih kelas tetap terlihat saat generate.
+                if (JadwalMengajar::where('tenaga_pendidik_id', $data['tenaga_pendidik_id'])
+                    ->where('tahun_ajaran_id', $ta->id)->where('hari', $hari)
+                    ->where('jam_mulai', $mulai)->where('kelas_id', '!=', $kelas->id)
+                    ->where('is_aktif', true)->bukanUjian()->exists()) {
+                    $berbarengan++;
+                }
 
                 JadwalMengajar::create([
                     'tahun_ajaran_id'    => $ta->id,
@@ -282,6 +293,10 @@ class TahfidzController extends Controller
         }
 
         return back()->with('success',
-            "Jadwal tahfidz: {$dibuat} slot dibuat" . ($lewat ? ", {$lewat} sudah ada (dilewati)." : "."));
+            "Jadwal tahfidz: {$dibuat} slot dibuat" . ($lewat ? ", {$lewat} sudah ada (dilewati)" : '')
+            . ($berbarengan
+                ? ". {$berbarengan} slot berbarengan dengan halaqoh lain milik pengampu ini — "
+                  . 'pastikan memang satu majelis, bukan salah pilih kelas.'
+                : '.'));
     }
 }

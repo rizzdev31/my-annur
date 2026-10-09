@@ -590,6 +590,7 @@ class KinerjaCalculationService
             // penjelasan ke guru menyebut hal yang benar-benar harus diisi.
             'belum_materi'     => $bukti['belum_materi'],
             'belum_roster'     => $bukti['belum_roster'],
+            'belum_roster_mapel' => $bukti['belum_roster_mapel'],
             'sesi_quran'       => $bukti['sesi_quran'],
             'sesi_mapel'       => $bukti['sesi_mapel'],
             'sesi_jadwal'      => $sesiJadwal,
@@ -678,6 +679,9 @@ class KinerjaCalculationService
                         'sesi_mapel'      => $k3['sesi_mapel'] ?? 0,
                         'belum_materi'    => $k3['belum_materi'] ?? 0,
                         'belum_roster'    => $k3['belum_roster'] ?? 0,
+                        // Belum mengurangi skor; ditampilkan agar sesi mapel yang
+                        // absensi santrinya tak pernah diisi tidak lagi tak terlihat.
+                        'belum_roster_mapel' => $k3['belum_roster_mapel'] ?? 0,
                         'log_submitted'   => $k3['log_submitted'],
                         'target_log'      => $k3['target_log'] ?? 0,
                     ],
@@ -724,6 +728,13 @@ class KinerjaCalculationService
         $kosong = [
             'dilaporkan'   => collect(),
             'belum_materi' => 0, 'belum_roster' => 0,
+            // Kelas mapel yang MATERINYA ada tetapi roster santrinya kosong.
+            // Tidak mengurangi skor (lihat catatan di bawah), tetapi harus
+            // terlihat: tanpa angka ini, tidak ada satu pun tempat di sistem
+            // yang memberitahu bahwa absensi santri sebuah sesi tak pernah
+            // diisi. Terukur 67 sesi (10,3%) dalam 30 hari per 9 Okt 2026,
+            // 32 di antaranya milik satu guru.
+            'belum_roster_mapel' => 0,
             'sesi_quran'   => 0, 'sesi_mapel'   => 0,
         ];
         if ($absensiList->isEmpty()) return $kosong;
@@ -761,6 +772,18 @@ class KinerjaCalculationService
             $hasil['sesi_mapel']++;
             if ($adaMateri) $hasil['dilaporkan'][$a->id] = true;
             else            $hasil['belum_materi']++;
+
+            // Hanya DICATAT, belum mempengaruhi skor.
+            //
+            // Untuk kelas mapel, bukti yang diterima sampai sekarang hanya
+            // `materi`; roster santri tidak diperiksa sama sekali. Akibatnya
+            // timpang: sesi dengan materi tetapi tanpa absensi santri lolos
+            // 100%, sementara sesi yang rosternya lengkap tapi materinya kosong
+            // dihitung "belum dilaporkan" — padahal absensi santri justru inti
+            // pembelajaran. Menjadikannya bukti wajib akan menurunkan skor 23
+            // guru secara retroaktif, jadi keputusannya milik pimpinan, bukan
+            // diputuskan di sini.
+            if (!$adaRoster->has($a->id)) $hasil['belum_roster_mapel']++;
         }
 
         return $hasil;

@@ -127,24 +127,8 @@ class JadwalMengajarController extends Controller
             return back()->with('error', $err);
         }
 
-        // Cek bentrok jam (guru sama, hari sama, waktu tumpang tindih).
-        // Overlap STRICT (interval setengah-terbuka): dua sesi bentrok HANYA bila
-        //   jam_mulai < jam_selesai_baru  DAN  jam_selesai > jam_mulai_baru.
-        // Sesi BERURUTAN (mis. 10:20–11:30 lalu 11:30/11:31–12:40) TIDAK bentrok,
-        // karena batas yang bersinggungan tidak dihitung tumpang tindih.
-        $bentrok = JadwalMengajar::where('tenaga_pendidik_id', $data['tenaga_pendidik_id'])
-            ->where('tahun_ajaran_id', $data['tahun_ajaran_id'])
-            ->where('hari', $data['hari'])
-            ->where('is_aktif', true)
-            ->bukanUjian()
-            ->where('jam_mulai', '<', $data['jam_selesai'])
-            ->where('jam_selesai', '>', $data['jam_mulai'])
-            ->exists();
-
-        if ($bentrok) {
-            return back()->with('error',
-                "Jadwal bentrok! Guru ini sudah memiliki jadwal di jam yang sama pada hari {$data['hari']}."
-            );
+        if ($err = $this->alasanBentrok($data)) {
+            return back()->with('error', $err);
         }
 
         // kelas_id (master Smart Education) = sumber kebenaran. String `kelas`
@@ -177,12 +161,68 @@ class JadwalMengajarController extends Controller
             return back()->with('error', $err);
         }
 
+        // Dulu update() TIDAK memeriksa bentrok sama sekali, padahal store()
+        // memeriksa — penjaganya bisa dilewati hanya dengan membuat slot bersih
+        // lalu menggeser jamnya lewat edit.
+        if ($err = $this->alasanBentrok($data, $jadwalMengajar->id)) {
+            return back()->with('error', $err);
+        }
+
         // kelas_id = sumber kebenaran; sinkronkan string kelas untuk tampilan.
         $data['kelas'] = Kelas::find($data['kelas_id'])?->nama ?? $jadwalMengajar->kelas;
 
         $jadwalMengajar->update($data);
 
         return back()->with('success', 'Jadwal berhasil diperbarui.');
+    }
+
+    /**
+     * Mengapa slot ini bentrok dengan jadwal guru yang sama (null = boleh).
+     *
+     * Overlap STRICT (interval setengah-terbuka): dua sesi bentrok HANYA bila
+     *   jam_mulai < jam_selesai_baru  DAN  jam_selesai > jam_mulai_baru.
+     * Sesi BERURUTAN (mis. 10:20–11:30 lalu 11:30–12:40) TIDAK bentrok, karena
+     * batas yang bersinggungan tidak dihitung tumpang tindih.
+     *
+     * Form ini hanya memasang mapel REGULER (tahfidz & tahsin lewat generator
+     * Smart Tahfidz/Tahsin), dan untuk kelas sekolah/pesantren guru benar-benar
+     * harus berada di satu ruang — jadi tumpang tindih di sini ditolak mutlak.
+     *
+     * Halaqoh Qur'an berbeda: satu pengampu memang bisa membimbing beberapa
+     * kelompok kecil berbeda level sekaligus dalam satu majelis (terbukti di
+     * produksi 9 Okt 2026). Pola itu dibuat lewat generator tahfidz/tahsin yang
+     * memang tidak memeriksa tumpang tindih — dan itu benar, jangan ditambahi
+     * penjaga di sana.
+     */
+    private function alasanBentrok(array $d, ?int $kecualikanId = null): ?string
+    {
+        $query = JadwalMengajar::query()
+            ->where('tenaga_pendidik_id', $d['tenaga_pendidik_id'])
+            ->where('tahun_ajaran_id', $d['tahun_ajaran_id'])
+            ->where('hari', $d['hari'])
+            ->where('is_aktif', true)
+            ->bukanUjian()
+            ->where('jam_mulai', '<', $d['jam_selesai'])
+            ->where('jam_selesai', '>', $d['jam_mulai']);
+
+        if ($kecualikanId) {
+            $query->whereKeyNot($kecualikanId);
+        }
+
+        $tabrakan = $query->get();
+        if ($tabrakan->isEmpty()) {
+            return null;
+        }
+
+        // Sebutkan kelas & jamnya: pesan lama hanya berkata "bentrok", sehingga
+        // admin harus menelusuri sendiri jadwal mana yang menghalangi.
+        $daftar = $tabrakan
+            ->map(fn ($j) => ($j->kelas ?: 'kelas lain')
+                . ' (' . substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5) . ')')
+            ->implode(', ');
+
+        return "Jadwal bentrok! Guru ini sudah mengajar $daftar pada hari {$d['hari']} di jam tersebut. "
+            . 'Satu guru tidak dapat berada di dua kelas sekaligus.';
     }
 
     /**
