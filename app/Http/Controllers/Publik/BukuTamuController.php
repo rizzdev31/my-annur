@@ -61,14 +61,24 @@ class BukuTamuController extends Controller
             // Hanya format yang divalidasi di sini; keberadaan domainnya diperiksa
             // service agar bisa dilewati saat DNS sendiri sedang bermasalah.
             'email'        => 'required|email:rfc|max:180',
-            // Nomor HP/WhatsApp OPSIONAL: pelengkap, bukan tumpuan. Tamu yang
-            // enggan memberi nomor tetap harus bisa mencatatkan kehadiran.
-            // Bentuknya dibebaskan di sini (tamu menulis dengan segala rupa);
+            // Nomor HP/WhatsApp WAJIB (keputusan user 9 Okt 2026). Bentuknya
+            // dibebaskan di sini karena tamu menulis dengan segala rupa;
             // service yang menormalkan dan menolak yang janggal.
-            'telepon'      => 'nullable|string|max:30',
+            'telepon'      => 'required|string|max:30',
             'tanda_tangan' => 'required|string',
         ], [
+            // Tanpa berkas bahasa, pesan bawaan Laravel berbahasa Inggris —
+            // tidak pantas tampil di halaman yang dibaca tamu umum.
+            'nama.required'         => 'Nama lengkap wajib diisi.',
+            'nama.min'              => 'Nama lengkap terlalu pendek.',
+            'asal.required'         => 'Alamat rumah atau instansi asal wajib diisi.',
+            'asal.min'              => 'Alamat / instansi asal terlalu pendek.',
+            'pekerjaan.required'    => 'Pekerjaan / jabatan wajib diisi.',
+            'email.required'        => 'Email aktif wajib diisi.',
+            'email.email'           => 'Format email belum benar. Contoh: nama@email.com',
+            'telepon.required'      => 'Nomor HP / WhatsApp wajib diisi.',
             'tanda_tangan.required' => 'Tanda tangan belum diisi.',
+            '*.max'                 => 'Isian terlalu panjang.',
         ]);
 
         $svc = app(BukuTamuService::class);

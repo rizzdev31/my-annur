@@ -7,9 +7,10 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Nomor HP/WhatsApp tamu.
  *
- * Nullable dan TIDAK wajib: tautan kegiatan yang sudah beredar tetap sama, dan
- * tamu yang enggan memberi nomor tetap bisa mencatatkan kehadiran — nomor hanya
- * pelengkap, sedangkan email yang menjadi tumpuan pengiriman notulensi.
+ * Kolomnya NULLABLE meskipun pengisiannya wajib (keputusan user): baris yang
+ * sudah terisi sebelum kebijakan ini memang tidak punya nomor, dan tidak boleh
+ * dipalsukan hanya demi memenuhi skema. Kewajibannya ditegakkan di
+ * BukuTamuService::simpanTamu() — satu-satunya pintu penulisan buku tamu.
  *
  * Disimpan ternormalkan (hanya angka, berawalan kode negara) supaya tautan
  * wa.me di halaman admin selalu bisa dibentuk tanpa menebak format.

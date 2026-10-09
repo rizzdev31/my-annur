@@ -125,16 +125,15 @@
 
                     <div>
                         <label for="telepon" class="mb-1.5 block text-sm font-semibold text-slate-700">
-                            Nomor HP / WhatsApp
-                            <span class="ml-1 font-normal text-slate-400">(tidak wajib)</span>
+                            Nomor HP / WhatsApp <span class="text-rose-500">*</span>
                         </label>
                         {{-- inputmode tel: papan tuts angka langsung terbuka di ponsel. --}}
-                        <input id="telepon" name="telepon" type="tel" inputmode="tel"
+                        <input id="telepon" name="telepon" type="tel" required inputmode="tel"
                                autocomplete="tel" value="{{ old('telepon') }}"
                                placeholder="cth: 081234567890"
                                class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
                         <p class="mt-1.5 text-xs leading-relaxed text-slate-500">
-                            Hanya dipakai bila panitia perlu menghubungi Anda terkait kegiatan ini.
+                            Dipakai bila panitia perlu menghubungi Anda terkait kegiatan ini.
                         </p>
                     </div>
 

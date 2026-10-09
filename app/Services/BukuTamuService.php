@@ -109,6 +109,14 @@ class BukuTamuService
         // janggal harus ditolak tanpa meninggalkan berkas menggantung.
         $telepon = $this->rapikanTelepon($d['telepon'] ?? null);
 
+        // Wajib sejak 9 Okt 2026. Diperiksa di sini, bukan hanya di controller,
+        // karena service ini satu-satunya pintu penulisan buku tamu.
+        // Kolomnya tetap nullable: baris lama yang terisi sebelum kebijakan ini
+        // memang tidak punya nomor, dan tidak boleh dipalsukan demi skema.
+        if (blank($telepon)) {
+            throw new \DomainException('Nomor HP / WhatsApp wajib diisi.');
+        }
+
         $relatif = $this->simpanTandaTangan($d['tanda_tangan'], $kegiatan);
 
         try {
