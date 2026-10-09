@@ -60,7 +60,8 @@
                 @endif
             </div>
 
-            @if ($errors->any())
+            {{-- isset(): view ini juga dirender di luar middleware web (uji & pratinjau). --}}
+            @if (isset($errors) && $errors->any())
                 <div class="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                     <p class="text-sm font-semibold text-rose-800">Mohon periksa kembali:</p>
                     <ul class="mt-1 list-inside list-disc text-xs leading-relaxed text-rose-700">
