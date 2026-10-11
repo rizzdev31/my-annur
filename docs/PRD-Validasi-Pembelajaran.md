@@ -1,8 +1,14 @@
 # PRD — Validasi Pembelajaran (Validator)
 
-**Status:** DITUNDA — brainstorm 3 Okt 2026; **sinyal anomali sudah diukur di
-produksi 9 Okt 2026 (lihat bagian akhir) dan hasilnya mengubah arah: mesin risiko
-tidak punya bahan, yang tersisa sidak berbasis sampel acak.**
+**Status:** BELUM DIKERJAKAN — rancangan sudah direvisi, menunggu dua angka
+terakhir (jumlah validator per kategori & kuota harian).
+
+- 3 Okt 2026 — brainstorm awal.
+- 9 Okt 2026 — sinyal anomali **diukur di produksi**; hasilnya mengubah arah:
+  mesin risiko tidak punya bahan, yang tersisa **sidak berbasis sampel acak**.
+- 11 Okt 2026 — **Tahapan direvisi** (Langkah 0–6), validator diputuskan berupa
+  **guru lewat PWA** dengan cakupan **per kategori pembelajaran**, dan
+  ketergantungannya pada absensi santri diperiksa ke data.
 **Tujuan:** mengetahui kebenaran guru mengajar atau tidak
 **Terkait:** [PRD-Override-Pembelajaran.md](PRD-Override-Pembelajaran.md), [PRD-Guru-Piket.md](PRD-Guru-Piket.md)
 
@@ -70,14 +76,20 @@ validator bertugas aktif dengan antrian, kuota, dan tenggat.
 
 ## Rancangan
 
-### Antrian berbasis risiko, bukan seluruh populasi
+### Antrian berbasis risiko — DIBATALKAN 9 Okt 2026
+
+> **Bagian ini tidak berlaku.** Ditulis saat masih diduga ada sinyal anomali yang
+> bisa menyaring. Pengukuran membuktikan tidak ada (7 sesi dalam 30 hari), jadi
+> **`anomali` dihapus sebagai sumber antrian** dan `RisikoSesiService` tidak
+> dibuat. Yang berlaku: bagian **Sampel** dan **Tahapan — Revisi 11 Okt 2026**
+> di bawah. Disimpan di sini hanya sebagai jejak alasan.
 
 44 sesi/hari mustahil divalidasi manual. Yang masuk antrian hanya:
 
-- **sinyal anomali** (absen borongan, telat jauh dari jadwal, tanpa roster, jam
-  bertabrakan, pengganti tanpa catatan);
-- **sampel acak 10–15%** dari sesi yang bersih — ini yang membuat "aman karena
-  tidak dicurigai" tidak bisa diandalkan;
+- ~~**sinyal anomali** (absen borongan, telat jauh dari jadwal, tanpa roster, jam
+  bertabrakan, pengganti tanpa catatan)~~ → dibatalkan;
+- **sampel acak** dari sesi yang bersih — ini yang membuat "aman karena
+  tidak dicurigai" tidak bisa diandalkan (kini menjadi sumber UTAMA);
 - **aduan** (santri, wali, pimpinan, atau menu Saran & Masukan yang sudah ada);
 - **wajib** untuk kelas/guru yang sedang dalam pembinaan.
 
@@ -106,17 +118,24 @@ untuk seluruh sistem.
 
 ## Model data usulan
 
-**`validator`** — `tenaga_pendidik_id` (atau `user_id` untuk staf non-guru),
-`jenis` JSON (`sesi_mengajar`, nanti `izin_guru`, `tugas_tambahan`), `cakupan`
-(`semua`/`pilih`) + pivot kelas dan/atau guru, `kuota_harian`, `boleh_sidak`,
-`is_aktif`, `ditunjuk_oleh`, `catatan`. **Inilah "menu validator" tempat
-kredensial disetel.**
+**`validator`** — `tenaga_pendidik_id` (validator adalah GURU, lewat PWA —
+keputusan 11 Okt 2026), `jenis` JSON (`sesi_mengajar`, nanti `izin_guru`,
+`tugas_tambahan`), **`kategori` JSON** berisi `sekolah` / `pesantren` /
+`quran`, `kuota_harian`, `is_aktif`, `ditunjuk_oleh`, `catatan`. **Inilah "menu
+validator" tempat kredensial disetel.**
+
+Cakupan ditentukan **per kategori pembelajaran**, bukan per kelas atau per guru
+(keputusan 11 Okt 2026). Tiga kategori itu memetakan langsung ke data yang
+sudah ada — `kelas.jenis` = `sekolah`, `pesantren`, dan `tahfidz`+`tahsin`
+digabung menjadi satu kategori `quran` karena bentuk pembelajaran serta
+bentuk buktinya sama (setoran/penilaian, tanpa materi & tanpa foto). Satu
+validator boleh memegang lebih dari satu kategori.
 
 **`validasi`** — `jenis` + `subjek_type`/`subjek_id` (polimorfik), `status`,
-`sumber_antrian` (anomali/sampel/aduan/wajib/manual), `skor_risiko`, `sinyal`
-JSON (alasan masuk antrian — penting supaya validator tahu apa yang dicari),
-`validator_id`, `metode` (sidak/periksa bukti/konfirmasi santri), `temuan`,
-`catatan`, `bukti_foto`, `diputuskan_pada`, `jendela_sampai`.
+`sumber_antrian` (**sampel**/aduan/wajib/manual — `anomali` dibatalkan, lihat
+hasil pengukuran), `validator_id`, `metode` (sidak/periksa bukti/konfirmasi
+santri), `temuan`, `catatan`, `bukti_foto`, `diputuskan_pada`, `jendela_sampai`.
+Kolom `skor_risiko` & `sinyal` **tidak dibuat** — tidak ada bahannya.
 
 **`validasi_riwayat`** — setiap perubahan keputusan dicatat lewat observer, pola
 `RiwayatRekapKinerja`.
@@ -158,13 +177,106 @@ jadi sumber konflik, bukan alat kebenaran.
 
 ---
 
-## Tahapan
+## Tahapan — REVISI 11 Oktober 2026
 
-1. **Fase 1 — mencatat saja (1 bulan).** Mesin risiko + antrian + menu validator +
-   keputusan, **tanpa dampak** ke kinerja & gaji. Tujuannya kalibrasi.
-2. **Fase 2 — berdampak ke kinerja** lewat `SesiMengajarService`, dengan hak sanggah.
-3. **Fase 3 — gerbang penggajian** + kinerja validator.
-4. **Fase 4 — jenis lain** (izin, tugas tambahan) masuk antrian yang sama.
+Tahapan lama menempatkan **mesin risiko** sebagai isi Fase 1. Itu **dibatalkan**
+setelah pengukuran 9 Okt: sinyal yang tidak dikuasai guru hanya 7 sesi dalam 30
+hari, jadi tidak ada yang bisa dikalibrasi. Intinya bergeser ke **sidak
+berbasis sampel acak**, dan `RisikoSesiService` tidak dibuat.
+
+### Langkah 0 — keputusan (lihat bagian Keputusan di bawah)
+
+Sudah diputuskan 11 Okt: validator = **guru lewat PWA**, cakupan **per kategori
+pembelajaran**. Yang masih terbuka: jumlah validator per kategori dan angka
+kuota harian.
+
+### Langkah 1 — fondasi kredensial (tanpa antrian, tanpa dampak)
+
+Tabel `validator` + menu **Validasi → Validator** di superadmin (penunjukan,
+kategori, kuota, aktif/nonaktif, jejak penunjuk) + `ValidatorService` sebagai
+gerbang tunggal, meniru `PengawasService`. Modul RBAC `validasi` masuk
+`config/modul.php`. Belum ada apa pun yang dinilai.
+
+**Aturan integritas ditaruh di gerbang, bukan controller:** validator tidak
+boleh memvalidasi sesinya sendiri, tidak boleh memvalidasi sesi yang ia
+gantikan sebagai inval, dan tidak boleh di luar kategorinya.
+
+### Langkah 2 — antrian & keputusan (masih tanpa dampak)
+
+Tabel `validasi` + `validasi_riwayat` + `ValidasiService` (`antrikan`,
+`putuskan`, `statusSesi`, `rekap`). Pengisi antrian hanya tiga:
+
+1. **sampel acak harian** per kategori, ditimbang (lihat Sampel di bawah);
+2. **aduan** — menumpang menu Saran & Masukan yang sudah ada;
+3. **wajib** — guru/kelas yang sedang dalam pembinaan, ditandai admin.
+
+Dijalankan scheduler yang sudah ada. Keputusan `sah` / `tidak_sesuai` /
+`tidak_dapat_diperiksa`, lewat jendela → `kedaluwarsa` dan **diperlakukan sah**
+bagi guru; yang tercatat gagal adalah validatornya.
+
+### Langkah 3 — PWA validator
+
+Tiga bagian: **Sedang berjalan sekarang** (sidak — jantungnya), **Perlu
+diperiksa**, **Riwayat saya**. Keputusan dua ketukan.
+
+Bisa menumpang yang sudah ada, tidak perlu query baru:
+`SesiMengajarService::jadwalTanggal($tanggal)` + `statusLive()` sudah memberi
+"sesi apa yang berjalan sekarang beserta statusnya" — sumber yang sama dipakai
+papan guru piket dan monitoring pimpinan, jadi angkanya tidak akan berbeda.
+Notifikasi **dikumpulkan per blok jam** (2× sehari), bukan per sesi.
+
+### Langkah 4 — jalan 1 bulan, lalu DIUKUR
+
+Berapa yang benar-benar disidak, berapa kedaluwarsa, berapa persen
+`tidak_sesuai`, dan apakah temuannya berbeda antar kategori. **Angka inilah
+yang menentukan apakah Langkah 5 layak** — bukan asumsi. Bila ternyata
+hampir semua `sah`, fitur ini cukup berhenti sebagai alat sidak dan tidak perlu
+menyentuh kinerja sama sekali.
+
+### Langkah 5 — berdampak ke kinerja (bekas Fase 2)
+
+`tidak_sesuai` → sesi menjadi **tidak terlaksana** lewat `SesiMengajarService`
+(JP hangus, kinerja turun, tanpa potongan gaji — satu definisi untuk seluruh
+sistem). Disertai **hak sanggah** guru di PWA dan status validasi yang terlihat
+oleh guru. **Bergantung pada:** kebijakan bukti absensi santri (lihat
+Ketergantungan).
+
+### Langkah 6 — bekas Fase 3 & 4
+
+Kinerja validator sendiri, lalu jenis lain (izin, tugas tambahan) masuk antrian
+yang sama lewat registry jenis.
+
+---
+
+## Sampel — mengapa tidak semua sesi diperiksa
+
+Ada **45,2 sesi per hari aktif** (1.221 sesi dalam 30 hari). Memeriksa semuanya
+berarti ±8 orang bekerja penuh waktu hanya untuk memvalidasi — fitur akan mati
+di bulan pertama. Karena itu yang diperiksa **sebagian, dipilih acak**, lalu
+kesimpulannya dipakai untuk menilai keadaan keseluruhan — cara yang sama dipakai
+pemeriksaan mutu di pabrik: tidak semua barang dibuka, tetapi contoh yang
+diambil acak sudah cukup untuk tahu ada masalah atau tidak.
+
+**Acak itu syarat, bukan hiasan.** Kalau validator memilih sendiri siapa yang
+disidak, guru akan belajar polanya dan menyesuaikan diri — "aman karena tidak
+dicurigai" kembali berlaku. Dengan acak, setiap sesi punya peluang didatangi,
+sehingga efek jeranya menyeluruh walau yang benar-benar diperiksa sedikit.
+
+**Ditimbang** berarti porsinya tidak dibagi rata, melainkan lebih besar pada
+kategori yang buktinya paling tipis. Dasarnya pengukuran 9 Okt:
+
+| Kategori | Sesi/30 hari | Bukti selain catatan guru | Porsi sampel |
+|---|---|---|---|
+| sekolah + pesantren | 653 | foto 99,8% + materi 92,3% | lebih kecil |
+| quran (tahfidz+tahsin) | 568 | **tidak ada** — 0% foto, tanpa materi | **lebih besar** |
+
+Di kelas sekolah masih ada foto dan materi sebagai bukti sekunder; di halaqoh
+tidak ada apa pun, sehingga satu-satunya cara mengetahui halaqoh berjalan atau
+tidak adalah mendatanginya.
+
+Dengan kuota **5–8 sesi/hari per validator** dan satu validator per kategori,
+cakupannya ±25–35% sesi per bulan — jauh di atas ambang yang dibutuhkan agar
+sidak terasa nyata, dan masih bisa dikerjakan sambil mengajar.
 
 ## Risiko
 
@@ -183,22 +295,87 @@ jadi sumber konflik, bukan alat kebenaran.
    memang tidak dijalankan. Setiap rancangan validasi yang bergantung pada durasi
    aktual harus dianggap **tidak punya data** sampai penutupan sesi diwajibkan.
 
-## Keputusan yang masih dibutuhkan
+## Ketergantungan: absensi santri & kelengkapan sebelum penggajian
 
-1. Cakupan: semua sesi, atau risiko + sampel? (usul: yang kedua, kuota 5–8/hari)
-2. Cara kerja validator: sidak, periksa bukti, atau keduanya? Berapa orang dan
-   pembagian cakupannya?
-3. Dampak `tidak_sesuai`: hanya kinerja, atau ikut gaji? Mulai fase 1 tanpa dampak?
-4. Jendela: sampai H+1? Lewat jendela dianggap sah (usul) atau menggantung?
-5. Siapa validatornya: guru lewat PWA, atau staf khusus ber-akun admin?
-6. Hak sanggah guru — ada? Pemutus akhirnya superadmin atau pimpinan?
+Dibahas 11 Okt 2026, lalu **diperiksa ke data produksi** — karena arah fitur ini
+berubah bila absensi santri terisi otomatis.
 
-## Langkah pertama yang disarankan
+**Yang diperiksa: apakah sistem pernah menandai "hadir semua" tanpa guru?**
+Hasilnya **tidak, sama sekali belum**:
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Baris `absensi_santri` bersumber `guru` | **21.529 (100%)** |
+| Bersumber `kegiatan` (auto-hadir) | **0** |
+| Baris `libur_pembelajaran` | **0** — fiturnya ada tapi belum pernah dipakai |
+| Sesi ber-`libur_pembelajaran_id` | **0 dari 1.863** |
+
+Sebaran statusnya pun wajar, bukan cap massal: hadir 86,8% · izin 4,1% · telat
+3,8% · sakit 3,2% · **alpha 2,1%**. Jadi jalur auto-hadir **hanya** ada pada
+Libur Pembelajaran (kegiatan), dan itu belum pernah dijalankan.
+
+**Konsekuensinya untuk rancangan.** Bila kelak sesi biasa dibuat
+otomatis-hadir-semua supaya jurnal tidak kosong, tiga hal rusak sekaligus:
+
+1. **Validator kehilangan objeknya.** Yang divalidasi menjadi data buatan
+   sistem, bukan buatan guru — validasi teater satu tingkat lebih jauh.
+2. **Kewajiban roster 1 Nov jadi hampa.** Roster tidak akan pernah kosong, jadi
+   `gagal_roster_mapel` selalu 0 dan kebijakannya tidak pernah menagih siapa pun.
+3. **Laporan Kehadiran Santri jadi fiksi.** Wali membaca "hadir" untuk
+   pertemuan yang mungkin tidak terjadi — padahal angka alpha 2,1% hari ini
+   membuktikan guru memang mencatat apa adanya.
+
+**Usul:** jangan isi otomatis pada sesi biasa. Jurnal yang kosong karena sesi
+memang tidak berjalan **sudah punya istilah sendiri** — `tidak_terlaksana`,
+JP hangus, kinerja turun, tanpa potongan gaji. Itu jujur dan sudah berjalan.
+
+**Fitur kelengkapan sebelum penggajian (rencana user, sejalan).** Bahan nyata
+30 hari terakhir:
+
+| Status sesi | Sesi | JP jadwal | JP tercatat | Selisih |
+|---|---|---|---|---|
+| terlaksana | 1.062 | 2.120 | 2.120 | 0 |
+| pengganti | 74 | 147 | 147 | 0 |
+| **tidak_terlaksana** | **252** | **502** | **0** | **−502** |
+| **izin** | **53** | **105** | **0** | **−105** |
+
+Jadi **607 JP per bulan** tercatat hilang, dan 252 sesi di antaranya belum tentu
+sudah dipertanggungjawabkan gurunya. Bentuk fiturnya: **daftar periksa
+pra-penggajian per guru** — sesi yang JP-nya hangus wajib diberi keterangan
+(diinval, diganti hari lain, atau diakui tidak terlaksana) sebelum periode
+dikunci. Ini **pekerjaan terpisah dari validator**, tetapi berpasangan:
+validator memeriksa yang DIAKUI terlaksana, daftar periksa menagih yang
+TIDAK terlaksana. Keduanya memakai `SesiMengajarService` yang sama.
+
+Catatan data yang perlu ditelusuri saat fitur itu dikerjakan: **287 sesi
+`tidak_terlaksana` justru memiliki 1.259 baris roster** — guru sempat mengisi
+absensi lalu sesinya ditandai tidak terlaksana (atau sebaliknya). Pola ini sudah
+pernah dikonfirmasi asli, jadi daftar periksa tidak boleh menganggapnya
+anomali.
+
+## Keputusan — status 11 Oktober 2026
+
+| # | Pertanyaan | Keputusan |
+|---|---|---|
+| 1 | Cakupan: semua sesi, atau sampel? | **Sampel acak** (anomali dibatalkan, tidak ada bahannya) |
+| 2 | Siapa validatornya | **Guru, lewat PWA.** Ditunjuk per orang, dibedakan **per kategori pembelajaran**: sekolah · pesantren · quran (tahfidz+tahsin) |
+| 3 | Cara kerja | **Sidak** sebagai inti; "periksa bukti" hanya untuk aduan — memeriksa catatan buatan guru sendiri = 99% lolos |
+| 4 | Jendela | Sidak = **saat sesi berjalan**; pemeriksaan aduan s.d. H+1. Lewat jendela → `kedaluwarsa`, **dianggap sah** bagi guru |
+| 5 | Dampak `tidak_sesuai` | **Tanpa dampak** selama Langkah 1–4. Bila berdampak: kinerja saja (JP hangus), **bukan potongan gaji** |
+| 6 | Hak sanggah guru | **Ada**, pemutus akhir pimpinan |
+
+**Masih terbuka:** berapa orang validator per kategori, dan angka kuota
+hariannya (usul 5–8 sesi/hari).
+
+## Langkah pertama yang disarankan — SUDAH DIKERJAKAN 9 Okt 2026
 
 Sebelum membangun apa pun: **ukur sinyal anomalinya di data nyata** — berapa sesi
 yang diabsen borongan di akhir hari, berapa yang jam mulainya jauh dari jadwal,
 berapa guru tercatat di dua kelas bersamaan. Hasilnya menentukan apakah mesin
 risiko punya bahan, atau yang dibutuhkan murni sidak acak.
+
+**Sudah dijalankan — hasilnya: murni sidak acak.** Rinciannya di bagian
+**Hasil Pengukuran** di bawah.
 
 ---
 
