@@ -239,7 +239,8 @@
                         <label class="block text-xs font-medium text-gray-500 mb-1">
                             Alasan koreksi <span class="text-red-500">*</span>
                         </label>
-                        <input v-model="fSesi.alasan_koreksi" type="text" placeholder="cth: guru mengajar tapi lupa absen"
+                        <input id="alasan-koreksi-sesi" v-model="fSesi.alasan_koreksi" type="text"
+                            placeholder="cth: guru mengajar tapi lupa absen"
                             :class="fieldCls + ' w-full'" />
                         <p class="text-[11px] text-gray-400 mt-1">Tercatat di log koreksi beserta nama Anda.</p>
                     </div>
@@ -251,9 +252,14 @@
 
                 <div class="flex gap-2 mt-5">
                     <button @click="kSesi = null" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Batal</button>
-                    <button @click="simpanKoreksiSesi" :disabled="!fSesi.alasan_koreksi || busy"
+                    <!-- Sengaja TIDAK dimatikan saat alasan kosong: tombol mati
+                         tanpa penjelasan membuat koreksi tampak "tidak bisa"
+                         (terjadi 12 Okt 2026 — kliknya tidak pernah sampai ke
+                         server). Sekarang diperiksa saat diklik, lalu alasannya
+                         dikatakan. -->
+                    <button @click="simpanKoreksiSesi" :disabled="busy"
                         class="flex-1 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold disabled:opacity-50">
-                        Simpan Koreksi
+                        {{ busy ? 'Menyimpan…' : 'Simpan Koreksi' }}
                     </button>
                 </div>
             </div>
@@ -274,7 +280,9 @@
                             :class="['px-2.5 py-1 rounded-lg text-[11px] font-semibold', badgeStatus(st.v)]">
                             Semua {{ st.t }}
                         </button>
-                        <span class="ml-auto text-[11px] text-gray-400">{{ rosterBerubah }} perubahan</span>
+                        <span class="ml-auto text-[11px] text-gray-400">
+                            {{ rosterBerubah }} {{ rosterBaru ? 'akan ditulis' : 'perubahan' }}
+                        </span>
                     </div>
 
                     <div class="rounded-xl border border-gray-200 divide-y divide-gray-50 max-h-72 overflow-y-auto mb-3">
@@ -310,11 +318,16 @@
                     </label>
                 </template>
 
+                <p v-if="rosterGalat" class="mb-3 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700">
+                    {{ rosterGalat }}
+                </p>
                 <div class="flex gap-2">
                     <button @click="kRoster = null" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Tutup</button>
-                    <button @click="simpanKoreksiRoster" :disabled="busy || rosterLoading || !rosterBerubah"
+                    <button @click="simpanKoreksiRoster" :disabled="busy || rosterLoading"
                         class="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50">
-                        {{ rosterBerubah ? `Simpan ${rosterBerubah} Perubahan` : 'Belum ada perubahan' }}
+                        {{ rosterBerubah
+                            ? (rosterBaru ? `Simpan ${rosterBerubah} Absensi` : `Simpan ${rosterBerubah} Perubahan`)
+                            : 'Belum ada perubahan' }}
                     </button>
                 </div>
             </div>
@@ -390,6 +403,11 @@ watch(() => fSesi.status, (baru) => {
 })
 
 function simpanKoreksiSesi() {
+    if (!String(fSesi.alasan_koreksi || '').trim()) {
+        sesiGalat.value = 'Alasan koreksi wajib diisi — isi dulu kolom paling bawah, baru simpan.'
+        document.getElementById('alasan-koreksi-sesi')?.focus()
+        return
+    }
     busy.value = true
     sesiGalat.value = null
     router.post(route('admin.smart-education.jurnal.sesi.koreksi', kSesi.value.id), {
@@ -414,13 +432,27 @@ const rosterRows = ref([])
 const rosterAwal = ref({})
 const rosterLoading = ref(false)
 const fRoster = reactive({ alasan: '', kabari_wali: false })
+const rosterGalat = ref(null)
 
-const rosterBerubah = computed(() =>
-    rosterRows.value.filter(r => r.status !== rosterAwal.value[r.santri_id]).length)
+/**
+ * Baris yang perlu ditulis = yang statusnya diubah ATAU yang BELUM PERNAH
+ * tersimpan.
+ *
+ * Bug 12 Okt 2026: `rosterAwal` diisi dari status SARAN yang dikirim server
+ * (hadir/izin/sakit otomatis) termasuk untuk santri yang belum punya catatan.
+ * Untuk sesi yang rosternya belum pernah diisi, semua baris otomatis "sama
+ * dengan awal" → hitungannya 0 → tombol mati dan menu "Isi Absensi Santri"
+ * tidak bisa menyimpan apa pun. Bahkan bila tombolnya dipaksa, daftar yang
+ * dikirim kosong dan ditolak validasi tanpa pesan.
+ */
+const rosterPerluTulis = computed(() => rosterRows.value.filter(
+    r => !r.tersimpan || r.status !== rosterAwal.value[r.santri_id]))
+const rosterBerubah = computed(() => rosterPerluTulis.value.length)
+const rosterBaru = computed(() => rosterRows.value.some(r => !r.tersimpan))
 
 async function bukaKoreksiRoster(s) {
     kRoster.value = s; rosterRows.value = []; rosterLoading.value = true
-    fRoster.alasan = ''; fRoster.kabari_wali = false
+    fRoster.alasan = ''; fRoster.kabari_wali = false; rosterGalat.value = null
     try {
         const res = await fetch(route('admin.smart-education.jurnal.sesi.roster', s.id),
             { headers: { Accept: 'application/json' } })
@@ -439,16 +471,20 @@ function tandaiSemua(v) {
     })
 }
 function simpanKoreksiRoster() {
+    if (!rosterBerubah.value) {
+        rosterGalat.value = 'Tidak ada yang perlu disimpan.'
+        return
+    }
     busy.value = true
+    rosterGalat.value = null
     router.post(route('admin.smart-education.jurnal.sesi.koreksi-roster', kRoster.value.id), {
-        absensi: rosterRows.value
-            .filter(r => r.status !== rosterAwal.value[r.santri_id])
-            .map(r => ({ santri_id: r.santri_id, status: r.status })),
+        absensi: rosterPerluTulis.value.map(r => ({ santri_id: r.santri_id, status: r.status })),
         alasan: fRoster.alasan || null,
         kabari_wali: fRoster.kabari_wali,
     }, {
         preserveScroll: true,
         onSuccess: () => { kRoster.value = null; detail.value = null },
+        onError: (e) => { rosterGalat.value = Object.values(e).join(' · ') },
         onFinish: () => busy.value = false,
     })
 }
