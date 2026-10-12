@@ -402,6 +402,19 @@ class AbsensiController extends Controller
             'materi'              => 'nullable|string|max:500',
             'keterangan'          => 'nullable|string|max:500',
             'digantikan_oleh'     => 'nullable|required_if:status,pengganti|exists:tenaga_pendidik,id',
+        ], [
+            // Proyek ini tidak punya berkas lang/, jadi pesan bawaan berbahasa
+            // Inggris. Sekarang galat ditampilkan di modal, maka kalimatnya
+            // harus terbaca oleh admin.
+            'status.required'           => 'Status pelaksanaan wajib dipilih.',
+            'status.in'                 => 'Status pelaksanaan tidak dikenal.',
+            'jp_terlaksana.integer'     => 'JP harus berupa angka.',
+            'jam_mulai_aktual.date_format'   => 'Format jam mulai tidak dikenali.',
+            'jam_selesai_aktual.date_format' => 'Format jam selesai tidak dikenali.',
+            'digantikan_oleh.required_if'    => 'Pilih guru penggantinya dulu.',
+            'digantikan_oleh.exists'         => 'Guru pengganti tidak ditemukan.',
+            'materi.max'                => 'Materi terlalu panjang (maks 500 karakter).',
+            'keterangan.max'            => 'Keterangan terlalu panjang (maks 500 karakter).',
         ]);
 
         $jadwal = JadwalMengajar::findOrFail($data['jadwal_mengajar_id']);
@@ -637,6 +650,20 @@ class AbsensiController extends Controller
             'keterangan'         => 'nullable|string|max:500',
             'digantikan_oleh'    => 'nullable|required_if:status,pengganti|exists:tenaga_pendidik,id',
             'alasan_koreksi'     => 'required|string|max:500',
+        ], [
+            // Proyek ini tidak punya berkas lang/, jadi pesan bawaan berbahasa
+            // Inggris. Sekarang galat ditampilkan di modal, maka kalimatnya
+            // harus terbaca oleh admin.
+            'status.required'           => 'Status pelaksanaan wajib dipilih.',
+            'status.in'                 => 'Status pelaksanaan tidak dikenal.',
+            'jp_terlaksana.integer'     => 'JP harus berupa angka.',
+            'jam_mulai_aktual.date_format'   => 'Format jam mulai tidak dikenali.',
+            'jam_selesai_aktual.date_format' => 'Format jam selesai tidak dikenali.',
+            'digantikan_oleh.required_if'    => 'Pilih guru penggantinya dulu.',
+            'digantikan_oleh.exists'         => 'Guru pengganti tidak ditemukan.',
+            'materi.max'                => 'Materi terlalu panjang (maks 500 karakter).',
+            'keterangan.max'            => 'Keterangan terlalu panjang (maks 500 karakter).',
+            'alasan_koreksi.required'   => 'Alasan koreksi wajib diisi.',
         ]);
 
         // Dialihkan ke KoreksiPembelajaranService: halaman ini dulu menulis
