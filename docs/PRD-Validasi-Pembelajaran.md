@@ -1,14 +1,18 @@
 # PRD — Validasi Pembelajaran (Validator)
 
-**Status:** BELUM DIKERJAKAN — rancangan sudah direvisi, menunggu dua angka
-terakhir (jumlah validator per kategori & kuota harian).
+**Status:** BELUM DIKERJAKAN — menunggu **tiga keputusan terakhir** (lihat
+bagian *Arah 12 Okt*). Eksekusi ditahan user.
 
 - 3 Okt 2026 — brainstorm awal.
 - 9 Okt 2026 — sinyal anomali **diukur di produksi**; hasilnya mengubah arah:
-  mesin risiko tidak punya bahan, yang tersisa **sidak berbasis sampel acak**.
+  mesin risiko tidak punya bahan.
 - 11 Okt 2026 — **Tahapan direvisi** (Langkah 0–6), validator diputuskan berupa
   **guru lewat PWA** dengan cakupan **per kategori pembelajaran**, dan
   ketergantungannya pada absensi santri diperiksa ke data.
+- 12 Okt 2026 — arah berubah lagi: **validasi harian menyeluruh, bukan sampel**.
+  Beban serentak diukur; dua koreksi wajib (jumlah validator & bentuk ACC).
+  Bagian *Sampel* menjadi tidak berlaku.
+
 **Tujuan:** mengetahui kebenaran guru mengajar atau tidak
 **Terkait:** [PRD-Override-Pembelajaran.md](PRD-Override-Pembelajaran.md), [PRD-Guru-Piket.md](PRD-Guru-Piket.md)
 
@@ -204,15 +208,24 @@ gantikan sebagai inval, dan tidak boleh di luar kategorinya.
 ### Langkah 2 — antrian & keputusan (masih tanpa dampak)
 
 Tabel `validasi` + `validasi_riwayat` + `ValidasiService` (`antrikan`,
-`putuskan`, `statusSesi`, `rekap`). Pengisi antrian hanya tiga:
+`putuskan`, `statusSesi`, `rekap`).
 
-1. **sampel acak harian** per kategori, ditimbang (lihat Sampel di bawah);
-2. **aduan** — menumpang menu Saran & Masukan yang sudah ada;
-3. **wajib** — guru/kelas yang sedang dalam pembinaan, ditandai admin.
+**Pengisi antrian (revisi 12 Okt):** **seluruh sesi hari itu** pada kategori
+yang dipegang validator yang bertugas — bukan sampel. Ditambah dua sumber
+pelengkap yang tetap berlaku:
+
+1. **aduan** — menumpang menu Saran & Masukan yang sudah ada;
+2. **wajib** — guru/kelas yang sedang dalam pembinaan, ditandai admin.
+
+~~sampel acak harian ditimbang~~ → tidak dipakai; disimpan sebagai cadangan bila
+beban menyeluruh ternyata tak tertanggung setelah Langkah 4.
 
 Dijalankan scheduler yang sudah ada. Keputusan `sah` / `tidak_sesuai` /
 `tidak_dapat_diperiksa`, lewat jendela → `kedaluwarsa` dan **diperlakukan sah**
 bagi guru; yang tercatat gagal adalah validatornya.
+
+Status validasi disimpan **terpisah** dari `absensi_mengajar.status` (lihat
+Koreksi 2 pada *Arah 12 Okt*) — kecuali bila user memilih gerbang keras.
 
 ### Langkah 3 — PWA validator
 
@@ -248,7 +261,107 @@ yang sama lewat registry jenis.
 
 ---
 
-## Sampel — mengapa tidak semua sesi diperiksa
+## ARAH 12 OKTOBER 2026 — validasi harian menyeluruh, bukan sampel
+
+**Keputusan user:** setiap hari ada validator bertugas, dibagi per kategori
+pembelajaran, tugasnya **memastikan guru benar-benar mengajar**. Sesi **tidak
+otomatis dihitung terlaksana** — menunggu validator meng-ACC.
+
+Ini jalur yang semula ditandai Risiko #1 ("bila semua sesi wajib divalidasi,
+fitur mati"), jadi kelayakannya diukur lebih dulu ke jadwal produksi. **Hasilnya:
+tertanggung**, dengan dua koreksi wajib di bawah.
+
+### Beban nyata (jadwal aktif, 12 Okt 2026)
+
+| Kategori | Slot/pekan | **Puncak serentak** | Blok jam | Durasi sesi | ACC/hari |
+|---|---|---|---|---|---|
+| sekolah | 201 (35 guru, 9 kelas) | **9 kelas** | 7 blok: 07:30 · 08:40 · 10:20 · 11:30 · 20:00 | 69–75 mnt (malam 45) | 23,8 |
+| quran | 160 (19 guru, 20 kelas) | **20 halaqoh** | 2 blok: 05:00 · 18:00 | 45 mnt | 19,8 |
+| pesantren | 2 | 2 | 20:00 kamis | 45 mnt | 0,1 |
+
+**Sekolah lapang:** 9 kelas dalam 70 menit = ±7,8 menit per kelas, cukup untuk
+masuk dan mengamati sebentak. **Quran yang ketat:** 20 halaqoh dalam 45 menit.
+
+### Koreksi 1 — quran WAJIB dua validator (putra & putri)
+
+20 halaqoh jam 05:00 terbagi **12 putra + 8 putri, nol campur**; pengampunya pun
+12 laki-laki dan 8 perempuan:
+
+- putra: Tahfidz Putra 1–6, Tahsin Putra 1–5, Persiapan Tahfidz 1–2
+- putri: Tahfidz Putri 1–5, Tahsin Putri 1, Tahsin Level 5, Persiapan Tahfidz Ustadzah
+
+Satu orang tidak dapat memasuki area putra dan putri sekaligus — bukan soal
+jarak, tetapi kepatutan. Dipisah, angkanya masuk: **12 ÷ 45 mnt = 3,8 menit**
+per halaqoh (putra), **8 ÷ 45 = 5,6 menit** (putri). **Syarat yang belum
+dikonfirmasi: halaqoh terkumpul di satu area.** Bila tersebar beberapa gedung,
+hitungan ini batal.
+
+Jadi kebutuhan harian **minimal 4 orang**, bukan 3 — jumlah validator mengikuti
+**beban serentak**, bukan jumlah kategori:
+
+| Giliran | Jam | Cakupan |
+|---|---|---|
+| 1 | 05:00 & 18:00 | quran **putra** (12 halaqoh) |
+| 2 | 05:00 & 18:00 | quran **putri** (8 halaqoh) |
+| 3 | 07:30–12:40 | sekolah pagi (4–5 blok × 9 kelas) |
+| 4 | 20:00 | sekolah malam (9 kelas) + pesantren |
+
+Bisa 3 orang bila giliran 3+4 digabung — konsekuensinya jam tugas 07:30–20:45.
+Tenaganya tersedia: jam 05:00 **tidak ada guru yang mengajar** (51 guru luang),
+jam 18:00 ada 32 luang dari 51.
+
+### Koreksi 2 — ACC jangan dijadikan gerbang keras
+
+Versi harfiah ("tanpa ACC = tidak terlaksana") memindahkan risiko ke orang yang
+salah. Empat akibatnya:
+
+1. **Satu orang lupa, puluhan guru kena.** Validator quran putri tidak datang
+   sehari → 8 pengampu kehilangan JP dan kinerjanya turun padahal mengajar.
+   Dengan 12 halaqoh dalam 45 menit, ada satu-dua terlewat itu **normal**.
+2. **Jam 05:00 setiap hari tanpa libur.** Kesiangan sekali saja → seluruh
+   tahfidz pagi gagal.
+3. **`terlaksana` dibaca banyak tempat** — vakasi guru pengganti, potongan per
+   sesi tidak mengajar, kinerja, laporan kehadiran santri, papan piket.
+   Menggantungkannya pada pihak ketiga = **titik gagal baru di penggajian**.
+4. **Bertabrakan dengan yang sudah jalan.** Scheduler tiap 5 menit sudah
+   menandai `tidak_terlaksana` lewat batas jam (`SesiMengajarService`). Bila ACC
+   jadi syarat, harus diputuskan mana yang menang.
+
+**Usul: status validasi TERPISAH, tidak menggantikan `terlaksana`.**
+
+| Kejadian | Status sesi | Status validasi |
+|---|---|---|
+| Guru absen sesi | `terlaksana` (seperti sekarang) | **`menunggu`** |
+| Validator ACC | `terlaksana` | `sah` |
+| Validator **menolak** | diubah → `tidak_terlaksana` (JP hangus) | `tidak_sesuai` |
+| Jendela tutup tanpa ACC | `terlaksana` | `kedaluwarsa` — **dianggap sah bagi guru**, yang tercatat gagal validatornya |
+
+Tuntutan user tetap terpenuhi: guru melihat sesinya **"menunggu validasi"**
+(jadi tidak terasa otomatis beres), validator dapat membatalkan klaim mengajar,
+dan akuntabilitasnya dua arah — kinerja validator diukur dari berapa yang ia
+tuntaskan. Yang dihindari: guru dihukum karena validatornya lupa.
+
+Bila versi harfiah tetap dipilih, **syarat minimum**: validator pengganti wajib
+ada setiap hari (inval untuk validator), jendela ACC diperpanjang s.d. H+1 agar
+yang terlewat bisa disusul, dan sanksinya **hanya kinerja — jangan menyentuh
+gaji**.
+
+### Tiga keputusan yang ditunggu sebelum Langkah 1
+
+1. **4 validator/hari, atau tetap 3** (giliran sekolah pagi + malam digabung)?
+2. **Halaqoh putra 12 kelompok terkumpul di satu tempat, atau tersebar?**
+3. ACC sebagai **status terpisah** (usul di atas) atau **gerbang keras** (versi
+   user)?
+
+---
+
+## Sampel — mengapa tidak semua sesi diperiksa  *(TIDAK BERLAKU sejak 12 Okt)*
+
+> **Digantikan oleh *Arah 12 Okt: validasi harian menyeluruh*.** User memilih
+> setiap sesi di-ACC validator harian, bukan sebagian yang diambil acak.
+> Disimpan karena dua hal di bawah tetap relevan: alasan *mengapa* acak itu
+> syarat (bila kelak beban tak tertanggung dan harus kembali ke sampel), dan
+> **ketimpangan bukti antar kategori** yang jadi dasar penimbangan.
 
 Ada **45,2 sesi per hari aktif** (1.221 sesi dalam 30 hari). Memeriksa semuanya
 berarti ±8 orang bekerja penuh waktu hanya untuk memvalidasi — fitur akan mati
@@ -274,13 +387,16 @@ Di kelas sekolah masih ada foto dan materi sebagai bukti sekunder; di halaqoh
 tidak ada apa pun, sehingga satu-satunya cara mengetahui halaqoh berjalan atau
 tidak adalah mendatanginya.
 
-Dengan kuota **5–8 sesi/hari per validator** dan satu validator per kategori,
-cakupannya ±25–35% sesi per bulan — jauh di atas ambang yang dibutuhkan agar
-sidak terasa nyata, dan masih bisa dikerjakan sambil mengajar.
+~~Dengan kuota 5–8 sesi/hari per validator dan satu validator per kategori,
+cakupannya ±25–35% sesi per bulan.~~ → Angka kuota tidak lagi dipakai; lihat
+*Arah 12 Okt*, yang menargetkan **100% sesi hari itu**.
 
 ## Risiko
 
-1. **Beban** — bila semua sesi wajib divalidasi, fitur mati. Harus risiko + sampel.
+1. **Beban** — bila semua sesi wajib divalidasi, fitur mati bila orangnya tidak
+   cukup. **User memilih jalur ini (12 Okt)**, dan setelah diukur ternyata
+   tertanggung — dengan syarat jumlah validator menyesuaikan beban serentak,
+   bukan jumlah kategori. Lihat *Arah 12 Okt*.
 2. **Validasi teater** — memeriksa data buatan guru sendiri = 99% lolos.
 3. **Konflik sejawat** — mitigasi: alasan wajib, audit penuh, hak sanggah,
    validator bukan rekan satu mapel/jenjang.
@@ -357,15 +473,17 @@ anomali.
 
 | # | Pertanyaan | Keputusan |
 |---|---|---|
-| 1 | Cakupan: semua sesi, atau sampel? | **Sampel acak** (anomali dibatalkan, tidak ada bahannya) |
-| 2 | Siapa validatornya | **Guru, lewat PWA.** Ditunjuk per orang, dibedakan **per kategori pembelajaran**: sekolah · pesantren · quran (tahfidz+tahsin) |
+| 1 | Cakupan: semua sesi, atau sampel? | **SEMUA sesi, harian** (keputusan 12 Okt; sampel acak dibatalkan, anomali sudah dibatalkan 9 Okt) |
+| 2 | Siapa validatornya | **Guru, lewat PWA.** Ditunjuk per orang, dibedakan **per kategori pembelajaran**: sekolah · pesantren · quran (tahfidz+tahsin) — dengan **quran dipecah putra/putri**, lihat Koreksi 1 |
 | 3 | Cara kerja | **Sidak** sebagai inti; "periksa bukti" hanya untuk aduan — memeriksa catatan buatan guru sendiri = 99% lolos |
 | 4 | Jendela | Sidak = **saat sesi berjalan**; pemeriksaan aduan s.d. H+1. Lewat jendela → `kedaluwarsa`, **dianggap sah** bagi guru |
 | 5 | Dampak `tidak_sesuai` | **Tanpa dampak** selama Langkah 1–4. Bila berdampak: kinerja saja (JP hangus), **bukan potongan gaji** |
 | 6 | Hak sanggah guru | **Ada**, pemutus akhir pimpinan |
 
-**Masih terbuka:** berapa orang validator per kategori, dan angka kuota
-hariannya (usul 5–8 sesi/hari).
+**Masih terbuka (3 butir, lihat akhir bagian *Arah 12 Okt*):** jumlah validator
+harian (4 atau 3), apakah 12 halaqoh putra terkumpul satu tempat, dan bentuk ACC
+(status terpisah atau gerbang keras). Angka kuota harian **tidak lagi relevan** —
+targetnya seluruh sesi hari itu.
 
 ## Langkah pertama yang disarankan — SUDAH DIKERJAKAN 9 Okt 2026
 
