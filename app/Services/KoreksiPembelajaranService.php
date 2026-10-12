@@ -229,7 +229,11 @@ class KoreksiPembelajaranService
 
         $jpJadwal = (int) ($am->jadwalMengajar?->jumlah_jp ?? 0);
 
-        return DB::transaction(function () use ($am, $d, $status, $olehUserId, $jpJadwal) {
+        // Dihitung SEBELUM transaksi supaya nilai yang dicatat di log koreksi
+        // benar-benar nilai yang tersimpan, dan JP janggal ditolak lebih awal.
+        $jp = $this->jpUntukStatus($status, $d['jp_terlaksana'] ?? null, $jpJadwal);
+
+        return DB::transaction(function () use ($am, $d, $status, $olehUserId, $jp) {
             KoreksiAbsensi::create([
                 'tenaga_pendidik_id'  => $am->tenaga_pendidik_id,
                 'tanggal'             => $am->tanggal,
@@ -237,17 +241,11 @@ class KoreksiPembelajaranService
                 'absensi_mengajar_id' => $am->id,
                 'field_dikoreksi'     => 'status',
                 'nilai_lama'          => $am->status . ' / ' . (int) $am->jp_terlaksana . ' JP',
-                'nilai_baru'          => $status . ' / ' . ($d['jp_terlaksana'] ?? $jpJadwal) . ' JP',
+                'nilai_baru'          => $status . ' / ' . $jp . ' JP',
                 'alasan'              => $d['alasan_koreksi'],
                 'status'              => 'disetujui',
                 'dikoreksi_oleh'      => $olehUserId,
             ]);
-
-            // JP mengikuti status bila tidak disebut: status yang tidak menghasilkan
-            // pembelajaran tidak boleh membawa JP.
-            $jp = array_key_exists('jp_terlaksana', $d) && $d['jp_terlaksana'] !== null
-                ? (int) $d['jp_terlaksana']
-                : (in_array($status, ['terlaksana', 'libur', 'izin'], true) ? $jpJadwal : 0);
 
             $am->update([
                 'status'             => $status,
@@ -264,6 +262,51 @@ class KoreksiPembelajaranService
 
             return $am->fresh();
         });
+    }
+
+    /**
+     * JP yang sah untuk sebuah status sesi.
+     *
+     * Dibuat setelah bug nyata (12 Okt 2026): form koreksi mengisi kolom JP dari
+     * JP LAMA sesi itu, lalu mengirimkannya apa adanya. Akibatnya dua arah salah,
+     * dan keduanya tidak terlihat oleh admin:
+     *
+     *   • sesi `tidak_terlaksana` (JP lama 0) dikoreksi menjadi `terlaksana` →
+     *     terkirim 0 → tersimpan "terlaksana / 0 JP". JP-nya tetap hangus,
+     *     padahal justru itu yang ingin dibetulkan;
+     *   • sesi `terlaksana` 2 JP dikoreksi menjadi `tidak_terlaksana` → terkirim
+     *     2 → tersimpan "tidak_terlaksana / 2 JP", melanggar aturan bahwa sesi
+     *     yang tidak berjalan tidak membawa JP (dan membuat kinerja serta
+     *     rincian JP di slip ikut keliru).
+     *
+     * Aturannya sekarang: STATUS yang menentukan, bukan isi form.
+     *   - `tidak_terlaksana` → selalu 0, apa pun yang dikirim;
+     *   - status lain        → 0/kosong berarti "ikut JP jadwal"; angka 1..jadwal
+     *     dihormati (sesi yang berjalan sebagian itu nyata).
+     *
+     * @throws \DomainException bila JP melebihi JP jadwal
+     */
+    private function jpUntukStatus(string $status, int|string|null $diminta, int $jpJadwal): int
+    {
+        if ($status === 'tidak_terlaksana') {
+            return 0;
+        }
+
+        $diminta = ($diminta === null || $diminta === '') ? null : (int) $diminta;
+
+        // 0 diperlakukan sebagai "ikut jadwal", bukan "nol JP": status yang
+        // mengakui sesi berjalan tetapi berisi 0 JP adalah kontradiksi.
+        if ($diminta === null || $diminta < 1) {
+            return $jpJadwal;
+        }
+
+        if ($jpJadwal > 0 && $diminta > $jpJadwal) {
+            throw new \DomainException(
+                "JP tidak boleh melebihi JP jadwal sesi ini ({$jpJadwal} JP)."
+            );
+        }
+
+        return $diminta;
     }
 
     /**

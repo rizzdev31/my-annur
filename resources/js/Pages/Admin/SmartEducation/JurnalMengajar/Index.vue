@@ -203,8 +203,8 @@
                             <option value="libur">Libur (netral)</option>
                         </select>
                         <p class="text-[11px] text-gray-400 mt-1">
-                            JP otomatis mengikuti status bila dikosongkan: terlaksana/izin/libur = {{ kSesi.jp_jadwal }} JP,
-                            tidak terlaksana = 0.
+                            JP mengikuti status: <strong>tidak terlaksana selalu 0</strong>;
+                            status lain = {{ kSesi.jp_jadwal }} JP (JP jadwal) bila dikosongkan.
                         </p>
                     </div>
                     <div v-if="fSesi.status === 'pengganti'">
@@ -217,7 +217,10 @@
                     <div class="grid grid-cols-3 gap-2">
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">JP</label>
-                            <input v-model.number="fSesi.jp_terlaksana" type="number" min="0" max="20" :class="fieldCls + ' w-full'" />
+                            <input v-model.number="fSesi.jp_terlaksana" type="number" min="0"
+                                :max="kSesi.jp_jadwal || 20"
+                                :disabled="fSesi.status === 'tidak_terlaksana'"
+                                :class="fieldCls + ' w-full disabled:bg-gray-100 disabled:text-gray-400'" />
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">Jam mulai</label>
@@ -241,6 +244,10 @@
                         <p class="text-[11px] text-gray-400 mt-1">Tercatat di log koreksi beserta nama Anda.</p>
                     </div>
                 </div>
+
+                <p v-if="sesiGalat" class="mt-3 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700">
+                    {{ sesiGalat }}
+                </p>
 
                 <div class="flex gap-2 mt-5">
                     <button @click="kSesi = null" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Batal</button>
@@ -316,7 +323,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
@@ -353,17 +360,38 @@ const fSesi = reactive({
     materi: '', digantikan_oleh: null, alasan_koreksi: '',
 })
 
+const sesiGalat = ref(null)
+
 function bukaKoreksiSesi(s) {
     kSesi.value = s
+    sesiGalat.value = null
+    const status = s.status_sesi === 'hadir' ? 'terlaksana' : s.status_sesi
     Object.assign(fSesi, {
-        status: s.status_sesi === 'hadir' ? 'terlaksana' : s.status_sesi,
-        jp_terlaksana: s.jp ?? null,
+        status,
+        // JP tidak boleh diambil dari JP LAMA: sesi tidak terlaksana ber-JP 0,
+        // dan nilai 0 itu ikut terkirim sehingga koreksi ke "terlaksana"
+        // menghasilkan 0 JP — bug yang ditemukan 12 Okt 2026. Diisi dari
+        // keadaan yang DIINGINKAN, bukan keadaan lama.
+        jp_terlaksana: status === 'tidak_terlaksana' ? 0 : (s.jp || s.jp_jadwal || null),
         jam_mulai_aktual: '', jam_selesai_aktual: '',
         materi: s.materi ?? '', digantikan_oleh: null, alasan_koreksi: '',
     })
 }
+
+// Ganti status → JP ikut menyesuaikan, supaya angka di layar selalu sama dengan
+// yang akan tersimpan (servicenya juga memaksakan aturan ini).
+watch(() => fSesi.status, (baru) => {
+    if (!kSesi.value) return
+    if (baru === 'tidak_terlaksana') {
+        fSesi.jp_terlaksana = 0
+    } else if (!fSesi.jp_terlaksana) {
+        fSesi.jp_terlaksana = kSesi.value.jp_jadwal || null
+    }
+})
+
 function simpanKoreksiSesi() {
     busy.value = true
+    sesiGalat.value = null
     router.post(route('admin.smart-education.jurnal.sesi.koreksi', kSesi.value.id), {
         ...fSesi,
         jam_mulai_aktual: fSesi.jam_mulai_aktual || null,
@@ -373,6 +401,9 @@ function simpanKoreksiSesi() {
     }, {
         preserveScroll: true,
         onSuccess: () => { kSesi.value = null; detail.value = null },
+        // Tanpa ini, galat validasi (mis. JP di luar batas) membuat modal
+        // seolah tidak merespons sama sekali.
+        onError: (e) => { sesiGalat.value = Object.values(e).join(' · ') },
         onFinish: () => busy.value = false,
     })
 }
