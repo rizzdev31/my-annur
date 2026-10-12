@@ -348,7 +348,17 @@ const mErr = reactive({ alasan: '' })
 
 function openInput(a) {
     modalTarget.value = a
-    Object.assign(mForm, { status: a.status === 'belum' ? 'terlaksana' : a.status, digantikan_oleh: a.digantikan_oleh ?? null, jp_terlaksana: a.jp_terlaksana ?? a.jumlah_jp, jam_mulai_aktual: a.jam_mulai_aktual ?? a.jam_mulai, jam_selesai_aktual: a.jam_selesai_aktual ?? a.jam_selesai, materi: a.materi ?? '', keterangan: '', alasan_koreksi: '' })
+    // jam dari kolom TIME datang sebagai "08:41:00"; dipotong ke H:i supaya
+    // <input type="time"> mau menampilkannya dan validasi server tidak kaget.
+    const jam = (v) => (v ? String(v).slice(0, 5) : '')
+    Object.assign(mForm, {
+        status: a.status === 'belum' ? 'terlaksana' : a.status,
+        digantikan_oleh: a.digantikan_oleh ?? null,
+        jp_terlaksana: a.jp_terlaksana ?? a.jumlah_jp,
+        jam_mulai_aktual: jam(a.jam_mulai_aktual ?? a.jam_mulai),
+        jam_selesai_aktual: jam(a.jam_selesai_aktual ?? a.jam_selesai),
+        materi: a.materi ?? '', keterangan: '', alasan_koreksi: '',
+    })
     mErr.alasan = ''
     showModal.value = true
 }
@@ -366,6 +376,9 @@ function submitModal() {
         mLoading.value = true
         router.patch(route('admin.smart-payroll.absensi.koreksi-mengajar', modalTarget.value.absensi_id), { ...mForm }, {
             onSuccess: () => { showModal.value = false },
+            // Tanpa ini, galat validasi membuat modal seolah tidak merespons —
+            // dan itulah yang terjadi: jam "08:41:00" ditolak tanpa pesan.
+            onError: (e) => { mErr.alasan = Object.values(e).join(' · ') },
             onFinish: () => mLoading.value = false,
         })
     } else {
@@ -376,6 +389,7 @@ function submitModal() {
             ...mForm,
         }, {
             onSuccess: () => { showModal.value = false },
+            onError: (e) => { mErr.alasan = Object.values(e).join(' · ') },
             onFinish: () => mLoading.value = false,
         })
     }

@@ -393,8 +393,11 @@ class AbsensiController extends Controller
             'jadwal_mengajar_id'  => 'required|exists:jadwal_mengajar,id',
             'tanggal'             => 'required|date',
             'status'              => 'required|in:terlaksana,tidak_terlaksana,pengganti,libur,izin',
-            'jam_mulai_aktual'    => 'nullable|date_format:H:i',
-            'jam_selesai_aktual'  => 'nullable|date_format:H:i',
+            // H:i:s ikut diterima: nilainya berasal dari kolom TIME (08:41:00),
+            // bukan dari ketikan manusia. Hanya menerima H:i membuat kiriman
+            // ditolak 422 tanpa pesan apa pun di layar.
+            'jam_mulai_aktual'    => 'nullable|date_format:H:i,H:i:s',
+            'jam_selesai_aktual'  => 'nullable|date_format:H:i,H:i:s',
             'jp_terlaksana'       => 'nullable|integer|min:0',
             'materi'              => 'nullable|string|max:500',
             'keterangan'          => 'nullable|string|max:500',
@@ -624,41 +627,28 @@ class AbsensiController extends Controller
         $data = $request->validate([
             'status'             => 'required|in:terlaksana,tidak_terlaksana,pengganti,libur,izin',
             'jp_terlaksana'      => 'nullable|integer|min:0',
-            'jam_mulai_aktual'   => 'nullable|date_format:H:i',
-            'jam_selesai_aktual' => 'nullable|date_format:H:i',
+            // H:i:s ikut diterima — lihat catatan di storeMengajar(). Inilah
+            // sebab koreksi di halaman ini TIDAK PERNAH tersimpan: formnya
+            // mengisi jam dari kolom TIME ("08:41:00"), validasi menolaknya,
+            // dan modalnya tidak menampilkan galat apa pun.
+            'jam_mulai_aktual'   => 'nullable|date_format:H:i,H:i:s',
+            'jam_selesai_aktual' => 'nullable|date_format:H:i,H:i:s',
             'materi'             => 'nullable|string|max:500',
             'keterangan'         => 'nullable|string|max:500',
             'digantikan_oleh'    => 'nullable|required_if:status,pengganti|exists:tenaga_pendidik,id',
             'alasan_koreksi'     => 'required|string|max:500',
         ]);
 
-        KoreksiAbsensi::create([
-            'tenaga_pendidik_id'  => $absensi->tenaga_pendidik_id,
-            'tanggal'             => $absensi->tanggal,
-            'tipe_absensi'        => 'mengajar',
-            'absensi_mengajar_id' => $absensi->id,
-            'field_dikoreksi'     => 'status',
-            'nilai_lama'          => $absensi->status,
-            'nilai_baru'          => $data['status'],
-            'alasan'              => $data['alasan_koreksi'],
-            'status'              => 'disetujui',
-            'dikoreksi_oleh'      => Auth::id(),
-        ]);
-
-        $absensi->update([
-            'status'             => $data['status'],
-            'jp_terlaksana'      => $data['jp_terlaksana'] ?? $absensi->jp_terlaksana,
-            'jam_mulai_aktual'   => $data['jam_mulai_aktual'] ?? $absensi->jam_mulai_aktual,
-            'jam_selesai_aktual' => $data['jam_selesai_aktual'] ?? $absensi->jam_selesai_aktual,
-            'materi'             => $data['materi'] ?? $absensi->materi,
-            'keterangan'         => $data['keterangan'] ?? $absensi->keterangan,
-            // Pengganti: bila bukan status pengganti, kosongkan; bila pengganti, pakai input.
-            'digantikan_oleh'    => $data['status'] === 'pengganti'
-                ? ($data['digantikan_oleh'] ?? $absensi->digantikan_oleh)
-                : null,
-            'is_koreksi'         => true,
-            'dikoreksi_oleh'     => Auth::id(),
-        ]);
+        // Dialihkan ke KoreksiPembelajaranService: halaman ini dulu menulis
+        // sendiri, sehingga melewati tiga hal yang berlaku di jalur Jurnal
+        // Mengajar — penjaga periode terkunci/berslip, aturan "JP mengikuti
+        // status", dan log koreksi yang mencatat JP lama/baru. Satu pintu.
+        try {
+            app(\App\Services\KoreksiPembelajaranService::class)
+                ->koreksiSesi($absensi, $data, Auth::id());
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('success', 'Absensi mengajar berhasil dikoreksi.');
     }
