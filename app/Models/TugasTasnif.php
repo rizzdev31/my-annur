@@ -12,6 +12,11 @@ class TugasTasnif extends Model
         'santri_id', 'level', 'pengampu_id', 'penguji_id',
         'tugas_tambahan_id', 'penugasan_id', 'status', 'nilai', 'lulus', 'catatan',
         'nilai_pemahaman_materi', 'nilai_kelancaran', 'nilai_fashohah', 'nilai_makhorijul_huruf',
+        // Kolom pembatalan (14 Okt 2026). WAJIB didaftarkan: tanpa ini
+        // Eloquent melewati update()-nya tanpa galat sama sekali, sehingga
+        // statusnya berubah menjadi 'dibatalkan' tetapi alasan & pelakunya
+        // hilang — jejak pembatalan jadi tidak bisa ditelusuri.
+        'dibatalkan_oleh', 'dibatalkan_pada', 'alasan_batal',
     ];
 
     protected $casts = [
