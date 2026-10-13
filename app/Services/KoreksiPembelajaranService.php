@@ -506,6 +506,16 @@ class KoreksiPembelajaranService
             ->with('jenisPengajuan')->first();
     }
 
+    /**
+     * Versi publik penjaga periode — dipakai modul lain yang juga tidak boleh
+     * mengubah apa pun setelah slip terbit (mis. pembatalan tugas tasmi/tasnif
+     * yang vakasinya sudah dibayar).
+     */
+    public function periodeSudahBerslip(string $tanggal): bool
+    {
+        return $this->periodeTerkunci($tanggal);
+    }
+
     private function periodeTerkunci(string $tanggal): bool
     {
         $periode = PeriodePenggajian::untukTanggal($tanggal);

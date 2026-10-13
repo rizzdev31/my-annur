@@ -68,6 +68,77 @@ class TasnifService
         });
     }
 
+    /**
+     * BATALKAN penunjukan penguji tasnif — kembaran `TasmiService::batalkanTugas()`.
+     * Lihat catatan panjang di sana untuk alasannya.
+     *
+     * Bedanya satu hal penting: tasnif yang LULUS menaikkan level santri, dan
+     * level itu TIDAK diturunkan otomatis saat pembatalan. Menurunkan level
+     * menyentuh seluruh jalur pembelajaran tahsin (kelas, materi, penilaian),
+     * dan santri bisa saja sudah berjalan di level baru selama berhari-hari.
+     * Jadi pembatalan hanya membatalkan tugas & vakasinya; penurunan level
+     * dilakukan terpisah dan sadar lewat penyesuaian level santri.
+     *
+     * @throws \DomainException
+     */
+    public function batalkanTugas(int $tugasTasnifId, ?int $userId, string $alasan): TugasTasnif
+    {
+        $tt = TugasTasnif::findOrFail($tugasTasnifId);
+        if ($tt->status === 'dibatalkan') {
+            throw new \DomainException('Penunjukan ini sudah dibatalkan.');
+        }
+        if (trim($alasan) === '') {
+            throw new \DomainException('Alasan pembatalan wajib diisi.');
+        }
+
+        $sudahDinilai = $tt->status === 'selesai';
+
+        if ($sudahDinilai && $tt->penugasan_id) {
+            $dilaporkan = PenugasanTambahan::where('id', $tt->penugasan_id)->value('dilaporkan_pada');
+            if ($dilaporkan && app(KoreksiPembelajaranService::class)
+                ->periodeSudahBerslip(Carbon::parse($dilaporkan)->toDateString())) {
+                throw new \DomainException(
+                    'Vakasi tasnif ini sudah masuk periode penggajian yang berslip. '
+                    . 'Batalkan lewat koreksi penggajian, bukan dari sini.'
+                );
+            }
+        }
+
+        return DB::transaction(function () use ($tt, $userId, $alasan, $sudahDinilai) {
+            if ($tt->penugasan_id) {
+                PenugasanTambahan::where('id', $tt->penugasan_id)->update([
+                    'disetujui'         => false,
+                    'status_pengerjaan' => 'tidak_selesai',
+                    'dilaporkan_pada'   => null,
+                    'laporan'           => 'Dibatalkan superadmin — ' . $alasan,
+                ]);
+            }
+            if ($tt->tugas_tambahan_id) {
+                TugasTambahan::where('id', $tt->tugas_tambahan_id)->update(['status' => 'dibatalkan']);
+            }
+
+            $tt->update([
+                'status'          => 'dibatalkan',
+                'dibatalkan_oleh' => $userId,
+                'dibatalkan_pada' => now(),
+                'alasan_batal'    => $alasan,
+            ]);
+
+            \App\Models\KoreksiPencapaian::create([
+                'santri_id'      => $tt->santri_id,
+                'tipe'           => 'tahsin',
+                'level'          => $tt->level,
+                'field'          => 'tugas_tasnif',
+                'nilai_lama'     => $sudahDinilai ? 'selesai dinilai' : 'ditugaskan',
+                'nilai_baru'     => 'dibatalkan',
+                'alasan'         => $alasan . ($sudahDinilai ? ' (level santri TIDAK diturunkan otomatis)' : ''),
+                'dikoreksi_oleh' => $userId,
+            ]);
+
+            return $tt->fresh();
+        });
+    }
+
     /** Daftar tasnif yang ditugaskan ke seorang penguji (belum dinilai). */
     public function tasnifSaya(int $pengujiId)
     {

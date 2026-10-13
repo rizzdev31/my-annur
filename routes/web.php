@@ -724,6 +724,16 @@ Route::prefix('admin')
             // ── Monitoring Tahfidz (progres hafalan santri) ───────────────
             Route::get('tahfidz-monitoring', [MonitoringTahfidzController::class, 'index'])->name('tahfidz-monitoring.index');
             Route::get('tahfidz-monitoring/{santri}', [MonitoringTahfidzController::class, 'detail'])->name('tahfidz-monitoring.detail');
+            // Override superadmin saat data pencapaian tidak sesuai kenyataan
+            // (tombol tasmi' muncul/tidak muncul keliru). Semua berjejak.
+            Route::post('tahfidz-monitoring/{santri}/hitung-ulang',
+                [MonitoringTahfidzController::class, 'hitungUlang'])->name('tahfidz-monitoring.hitung-ulang');
+            Route::post('tahfidz-monitoring/{santri}/status-juz',
+                [MonitoringTahfidzController::class, 'setStatusJuz'])->name('tahfidz-monitoring.status-juz');
+            Route::post('tahfidz-monitoring/{santri}/lepas-kunci',
+                [MonitoringTahfidzController::class, 'lepasKunciJuz'])->name('tahfidz-monitoring.lepas-kunci');
+            Route::post('tahfidz-monitoring/tasmi/{tugasTasmi}/batal',
+                [MonitoringTahfidzController::class, 'batalkanTasmi'])->name('tahfidz-monitoring.tasmi-batal');
 
             // ── Materi Tahsin (setting per level) ─────────────────────────
             Route::get('tahsin', [EducationTahsinController::class, 'index'])->name('tahsin.index');
@@ -736,6 +746,8 @@ Route::prefix('admin')
             // ── Monitoring Tahsin (progres level & materi santri) ─────────
             Route::get('tahsin-monitoring', [MonitoringTahsinController::class, 'index'])->name('tahsin-monitoring.index');
             Route::get('tahsin-monitoring/{santri}', [MonitoringTahsinController::class, 'detail'])->name('tahsin-monitoring.detail');
+            Route::post('tahsin-monitoring/tasnif/{tugasTasnif}/batal',
+                [MonitoringTahsinController::class, 'batalkanTasnif'])->name('tahsin-monitoring.tasnif-batal');
         });
 
         // ══════════════ SMART HABBIT ══════════════

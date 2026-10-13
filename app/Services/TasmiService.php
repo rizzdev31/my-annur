@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\KoreksiPencapaian;
 use App\Models\TugasTasmi;
 use App\Models\TugasTambahan;
 use App\Models\PenugasanTambahan;
@@ -21,9 +22,11 @@ class TasmiService
     /** Pengampu menunjuk guru penguji untuk tasmi' satu juz seorang santri. */
     public function tunjukPenguji(int $santriId, int $juz, int $pengampuId, int $pengujiId, ?int $userId): TugasTasmi
     {
-        $hj = HafalanJuz::where('santri_id', $santriId)->where('juz', $juz)->first();
-        if (!$hj || $hj->status !== 'selesai') {
-            throw new \DomainException("Juz $juz belum siap ditasmi' (harus selesai 1 juz penuh dulu).");
+        // Satu sumber kelayakan, sama dengan gerbang tombol tasmi' di PWA:
+        // dulu di sini hanya `status === 'selesai'`, sehingga juz yang statusnya
+        // penuh karena setoran terhitung ganda tetap bisa ditunjuk pengujinya.
+        if ($alasan = app(TahfidzService::class)->alasanBelumBolehTasmi($santriId, $juz)) {
+            throw new \DomainException($alasan);
         }
         if (TugasTasmi::where('santri_id', $santriId)->where('juz', $juz)->where('status', 'ditugaskan')->exists()) {
             throw new \DomainException("Sudah ada penugasan tasmi' aktif untuk juz $juz.");
@@ -70,6 +73,91 @@ class TasmiService
                 'penugasan_id'      => $pn->id,
                 'status'            => 'ditugaskan',
             ]);
+        });
+    }
+
+    /**
+     * BATALKAN penunjukan penguji — wewenang superadmin (keputusan 14 Okt 2026:
+     * boleh membatalkan yang sudah dinilai, dengan alasan + jejak).
+     *
+     * Sebelumnya tidak ada jalan membatalkan sama sekali: `TasmiService` hanya
+     * punya tunjuk/lihat/nilai, dan tidak satu pun rute superadmin. Akibatnya
+     * penunjukan yang salah (salah penguji, salah santri, salah juz)
+     * menggantung selamanya — terukur 5 tugas tasmi & 16 tugas tasnif berstatus
+     * `ditugaskan` yang tak bisa disentuh siapa pun.
+     *
+     * Yang ikut dibereskan, karena penunjukan tasmi' MEMBUAT tugas tambahan
+     * ber-vakasi: penugasannya ditandai tidak disetujui + tidak selesai supaya
+     * vakasinya tidak mengalir ke payroll, dan tugas tambahannya dibatalkan.
+     * Bila tasmi'-nya sudah dinilai, status juz dikembalikan dari `tasmi_lulus`
+     * ke `selesai` sehingga tombol tasmi' muncul lagi.
+     *
+     * @throws \DomainException
+     */
+    public function batalkanTugas(int $tugasTasmiId, ?int $userId, string $alasan): TugasTasmi
+    {
+        $tt = TugasTasmi::findOrFail($tugasTasmiId);
+        if ($tt->status === 'dibatalkan') {
+            throw new \DomainException('Penunjukan ini sudah dibatalkan.');
+        }
+        if (trim($alasan) === '') {
+            throw new \DomainException('Alasan pembatalan wajib diisi.');
+        }
+
+        $sudahDinilai = $tt->status === 'selesai';
+
+        // Vakasi yang sudah terbit tidak boleh berubah diam-diam.
+        if ($sudahDinilai && $tt->penugasan_id) {
+            $dilaporkan = PenugasanTambahan::where('id', $tt->penugasan_id)->value('dilaporkan_pada');
+            if ($dilaporkan && app(KoreksiPembelajaranService::class)
+                ->periodeSudahBerslip(Carbon::parse($dilaporkan)->toDateString())) {
+                throw new \DomainException(
+                    'Vakasi tasmi ini sudah masuk periode penggajian yang berslip. '
+                    . 'Batalkan lewat koreksi penggajian, bukan dari sini.'
+                );
+            }
+        }
+
+        return DB::transaction(function () use ($tt, $userId, $alasan, $sudahDinilai) {
+            if ($sudahDinilai) {
+                // Juz kembali wajib tasmi; hasil nilainya tetap tersimpan sebagai
+                // riwayat, hanya tidak lagi mengunci statusnya.
+                HafalanJuz::where('santri_id', $tt->santri_id)->where('juz', $tt->juz)
+                    ->where('status', 'tasmi_lulus')
+                    ->update(['status' => 'selesai']);
+            }
+
+            if ($tt->penugasan_id) {
+                PenugasanTambahan::where('id', $tt->penugasan_id)->update([
+                    'disetujui'         => false,   // payroll melewati yang tidak disetujui
+                    'status_pengerjaan' => 'tidak_selesai',
+                    'dilaporkan_pada'   => null,
+                    'laporan'           => 'Dibatalkan superadmin — ' . $alasan,
+                ]);
+            }
+            if ($tt->tugas_tambahan_id) {
+                TugasTambahan::where('id', $tt->tugas_tambahan_id)->update(['status' => 'dibatalkan']);
+            }
+
+            $tt->update([
+                'status'          => 'dibatalkan',
+                'dibatalkan_oleh' => $userId,
+                'dibatalkan_pada' => now(),
+                'alasan_batal'    => $alasan,
+            ]);
+
+            KoreksiPencapaian::create([
+                'santri_id'      => $tt->santri_id,
+                'tipe'           => 'tahfidz',
+                'juz'            => $tt->juz,
+                'field'          => 'tugas_tasmi',
+                'nilai_lama'     => $sudahDinilai ? 'selesai dinilai' : 'ditugaskan',
+                'nilai_baru'     => 'dibatalkan',
+                'alasan'         => $alasan,
+                'dikoreksi_oleh' => $userId,
+            ]);
+
+            return $tt->fresh();
         });
     }
 

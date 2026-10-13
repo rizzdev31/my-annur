@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\SetoranTahfidz;
 use App\Models\HafalanSantri;
 use App\Models\HafalanJuz;
+use App\Models\KoreksiPencapaian;
 use App\Models\SettingTahfidz;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -174,16 +175,14 @@ class TahfidzService
                         $hafalan->last_juz           = $juzSelesai;
                         $hafalan->save();
 
-                        foreach ($this->quran->pecahPerJuz($sMulai, $aMulai, $sSelesai, $aSelesai) as $juz => $cnt) {
-                            $hj = HafalanJuz::firstOrCreate(
-                                ['santri_id' => $d['santri_id'], 'juz' => $juz],
-                                ['ayat_terkumpul' => 0, 'jumlah_ayat_juz' => $this->quran->jumlahAyatJuz($juz), 'status' => 'berjalan']
-                            );
-                            $hj->ayat_terkumpul = min($hj->jumlah_ayat_juz, $hj->ayat_terkumpul + $cnt);
-                            if ($hj->ayat_terkumpul >= $hj->jumlah_ayat_juz && $hj->status === 'berjalan') {
-                                $hj->status = 'selesai'; // wajib tasmi'
-                            }
-                            $hj->save();
+                        // Juz yang tersentuh dihitung ULANG dari cakupan, tidak
+                        // ditambah. Penambahan membuat setoran yang tumpang
+                        // tindih (mengulang bagian yang sama sampai lulus)
+                        // terhitung dua kali, lalu penghitungnya penuh padahal
+                        // juznya belum khatam → tombol tasmi' muncul keliru.
+                        // Diukur 14 Okt 2026: 1.981 ayat ganda, 17 juz terdampak.
+                        foreach (array_keys($this->quran->pecahPerJuz($sMulai, $aMulai, $sSelesai, $aSelesai)) as $juz) {
+                            $this->hitungUlangJuz((int) $d['santri_id'], (int) $juz);
                         }
                     }
                     break;
@@ -237,22 +236,39 @@ class TahfidzService
             ] : null,
             'lanjut_dari'       => $lanjut, // {surah, ayat} saran hafalan baru; null bila kursor di akhir mushaf
             'selesai_semua'     => $hafalan->total_ayat >= $totalQuran, // benar2 30 juz (independen urutan)
-            'juz_perlu_tasmi'   => $juz->where('status', 'selesai')->pluck('juz')->values(),
+            // Gerbang tasmi' = status 'selesai' DAN cakupan nyata penuh.
+            // Cakupan ikut diperiksa supaya juz yang penghitungnya penuh karena
+            // setoran ganda tidak lagi memunculkan tombol tasmi'. Status yang
+            // DIKUNCI admin dikecualikan — override manusia menang (mis. hafalan
+            // lama pra-sistem yang tidak punya riwayat setoran).
+            'juz_perlu_tasmi'   => $juz->where('status', 'selesai')
+                ->filter(fn ($j) => $j->status_dikunci
+                    || $this->cakupanJuz($santriId, (int) $j->juz)['penuh'])
+                ->pluck('juz')->values(),
             'juz_selesai_total' => $juz->whereIn('status', ['selesai', 'tasmi_lulus'])->count(),
             'juz'               => $juz->map(function ($j) use ($santriId) {
-                // Lubang hanya dihitung untuk juz yang belum penuh — inilah yang
-                // menjelaskan kenapa tasmi' tak kunjung muncul padahal setoran
-                // terakhir sudah sampai akhir juz.
-                $lubang = $j->ayat_terkumpul < $j->jumlah_ayat_juz
-                    ? $this->lubangJuz($santriId, (int) $j->juz) : [];
+                // Rincian per juz dihitung dari CAKUPAN, bukan penghitung —
+                // "belum" memuat kepala & ekor juz, bukan hanya celah tengah,
+                // sehingga guru tahu persis surat/ayat mana yang masih kurang
+                // dan tidak lagi menyimpulkan sendiri bahwa juznya sudah khatam.
+                $c = $this->cakupanJuz($santriId, (int) $j->juz);
 
                 return [
                     'juz'             => $j->juz,
                     'ayat_terkumpul'  => $j->ayat_terkumpul,
                     'jumlah_ayat_juz' => $j->jumlah_ayat_juz,
                     'status'          => $j->status,
-                    'kurang_ayat'     => max(0, $j->jumlah_ayat_juz - $j->ayat_terkumpul),
-                    'lubang'          => $lubang,
+                    'status_dikunci'  => (bool) $j->status_dikunci,
+                    'kurang_ayat'     => $c['kurang'],
+                    'cakupan_nyata'   => $c['nyata'],
+                    'penuh'           => $c['penuh'],
+                    'sudah_hafal'     => $c['hafal'],
+                    'belum_hafal'     => $c['belum'],
+                    'lubang'          => $c['lubang'],
+                    // Peringatan untuk guru: gerbang tasmi' tidak cocok dengan
+                    // cakupan nyata — artinya data pencapaiannya perlu dikoreksi
+                    // superadmin, bukan dipaksa setor.
+                    'perlu_koreksi'   => $c['penuh'] !== in_array($j->status, ['selesai', 'tasmi_lulus'], true),
                 ];
             })->values(),
         ];
@@ -458,6 +474,291 @@ class TahfidzService
      *
      * @return array<array{dari:array{0:int,1:int}, sampai:array{0:int,1:int}, jumlah:int}>
      */
+    /**
+     * CAKUPAN SEBENARNYA satu juz — sumber tunggal gerbang tasmi' & rincian.
+     *
+     * Mengganti cara lama yang memakai penghitung `ayat_terkumpul`. Penghitung
+     * itu ditambah per setoran (`+= jumlah`), sehingga setoran yang TUMPANG
+     * TINDIH — santri mengulang bagian yang sama karena belum lulus, lalu lulus —
+     * terhitung dua kali. Terukur di produksi 14 Okt 2026: 1.981 ayat ganda,
+     * dan pada 17 baris penghitungnya penuh padahal cakupan nyatanya kurang
+     * 1–104 ayat. Juz seperti itu memunculkan tombol tasmi' (bahkan sudah
+     * ditandai lulus) walau belum khatam.
+     *
+     * Di sini yang dihitung adalah HIMPUNAN posisi ayat, digabung dulu baru
+     * diukur, jadi tumpang tindih tidak mungkin menambah apa pun.
+     *
+     * Dua sumber cakupan:
+     *   - rentang setoran ziyadah LULUS (punya surah/ayat eksplisit);
+     *   - `ayat_seed`, bagian dari sinkronisasi awal yang tidak punya rentang
+     *     dan selalu dihitung dari AWAL juz.
+     *
+     * @return array{kapasitas:int, nyata:int, penuh:bool, kurang:int,
+     *               hafal:array<int,array>, belum:array<int,array>, lubang:array}
+     */
+    public function cakupanJuz(int $santriId, int $juz): array
+    {
+        [$sM, $aM, $sS, $aS] = $this->quran->juzRange($juz);
+        $awal  = $this->quran->posisiAbsolut($sM, $aM);
+        $akhir = $this->quran->posisiAbsolut($sS, $aS);
+        $kapasitas = $akhir - $awal + 1;
+
+        $hj = HafalanJuz::where('santri_id', $santriId)->where('juz', $juz)->first();
+
+        $segmen = [];
+        foreach (SetoranTahfidz::where('santri_id', $santriId)
+            ->where('jenis', 'ziyadah')->where('lulus', true)
+            ->get(['surah_mulai', 'ayat_mulai', 'surah_selesai', 'ayat_selesai']) as $t) {
+            $a = max($awal,  $this->quran->posisiAbsolut((int) $t->surah_mulai, (int) $t->ayat_mulai));
+            $b = min($akhir, $this->quran->posisiAbsolut((int) $t->surah_selesai, (int) $t->ayat_selesai));
+            if ($a <= $b) $segmen[] = [$a, $b];
+        }
+
+        $seed = (int) ($hj->ayat_seed ?? 0);
+        if ($seed > 0) $segmen[] = [$awal, min($akhir, $awal + $seed - 1)];
+
+        $gabung = $this->gabungSegmen($segmen);
+
+        $nyata = 0;
+        foreach ($gabung as $g) $nyata += $g[1] - $g[0] + 1;
+
+        // Bagian yang BELUM dihafal — termasuk kepala & ekor juz, bukan hanya
+        // celah di antara dua bagian. Inilah sebab kedua "hafalan sudah selesai
+        // tapi tasmi' tak muncul": yang kurang ada di ujung juz dan tidak pernah
+        // dilaporkan ke guru, sehingga ia mengira sudah khatam.
+        $belum = [];
+        $kursor = $awal;
+        foreach ($gabung as $g) {
+            if ($g[0] > $kursor) $belum[] = [$kursor, $g[0] - 1];
+            $kursor = max($kursor, $g[1] + 1);
+        }
+        if ($kursor <= $akhir) $belum[] = [$kursor, $akhir];
+
+        // Celah DI ANTARA bagian terhafal saja (dipakai peringatan lama).
+        $lubang = [];
+        for ($i = 1; $i < count($gabung); $i++) {
+            $m = $gabung[$i - 1][1] + 1;
+            $h = $gabung[$i][0] - 1;
+            if ($m <= $h) $lubang[] = [$m, $h];
+        }
+
+        return [
+            'kapasitas' => $kapasitas,
+            'nyata'     => $nyata,
+            'penuh'     => $nyata >= $kapasitas,
+            'kurang'    => max(0, $kapasitas - $nyata),
+            'hafal'     => array_map(fn ($g) => $this->labelRentang($g[0], $g[1]), $gabung),
+            'belum'     => array_map(fn ($g) => $this->labelRentang($g[0], $g[1]), $belum),
+            'lubang'    => array_map(fn ($g) => $this->labelRentang($g[0], $g[1]), $lubang),
+        ];
+    }
+
+    /**
+     * Apakah juz ini SAH untuk ditasmi'? Satu tempat, dipakai gerbang PWA dan
+     * penunjukan penguji, supaya keduanya tidak pernah berbeda pendapat.
+     *
+     * @return string|null null = boleh; selain itu alasan penolakan
+     */
+    public function alasanBelumBolehTasmi(int $santriId, int $juz): ?string
+    {
+        $hj = HafalanJuz::where('santri_id', $santriId)->where('juz', $juz)->first();
+        if (!$hj) {
+            return "Juz $juz belum punya catatan hafalan.";
+        }
+        if ($hj->status === 'tasmi_lulus') {
+            return "Juz $juz sudah lulus tasmi'. Minta superadmin menurunkan statusnya bila perlu diulang.";
+        }
+        if ($hj->status !== 'selesai') {
+            return "Juz $juz belum selesai 1 juz penuh.";
+        }
+        if ($hj->status_dikunci) {
+            return null;    // diakui manual oleh superadmin
+        }
+
+        $c = $this->cakupanJuz($santriId, $juz);
+        if (!$c['penuh']) {
+            $belum = collect($c['belum'])->map(fn ($b) => $b['teks'])->take(3)->implode(', ');
+
+            return "Juz $juz belum khatam: kurang {$c['kurang']} ayat ({$belum})."
+                . ' Bila santri sebenarnya sudah hafal, minta superadmin mengoreksi pencapaiannya.';
+        }
+
+        return null;
+    }
+
+    /** Gabungkan segmen posisi yang bertumpuk/bersambung. */
+    private function gabungSegmen(array $segmen): array
+    {
+        if (!$segmen) return [];
+
+        usort($segmen, fn ($x, $y) => $x[0] <=> $y[0]);
+        $gabung = [];
+        foreach ($segmen as $s) {
+            $n = count($gabung);
+            if ($n && $s[0] <= $gabung[$n - 1][1] + 1) {
+                $gabung[$n - 1][1] = max($gabung[$n - 1][1], $s[1]);
+            } else {
+                $gabung[] = $s;
+            }
+        }
+
+        return $gabung;
+    }
+
+    /** Rentang posisi absolut → label surat:ayat yang bisa dibaca guru. */
+    private function labelRentang(int $dari, int $sampai): array
+    {
+        [$s1, $a1] = $this->quran->posisiKeSurahAyat($dari);
+        [$s2, $a2] = $this->quran->posisiKeSurahAyat($sampai);
+
+        return [
+            'dari'        => [$s1, $a1],
+            'sampai'      => [$s2, $a2],
+            'jumlah'      => $sampai - $dari + 1,
+            'surah_dari'  => $this->quran->namaSurah($s1),
+            'surah_sampai'=> $this->quran->namaSurah($s2),
+            'teks'        => $s1 === $s2
+                ? $this->quran->namaSurah($s1) . " {$a1}–{$a2}"
+                : $this->quran->namaSurah($s1) . " {$a1} – " . $this->quran->namaSurah($s2) . " {$a2}",
+        ];
+    }
+
+    /**
+     * Tulis ulang `ayat_terkumpul` satu juz dari cakupan nyata, dan sesuaikan
+     * statusnya. TIDAK pernah menurunkan `tasmi_lulus` dan tidak menyentuh
+     * status yang dikunci admin — keputusan manusia menang atas hitungan.
+     *
+     * @return array{sebelum:array, sesudah:array, cakupan:array}
+     */
+    public function hitungUlangJuz(int $santriId, int $juz): array
+    {
+        $hj = HafalanJuz::firstOrCreate(
+            ['santri_id' => $santriId, 'juz' => $juz],
+            ['ayat_terkumpul' => 0, 'jumlah_ayat_juz' => $this->quran->jumlahAyatJuz($juz),
+             'status' => 'berjalan']
+        );
+
+        $c = $this->cakupanJuz($santriId, $juz);
+        $sebelum = ['ayat_terkumpul' => (int) $hj->ayat_terkumpul, 'status' => $hj->status];
+
+        $status = $hj->status;
+        if (!$hj->status_dikunci && $hj->status !== 'tasmi_lulus') {
+            $status = $c['penuh'] ? 'selesai' : 'berjalan';
+        }
+
+        $hj->update([
+            'ayat_terkumpul'  => min($c['nyata'], (int) $hj->jumlah_ayat_juz),
+            'jumlah_ayat_juz' => $this->quran->jumlahAyatJuz($juz),
+            'status'          => $status,
+        ]);
+
+        return ['sebelum' => $sebelum, 'cakupan' => $c,
+                'sesudah' => ['ayat_terkumpul' => (int) $hj->fresh()->ayat_terkumpul,
+                              'status' => $hj->fresh()->status]];
+    }
+
+    /**
+     * OVERRIDE SUPERADMIN — tetapkan status satu juz secara manual.
+     *
+     * Dibutuhkan karena ada dua keadaan yang tidak bisa diselesaikan hitungan:
+     *   1. santri benar-benar sudah hafal tetapi riwayat setoran tidak lengkap
+     *      (hafalan lama pra-sistem, atau sinkronisasi awal yang kurang) →
+     *      naikkan ke 'selesai' dan KUNCI, supaya tombol tasmi' muncul;
+     *   2. juz tertandai `tasmi_lulus` padahal belum pernah ditasmi' — 318 baris
+     *      berasal dari sinkronisasi awal yang menganggap "sudah hafal = sudah
+     *      ditasmi" → turunkan ke 'selesai' agar tasmi'-nya bisa dijalankan.
+     *      (Keputusan 14 Okt 2026: ditangani per kasus, bukan massal.)
+     *
+     * Status yang ditetapkan manual DIKUNCI: penghitungan otomatis tidak boleh
+     * menimpanya lagi, kalau tidak koreksinya akan hilang pada setoran berikutnya.
+     *
+     * @throws \DomainException
+     */
+    public function setStatusJuz(
+        int $santriId, int $juz, string $status, string $alasan, ?int $userId, bool $kunci = true
+    ): HafalanJuz {
+        if (!in_array($status, ['berjalan', 'selesai', 'tasmi_lulus'], true)) {
+            throw new \DomainException('Status juz tidak dikenal.');
+        }
+        if (trim($alasan) === '') {
+            throw new \DomainException('Alasan koreksi wajib diisi.');
+        }
+
+        $hj = HafalanJuz::firstOrCreate(
+            ['santri_id' => $santriId, 'juz' => $juz],
+            ['ayat_terkumpul' => 0, 'jumlah_ayat_juz' => $this->quran->jumlahAyatJuz($juz),
+             'status' => 'berjalan']
+        );
+
+        $lama = $hj->status;
+        if ($lama === $status && (bool) $hj->status_dikunci === $kunci) {
+            throw new \DomainException("Status juz $juz sudah \"$status\".");
+        }
+
+        return DB::transaction(function () use ($hj, $santriId, $juz, $status, $lama, $alasan, $userId, $kunci) {
+            $hj->update([
+                'status'         => $status,
+                'status_dikunci' => $kunci,
+                'dikoreksi_oleh' => $userId,
+                'dikoreksi_pada' => TimezoneHelper::now(),
+                'alasan_koreksi' => $alasan,
+            ]);
+
+            KoreksiPencapaian::create([
+                'santri_id'      => $santriId,
+                'tipe'           => 'tahfidz',
+                'juz'            => $juz,
+                'field'          => 'status_juz',
+                'nilai_lama'     => $lama,
+                'nilai_baru'     => $status . ($kunci ? ' (dikunci)' : ''),
+                'alasan'         => $alasan,
+                'dikoreksi_oleh' => $userId,
+            ]);
+
+            return $hj->fresh();
+        });
+    }
+
+    /** Lepaskan kunci override agar juz kembali mengikuti hitungan otomatis. */
+    public function lepasKunciJuz(int $santriId, int $juz, string $alasan, ?int $userId): array
+    {
+        $hj = HafalanJuz::where('santri_id', $santriId)->where('juz', $juz)->firstOrFail();
+        if (!$hj->status_dikunci) {
+            throw new \DomainException("Status juz $juz tidak sedang dikunci.");
+        }
+
+        $hj->update(['status_dikunci' => false]);
+
+        KoreksiPencapaian::create([
+            'santri_id'      => $santriId,
+            'tipe'           => 'tahfidz',
+            'juz'            => $juz,
+            'field'          => 'kunci_status',
+            'nilai_lama'     => 'dikunci',
+            'nilai_baru'     => 'mengikuti hitungan',
+            'alasan'         => $alasan ?: 'Kunci dilepas',
+            'dikoreksi_oleh' => $userId,
+        ]);
+
+        return $this->hitungUlangJuz($santriId, $juz);
+    }
+
+    /** Hitung ulang SELURUH juz seorang santri + total ayatnya. */
+    public function hitungUlangSantri(int $santriId): array
+    {
+        $hasil = [];
+        foreach (HafalanJuz::where('santri_id', $santriId)->pluck('juz') as $juz) {
+            $hasil[(int) $juz] = $this->hitungUlangJuz($santriId, (int) $juz);
+        }
+
+        // total_ayat diambil dari jumlah per juz (sudah dibatasi kapasitas juz),
+        // bukan penjumlahan bebas setoran — pola yang sama dengan bangunUlang().
+        $total = (int) HafalanJuz::where('santri_id', $santriId)->sum('ayat_terkumpul');
+        HafalanSantri::where('santri_id', $santriId)->update(['total_ayat' => $total]);
+
+        return ['juz' => $hasil, 'total_ayat' => $total];
+    }
+
     public function lubangJuz(int $santriId, int $juz): array
     {
         $hj = HafalanJuz::where('santri_id', $santriId)->where('juz', $juz)->first();

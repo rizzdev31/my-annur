@@ -102,6 +102,57 @@ class MonitoringTahsinController extends Controller
             'materiKini'=> $svc->materiSantri($santri->id, $level),
             'levelGrid' => $levelGrid,
             'riwayat'   => $riwayat,
+            // Penunjukan penguji tasnif — sebelumnya tidak ada tempat untuk
+            // melihat, apalagi membatalkan. Terukur 16 tugas menggantung.
+            'tugasTasnif' => \App\Models\TugasTasnif::where('santri_id', $santri->id)
+                ->with(['penguji.user:id,name', 'pengampu.user:id,name'])
+                ->orderByDesc('id')->get()
+                ->map(fn ($t) => [
+                    'id'           => $t->id,
+                    'level'        => $t->level,
+                    'status'       => $t->status,
+                    'penguji'      => $t->penguji?->user?->name ?? '—',
+                    'pengampu'     => $t->pengampu?->user?->name ?? '—',
+                    'nilai'        => $t->nilai,
+                    'lulus'        => $t->lulus,
+                    'alasan_batal' => $t->alasan_batal,
+                    'dibuat'       => $t->created_at?->format('d M Y'),
+                ]),
+            'jejak' => \App\Models\KoreksiPencapaian::where('santri_id', $santri->id)
+                ->where('tipe', 'tahsin')->with('dikoreksiOleh:id,name')
+                ->orderByDesc('id')->limit(20)->get()
+                ->map(fn ($k) => [
+                    'level'  => $k->level,
+                    'field'  => $k->field,
+                    'lama'   => $k->nilai_lama,
+                    'baru'   => $k->nilai_baru,
+                    'alasan' => $k->alasan,
+                    'oleh'   => $k->dikoreksiOleh?->name ?? '—',
+                    'waktu'  => $k->created_at?->format('d M Y H:i'),
+                ]),
         ]);
+    }
+
+    /**
+     * Batalkan penunjukan penguji tasnif (termasuk tugas tambahan & vakasinya).
+     *
+     * Catatan: level santri TIDAK diturunkan otomatis — lihat alasannya di
+     * TasnifService::batalkanTugas().
+     */
+    public function batalkanTasnif(Request $request, int $tugasTasnif)
+    {
+        $d = $request->validate(
+            ['alasan' => 'required|string|max:300'],
+            ['alasan.required' => 'Alasan pembatalan wajib diisi.']
+        );
+
+        try {
+            app(\App\Services\TasnifService::class)
+                ->batalkanTugas($tugasTasnif, \Illuminate\Support\Facades\Auth::id(), $d['alasan']);
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Penunjukan tasnif dibatalkan. Vakasi pengujinya tidak akan terbayar.');
     }
 }

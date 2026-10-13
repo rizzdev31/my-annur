@@ -15,6 +15,7 @@ class QuranReferenceService
 {
     private array $offset      = []; // nomor surah => jumlah ayat SEBELUM surah ini
     private array $surahAyat   = []; // nomor surah => jumlah ayat
+    private array $surahNama   = []; // nomor surah => nama surah
     private array $juzStartPos = []; // nomor juz   => posisi absolut awal juz (1-based)
     private array $juzMarker   = []; // nomor juz   => [surah, ayat]
     private int   $total       = 0;
@@ -22,8 +23,9 @@ class QuranReferenceService
     public function __construct()
     {
         $cum = 0;
-        foreach (Surah::orderBy('nomor')->get(['nomor', 'jumlah_ayat']) as $s) {
+        foreach (Surah::orderBy('nomor')->get(['nomor', 'nama', 'jumlah_ayat']) as $s) {
             $this->surahAyat[$s->nomor] = $s->jumlah_ayat;
+            $this->surahNama[$s->nomor] = $s->nama;
             $this->offset[$s->nomor]    = $cum;
             $cum += $s->jumlah_ayat;
         }
@@ -140,6 +142,15 @@ class QuranReferenceService
     public function jumlahAyatSurah(int $surah): int
     {
         return (int) ($this->surahAyat[$surah] ?? 0);
+    }
+
+    /**
+     * Nama surah. Dipakai menyusun rincian "sudah/belum dihafal" agar guru
+     * membaca "An-Naba' 1-20", bukan sepasang angka.
+     */
+    public function namaSurah(int $surah): string
+    {
+        return (string) ($this->surahNama[$surah] ?? "Surah $surah");
     }
 
     /** Daftar surah (untuk dropdown). */
