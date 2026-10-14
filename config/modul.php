@@ -224,6 +224,12 @@ return [
             'beranda'  => 'admin.smart-education.tahsin.index',
             'prefix'   => ['admin.smart-education.tahsin', 'admin.smart-education.materi-tahsin', 'admin.smart-education.tahsin-monitoring'],
         ],
+        'se_hasil_ujian_quran' => [
+            'nama'     => "Hasil Tasmi' & Tasnif",
+            'kategori' => 'Smart Education',
+            'beranda'  => 'admin.smart-education.hasil-ujian-quran.index',
+            'prefix'   => ['admin.smart-education.hasil-ujian-quran'],
+        ],
         // Dipecah per laporan (kode lama 'se_laporan' di-expand lewat migration).
         'se_laporan_index' => [
             'nama'     => 'Laporan Pembelajaran: Ringkasan',

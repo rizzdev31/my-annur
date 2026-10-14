@@ -628,7 +628,8 @@ class TahsinApiController extends Controller
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return response()->json(['success' => false, 'message' => 'Tenaga pendidik tidak ditemukan.'], 404);
 
-        $t = TugasTasnif::with(['santri:id,nama_lengkap,nip', 'penguji.user:id,name', 'pengampu.user:id,name'])
+        $t = TugasTasnif::with(['santri:id,nama_lengkap,nip', 'penguji.user:id,name',
+            'pengampu.user:id,name', 'masukanOleh:id,name'])
             ->findOrFail($tugasTasnif);
         if ($t->status !== 'selesai' || !$t->lulus) {
             return response()->json(['success' => false, 'message' => 'Sertifikat hanya untuk tasnif yang sudah dinilai & LULUS.', 'code' => 'BELUM_LULUS'], 422);
@@ -656,6 +657,9 @@ class TahsinApiController extends Controller
             'penguji'  => $t->penguji?->user?->name ?? '—',
             'pengampu' => $t->pengampu?->user?->name ?? '—',
             'catatan'  => $t->catatan,
+            'masukan'      => $t->masukan_pimpinan,
+            'masukan_oleh' => $t->masukanOleh?->name,
+            'ambang'       => TasnifService::NILAI_LULUS,
             'tanggal'  => $tgl->locale('id')->isoFormat('D MMMM YYYY'),
             'lembaga'  => 'Pondok Pesantren An Nur Sidoarjo',
             'program'  => 'Tahsinul Qur\'an',

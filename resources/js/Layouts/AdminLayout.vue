@@ -191,6 +191,11 @@
                     <SidebarSubItem :href="route('admin.smart-education.tahfidz.index')" label="Pengaturan" />
                     <SidebarSubItem :href="route('admin.smart-education.tahfidz.sinkron-hafalan')" label="Sinkron Hafalan" />
                     <SidebarSubItem :href="route('admin.smart-education.tahfidz-monitoring.index')" label="Monitoring" />
+                    <!-- Hasil tasmi' & tasnif sengaja ditautkan dari KEDUA grup:
+                         halamannya satu, tetapi superadmin mencarinya dari mana
+                         saja ia sedang bekerja. -->
+                    <SidebarSubItem v-if="boleh('se_hasil_ujian_quran')"
+                        :href="route('admin.smart-education.hasil-ujian-quran.index')" label="Hasil Tasmi' & Tasnif" />
                 </SidebarGroup>
                 <SidebarGroup v-if="boleh('se_tahsin')" icon="monitor" label="Tahsin"
                     :active="isActive('admin.smart-education.tahsin') || isActive('admin.smart-education.materi-tahsin') || isActive('admin.smart-education.tahsin-monitoring')"
@@ -198,6 +203,8 @@
                     <SidebarSubItem :href="route('admin.smart-education.tahsin.index')" label="Pengaturan" />
                     <SidebarSubItem :href="route('admin.smart-education.materi-tahsin.index')" label="Materi" />
                     <SidebarSubItem :href="route('admin.smart-education.tahsin-monitoring.index')" label="Monitoring" />
+                    <SidebarSubItem v-if="boleh('se_hasil_ujian_quran')"
+                        :href="route('admin.smart-education.hasil-ujian-quran.index')" label="Hasil Tasmi' & Tasnif" />
                 </SidebarGroup>
                 <!-- Kode 'se_laporan' sudah dipecah granular (migration expand);
                      grup & tiap tautannya kini memakai kode barunya masing-masing,
@@ -715,6 +722,7 @@ const menuLinks = computed(() => {
         { label: 'Rekap Mengajar Tahfidz & Tahsin', href: r('admin.smart-education.laporan.mengajar-quran'), icon: 'chart' },
         { label: 'Smart Tahfidz', href: r('admin.smart-education.tahfidz.index'), icon: 'book' },
         { label: 'Monitoring Tahfidz', href: r('admin.smart-education.tahfidz-monitoring.index'), icon: 'trophy' },
+        { label: "Hasil Tasmi' & Tasnif", href: r('admin.smart-education.hasil-ujian-quran.index'), icon: 'trophy' },
         { label: 'Smart Tahsin', href: r('admin.smart-education.tahsin.index'), icon: 'book' },
         { label: 'Materi Tahsin', href: r('admin.smart-education.materi-tahsin.index'), icon: 'book' },
         { label: 'Monitoring Tahsin', href: r('admin.smart-education.tahsin-monitoring.index'), icon: 'bar-chart' },

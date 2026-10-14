@@ -17,6 +17,10 @@ class TugasTasmi extends Model
         // statusnya berubah menjadi 'dibatalkan' tetapi alasan & pelakunya
         // hilang — jejak pembatalan jadi tidak bisa ditelusuri.
         'dibatalkan_oleh', 'dibatalkan_pada', 'alasan_batal',
+        // Masukan pimpinan (14 Okt 2026). Didaftarkan sejak awal: dua kali
+        // dalam pekerjaan ini kolom baru lupa didaftarkan dan Eloquent
+        // melewatinya TANPA galat.
+        'masukan_pimpinan', 'masukan_oleh', 'masukan_pada',
     ];
 
     protected function casts(): array
@@ -32,4 +36,8 @@ class TugasTasmi extends Model
     public function pengampu() { return $this->belongsTo(TenagaPendidik::class, 'pengampu_id'); }
     public function penguji()  { return $this->belongsTo(TenagaPendidik::class, 'penguji_id'); }
     public function penugasan() { return $this->belongsTo(PenugasanTambahan::class, 'penugasan_id'); }
+
+    public function masukanOleh() { return $this->belongsTo(User::class, 'masukan_oleh'); }
+
+    public function dibatalkanOleh() { return $this->belongsTo(User::class, 'dibatalkan_oleh'); }
 }

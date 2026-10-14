@@ -826,7 +826,8 @@ class TahfidzApiController extends Controller
         $tp = $request->user()->tenagaPendidik;
         if (!$tp) return response()->json(['success' => false, 'message' => 'Tenaga pendidik tidak ditemukan.'], 404);
 
-        $t = \App\Models\TugasTasmi::with(['santri:id,nama_lengkap,nip', 'penguji.user:id,name', 'pengampu.user:id,name'])
+        $t = \App\Models\TugasTasmi::with(['santri:id,nama_lengkap,nip', 'penguji.user:id,name',
+            'pengampu.user:id,name', 'masukanOleh:id,name'])
             ->findOrFail($tugasTasmi);
 
         if ($t->status !== 'selesai' || !$t->lulus) {
@@ -855,6 +856,11 @@ class TahfidzApiController extends Controller
             'penguji'    => $t->penguji?->user?->name ?? '—',
             'pengampu'   => $t->pengampu?->user?->name ?? '—',
             'catatan'    => $t->catatan,
+            // Masukan pimpinan tampil di HALAMAN NILAI sertifikat, terpisah dari
+            // catatan penguji supaya jelas siapa yang berbicara.
+            'masukan'      => $t->masukan_pimpinan,
+            'masukan_oleh' => $t->masukanOleh?->name,
+            'ambang'       => \App\Services\TahfidzService::NILAI_LULUS_TASMI,
             'tanggal'    => $tgl->locale('id')->isoFormat('D MMMM YYYY'),
             'lembaga'    => 'Pondok Pesantren An Nur Sidoarjo',
             'program'    => "Tahfizhul Qur'an",

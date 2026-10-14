@@ -68,6 +68,7 @@ use App\Http\Controllers\Superadmin\Education\TahfidzController as EducationTahf
 use App\Http\Controllers\Superadmin\Education\MonitoringTahfidzController;
 use App\Http\Controllers\Superadmin\Education\MateriTahsinController;
 use App\Http\Controllers\Superadmin\Education\MonitoringTahsinController;
+use App\Http\Controllers\Superadmin\Education\HasilUjianQuranController;
 use App\Http\Controllers\Superadmin\Education\TahsinController as EducationTahsinController;
 use App\Http\Controllers\Superadmin\SmartHabbit\ControllingSettingController;
 use App\Http\Controllers\Superadmin\SmartHabbit\EksekusiController as SmartEksekusiController;
@@ -746,6 +747,22 @@ Route::prefix('admin')
             // ── Monitoring Tahsin (progres level & materi santri) ─────────
             Route::get('tahsin-monitoring', [MonitoringTahsinController::class, 'index'])->name('tahsin-monitoring.index');
             Route::get('tahsin-monitoring/{santri}', [MonitoringTahsinController::class, 'detail'])->name('tahsin-monitoring.detail');
+
+            // ── HASIL UJIAN QUR'AN (tasmi' & tasnif) — kendali superadmin ──
+            // Satu tempat untuk melihat SELURUH hasil, menanggapinya, dan
+            // mencetak sertifikatnya; sebelumnya hasil hanya terlihat per
+            // penguji di PWA atau per santri di monitoring.
+            Route::get('hasil-ujian-quran',
+                [HasilUjianQuranController::class, 'index'])->name('hasil-ujian-quran.index');
+            Route::post('hasil-ujian-quran/{jenis}/{id}/masukan',
+                [HasilUjianQuranController::class, 'beriMasukan'])
+                ->whereIn('jenis', ['tasmi', 'tasnif'])->name('hasil-ujian-quran.masukan');
+            Route::post('hasil-ujian-quran/{jenis}/{id}/batal',
+                [HasilUjianQuranController::class, 'batalkan'])
+                ->whereIn('jenis', ['tasmi', 'tasnif'])->name('hasil-ujian-quran.batal');
+            Route::get('hasil-ujian-quran/{jenis}/{id}/sertifikat',
+                [HasilUjianQuranController::class, 'sertifikat'])
+                ->whereIn('jenis', ['tasmi', 'tasnif'])->name('hasil-ujian-quran.sertifikat');
             Route::post('tahsin-monitoring/tasnif/{tugasTasnif}/batal',
                 [MonitoringTahsinController::class, 'batalkanTasnif'])->name('tahsin-monitoring.tasnif-batal');
         });

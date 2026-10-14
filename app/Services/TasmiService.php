@@ -230,4 +230,27 @@ class TasmiService
 
         return ['lulus' => $lulus, 'nilai' => $nilai, 'rubrik' => $rubrik, 'ambang' => TahfidzService::NILAI_LULUS_TASMI];
     }
+
+    /**
+     * Masukan pimpinan atas hasil ujian — dipisah dari `catatan` penguji
+     * supaya jelas siapa yang berbicara. Boleh diisi/diubah kapan pun selama
+     * hasilnya sudah dinilai; masuk ke halaman nilai sertifikat.
+     *
+     * @throws \DomainException
+     */
+    public function beriMasukan(int $tugasId, ?int $userId, ?string $masukan): TugasTasmi
+    {
+        $tt = TugasTasmi::findOrFail($tugasId);
+        if ($tt->status !== 'selesai') {
+            throw new \DomainException('Masukan hanya untuk hasil yang sudah dinilai penguji.');
+        }
+
+        $tt->update([
+            'masukan_pimpinan' => filled($masukan) ? trim($masukan) : null,
+            'masukan_oleh'     => filled($masukan) ? $userId : null,
+            'masukan_pada'     => filled($masukan) ? now() : null,
+        ]);
+
+        return $tt->fresh();
+    }
 }
