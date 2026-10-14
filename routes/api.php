@@ -174,6 +174,10 @@ Route::prefix('v1')->group(function () {
                 Route::get('/laporan/pembelajaran', [LaporanApiController::class, 'pembelajaran']);
                 Route::get('/laporan/tahfidz',      [LaporanApiController::class, 'tahfidz']);
                 Route::get('/laporan/tahsin',       [LaporanApiController::class, 'tahsin']);
+                // Hasil tasmi'/tasnif SELURUH anak didik yang diampu sekarang.
+                // Acuannya keanggotaan kelas saat ini, bukan pengampu_id pada
+                // tugas, supaya riwayat ujian ikut pindah bersama santrinya.
+                Route::get('/laporan/hasil-ujian',  [LaporanApiController::class, 'hasilUjianAnakDidik']);
 
                 // Smart Tahfidz — setoran & tracking hafalan
                 Route::get('/surah',                              [TahfidzApiController::class, 'surah']);

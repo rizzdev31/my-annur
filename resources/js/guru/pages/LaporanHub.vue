@@ -9,6 +9,11 @@ const items = [
       icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
     { to: { name: 'laporan-pencapaian', params: { jenis: 'tahsin' } }, label: 'Pencapaian Tahsin', desc: 'Level, materi lulus, & nilai per santri', bg: 'bg-violet-50', fg: 'text-violet-600',
       icon: 'M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z' },
+    // Hasil ujian anak didik: sebelumnya hanya PENGUJI yang bisa melihat hasil,
+    // padahal pengampu yang membimbing hariannya dan harus menindaklanjuti
+    // catatan penguji serta masukan pimpinan.
+    { to: { name: 'hasil-ujian' }, label: "Hasil Tasmi' & Tasnif", desc: 'Nilai ujian anak didik yang Anda ampu', bg: 'bg-amber-50', fg: 'text-amber-600',
+      icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
 ]
 </script>
 

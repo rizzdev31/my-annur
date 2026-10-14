@@ -61,6 +61,7 @@ const routes = [
     { path: '/laporan', name: 'laporan', component: LaporanHub, meta: { title: 'Laporan' } },
     { path: '/laporan-pembelajaran', name: 'laporan-pembelajaran', component: LaporanPembelajaran, meta: { title: 'Laporan Pembelajaran' } },
     { path: '/laporan-pencapaian/:jenis', name: 'laporan-pencapaian', component: LaporanPencapaian, meta: { title: 'Laporan Pencapaian' } },
+    { path: '/hasil-ujian', name: 'hasil-ujian', component: () => import('./pages/HasilUjianAnakDidik.vue'), meta: { title: 'Hasil Ujian Anak Didik' } },
     { path: '/sertifikat-tasmi/:id', name: 'sertifikat-tasmi', component: () => import('./pages/SertifikatTasmi.vue'), meta: { title: 'Sertifikat Tasmi', bare: true } },
     { path: '/sertifikat-tasnif/:id', name: 'sertifikat-tasnif', component: () => import('./pages/SertifikatTasnif.vue'), meta: { title: 'Sertifikat Tasnif', bare: true } },
     { path: '/monitoring', name: 'monitoring', component: () => import('./pages/Monitoring.vue'), meta: { title: 'Monitoring' } },

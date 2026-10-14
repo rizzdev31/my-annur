@@ -334,6 +334,137 @@ class LaporanApiController extends Controller
     }
 
     /** Kelas (tahfidz|tahsin) yang diajar guru ini. */
+
+    /**
+     * HASIL UJIAN ANAK DIDIK — tasmi' & tasnif seluruh santri yang diampu guru
+     * ini SEKARANG.
+     *
+     * Sebelumnya hasil ujian hanya terlihat oleh PENGUJI (`tasmiSaya`) dan
+     * sebagian di laporan pencapaian per santri — pengampu tidak punya tempat
+     * untuk tahu bagaimana hasil ujian anak didiknya, padahal dialah yang
+     * membimbing hariannya.
+     *
+     * SINKRON DENGAN LOGIKA KELAS. Acuannya KEANGGOTAAN KELAS SAAT INI
+     * (`kelasGuru()` + `Santri::anggotaKelas()`), BUKAN `tugas_tasmi.pengampu_id`.
+     * Kolom itu hanya potret saat penunjukan: santri yang naik kelas atau pindah
+     * halaqoh akan hilang dari daftar pengampu barunya bila dipakai sebagai
+     * acuan, sekaligus tetap menempel pada pengampu lamanya. Dengan membaca
+     * keanggotaan kelas, riwayat ujian otomatis ikut pindah bersama santrinya —
+     * sejalan dengan KenaikanKelasService yang memang membiarkan seluruh
+     * pencapaian melekat pada santri_id.
+     */
+    public function hasilUjianAnakDidik(Request $request): JsonResponse
+    {
+        $tp = $request->user()->tenagaPendidik;
+        if (!$tp) return response()->json(['success' => false, 'message' => 'Data tenaga pendidik tidak ditemukan.'], 404);
+
+        $kelasTahfidz = $this->kelasGuru($tp->id, 'tahfidz');
+        $kelasTahsin  = $this->kelasGuru($tp->id, 'tahsin');
+
+        // Santri per kelas yang diampu SEKARANG.
+        $petaSantri = collect();   // santri_id => ['nama','nip','kelas']
+        foreach ($kelasTahfidz->concat($kelasTahsin) as $k) {
+            foreach (Santri::aktif()->anggotaKelas((int) $k['id'])
+                ->get(['id', 'nip', 'nama_lengkap']) as $sn) {
+                $petaSantri[$sn->id] = [
+                    'nama'  => $sn->nama_lengkap,
+                    'nip'   => $sn->nip,
+                    'kelas' => $k['nama'],
+                ];
+            }
+        }
+
+        if ($petaSantri->isEmpty()) {
+            return response()->json(['success' => true, 'data' => [
+                'kelas'    => $kelasTahfidz->concat($kelasTahsin)->values(),
+                'hasil'    => [],
+                'ringkasan'=> ['total' => 0, 'lulus' => 0, 'belum_lulus' => 0, 'menunggu' => 0],
+            ]]);
+        }
+
+        $ids = $petaSantri->keys();
+
+        $baris = collect();
+
+        foreach (\App\Models\TugasTasmi::whereIn('santri_id', $ids)
+            ->where('status', '!=', 'dibatalkan')
+            ->with(['penguji.user:id,name', 'masukanOleh:id,name'])
+            ->get() as $t) {
+            $baris->push($this->barisHasilUjian($t, 'tasmi', $petaSantri[$t->santri_id]));
+        }
+
+        foreach (\App\Models\TugasTasnif::whereIn('santri_id', $ids)
+            ->where('status', '!=', 'dibatalkan')
+            ->with(['penguji.user:id,name', 'masukanOleh:id,name'])
+            ->get() as $t) {
+            $baris->push($this->barisHasilUjian($t, 'tasnif', $petaSantri[$t->santri_id]));
+        }
+
+        $baris = $baris->sortByDesc('urut')->values();
+
+        return response()->json(['success' => true, 'data' => [
+            'kelas'     => $kelasTahfidz->concat($kelasTahsin)->values(),
+            'hasil'     => $baris,
+            'ringkasan' => [
+                'total'       => $baris->count(),
+                'lulus'       => $baris->where('status', 'selesai')->where('lulus', true)->count(),
+                'belum_lulus' => $baris->where('status', 'selesai')->where('lulus', false)->count(),
+                'menunggu'    => $baris->where('status', 'ditugaskan')->count(),
+            ],
+        ]]);
+    }
+
+    /** Satu baris hasil ujian, bentuknya sama untuk tasmi' & tasnif. */
+    private function barisHasilUjian($t, string $jenis, array $santri): array
+    {
+        $ambang = $jenis === 'tasmi'
+            ? \App\Services\TahfidzService::NILAI_LULUS_TASMI
+            : \App\Services\TasnifService::NILAI_LULUS;
+
+        $rubrik = $jenis === 'tasmi'
+            ? [
+                ['label' => 'Kelancaran',       'nilai' => $t->nilai_kelancaran],
+                ['label' => 'Makhorijul Huruf', 'nilai' => $t->nilai_makhorijul_huruf],
+                ['label' => 'Tajwid',           'nilai' => $t->nilai_tajwid],
+                ['label' => 'Fashohah',         'nilai' => $t->nilai_fashohah],
+            ]
+            : [
+                ['label' => 'Pemahaman Materi', 'nilai' => $t->nilai_pemahaman_materi],
+                ['label' => 'Kelancaran',       'nilai' => $t->nilai_kelancaran],
+                ['label' => 'Fashohah',         'nilai' => $t->nilai_fashohah],
+                ['label' => 'Makhorijul Huruf', 'nilai' => $t->nilai_makhorijul_huruf],
+            ];
+
+        $tgl = $t->updated_at ?? $t->created_at;
+
+        return [
+            'id'         => $t->id,
+            'jenis'      => $jenis,
+            'santri_id'  => $t->santri_id,
+            'santri'     => $santri['nama'],
+            'nip'        => $santri['nip'],
+            'kelas'      => $santri['kelas'],
+            'capaian'    => $jenis === 'tasmi'
+                ? "Juz {$t->juz}"
+                : \App\Services\TahsinService::levelLabel((int) $t->level),
+            'status'     => $t->status,
+            'nilai'      => $t->nilai !== null ? (float) $t->nilai : null,
+            'lulus'      => $t->lulus === null ? null : (bool) $t->lulus,
+            'ambang'     => $ambang,
+            'rubrik'     => $rubrik,
+            'rubrik_ada' => $t->nilai_kelancaran !== null,
+            'penguji'    => $t->penguji?->user?->name ?? '—',
+            'catatan'    => $t->catatan,
+            // Masukan pimpinan ikut tampil: inilah arahan yang perlu
+            // ditindaklanjuti pengampu pada bimbingan hariannya.
+            'masukan'      => $t->masukan_pimpinan,
+            'masukan_oleh' => $t->masukanOleh?->name,
+            'boleh_sertifikat' => $t->status === 'selesai' && (bool) $t->lulus,
+            'tanggal'    => $tgl?->locale('id')->isoFormat('D MMM YYYY'),
+            'urut'       => $tgl?->timestamp ?? 0,
+        ];
+    }
+
     private function kelasGuru(int $tpId, string $tipe)
     {
         $kelasIds = JadwalMengajar::where('tenaga_pendidik_id', $tpId)
