@@ -29,6 +29,10 @@ class TugasTasmi extends Model
             'juz' => 'integer', 'nilai' => 'float', 'lulus' => 'boolean',
             'nilai_kelancaran' => 'float', 'nilai_makhorijul_huruf' => 'float',
             'nilai_tajwid' => 'float', 'nilai_fashohah' => 'float',
+            // Dua kolom waktu ini WAJIB di-cast: tanpa cast, nilainya string
+            // dan `?->format()` meledak ("Call to a member function format()
+            // on string") — jebakan kembar dari $fillable.
+            'masukan_pada' => 'datetime', 'dibatalkan_pada' => 'datetime',
         ];
     }
 

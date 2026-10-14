@@ -27,6 +27,10 @@ class TugasTasnif extends Model
         'level' => 'integer', 'nilai' => 'float', 'lulus' => 'boolean',
         'nilai_pemahaman_materi' => 'float', 'nilai_kelancaran' => 'float',
         'nilai_fashohah' => 'float', 'nilai_makhorijul_huruf' => 'float',
+        // Dua kolom waktu ini WAJIB di-cast: tanpa cast, nilainya string
+        // dan `?->format()` meledak ("Call to a member function format()
+        // on string") — jebakan kembar dari $fillable.
+        'masukan_pada' => 'datetime', 'dibatalkan_pada' => 'datetime',
     ];
 
     public function santri()   { return $this->belongsTo(Santri::class); }
