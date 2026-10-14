@@ -10,6 +10,7 @@ use App\Models\SettingJenisPengajuan;
 use App\Services\IzinSementaraService;
 use App\Services\PengajuanIzinService;
 use App\Services\TimezoneHelper;
+use App\Services\TugasDinasLuarService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -19,6 +20,7 @@ class PengajuanIzinController extends Controller
     public function __construct(
         private readonly PengajuanIzinService $pengajuanService,
         private readonly IzinSementaraService $izinSementara,
+        private readonly TugasDinasLuarService $tugasDinas,
     ) {}
 
     /**
@@ -66,6 +68,10 @@ class PengajuanIzinController extends Controller
             'diproses_oleh'    => $p->diprosesOleh?->name,
             'tanggal_keputusan'=> $p->tanggal_keputusan?->format('d M Y H:i'),
             'created_at'       => $p->created_at->format('d M Y H:i'),
+            // Pratinjau tugas dinas luar — hanya untuk yang masih menunggu
+            // keputusan, karena di sanalah nominalnya ditetapkan.
+            'dinas'            => $p->status === 'pending'
+                ? $this->tugasDinas->pratinjau($p) : null,
         ]);
 
         return Inertia::render('Admin/SmartPayroll/PengajuanIzin/Index', [
@@ -138,6 +144,11 @@ class PengajuanIzinController extends Controller
                 'jam_mulai'           => $pengajuanIzin->jam_mulai ? substr((string) $pengajuanIzin->jam_mulai, 0, 5) : null,
                 'jam_selesai'         => $pengajuanIzin->jam_selesai ? substr((string) $pengajuanIzin->jam_selesai, 0, 5) : null,
                 'kategori'            => $pengajuanIzin->jenisPengajuan->kategori,
+                // Pratinjau tugas dinas luar: halaman detail juga punya tombol
+                // Setujui, jadi penetapan nominalnya harus tersedia di sini
+                // juga — bukan hanya di daftar.
+                'dinas'               => $pengajuanIzin->isPending()
+                    ? $this->tugasDinas->pratinjau($pengajuanIzin) : null,
             ],
         ]);
     }
@@ -150,6 +161,12 @@ class PengajuanIzinController extends Controller
         $request->validate([
             'catatan'   => 'nullable|string|max:500',
             'jam_mulai' => 'nullable|date_format:H:i,H:i:s',   // admin bisa atur jam (datang terlambat)
+            // Nominal vakasi tugas dinas luar, ditetapkan saat persetujuan.
+            'vakasi_dinas' => 'nullable|numeric|min:0|max:' . TugasDinasLuarService::BATAS_NOMINAL,
+        ], [
+            'vakasi_dinas.numeric' => 'Nominal vakasi dinas harus berupa angka.',
+            'vakasi_dinas.min'     => 'Nominal vakasi dinas tidak boleh minus.',
+            'vakasi_dinas.max'     => 'Nominal vakasi dinas terlalu besar — periksa jumlah nolnya.',
         ]);
 
         // Izin datang terlambat: TIDAK lewat alur absensi harian. Cukup set disetujui
@@ -178,11 +195,29 @@ class PengajuanIzinController extends Controller
         }
 
         try {
-            $this->pengajuanService->setujui($pengajuanIzin, $request->catatan);
-
-            return back()->with('success',
-                "Pengajuan {$pengajuanIzin->jenisPengajuan->nama} dari {$pengajuanIzin->tenagaPendidik->user->name} telah disetujui. Absensi diupdate otomatis."
+            $this->pengajuanService->setujui(
+                $pengajuanIzin,
+                $request->catatan,
+                // Dikirim hanya bila memang diisi: null berarti "pakai tarif
+                // Setting Vakasi", sedangkan 0 adalah keputusan sadar (dinas
+                // tanpa vakasi) — keduanya tidak boleh tertukar.
+                $request->filled('vakasi_dinas') ? (float) $request->vakasi_dinas : null,
             );
+
+            $pesan = "Pengajuan {$pengajuanIzin->jenisPengajuan->nama} dari "
+                . "{$pengajuanIzin->tenagaPendidik->user->name} telah disetujui. "
+                . 'Absensi diupdate otomatis.';
+
+            // Terbit/tidaknya tugas dinas luar disebut eksplisit: ini menyangkut
+            // uang, jadi penyetuju tidak boleh menebak apakah nominal yang ia
+            // ketik benar-benar terpakai.
+            if ($tt = $pengajuanIzin->fresh()->tugasTambahan) {
+                $pesan .= ' Tugas tambahan "' . $tt->judul . '" diterbitkan dengan vakasi Rp '
+                    . number_format((float) $tt->vakasi_override, 0, ',', '.')
+                    . ' — cair setelah guru mengirim laporannya.';
+            }
+
+            return back()->with('success', $pesan);
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }

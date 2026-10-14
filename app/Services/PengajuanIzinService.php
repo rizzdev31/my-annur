@@ -90,15 +90,24 @@ class PengajuanIzinService
     // SETUJUI PENGAJUAN (oleh superadmin)
     // ════════════════════════════════════════════════════════════════════════
 
-    public function setujui(PengajuanIzin $pengajuan, ?string $catatan = null): PengajuanIzin
-    {
+    /**
+     * @param  float|null  $vakasiDinas  Nominal vakasi yang DITETAPKAN penyetuju
+     *   untuk tugas tambahan dinas luar (lihat TugasDinasLuarService). null =
+     *   pakai tarif Setting Vakasi; 0 = sengaja tanpa vakasi. Diabaikan untuk
+     *   pengajuan yang bukan dinas luar.
+     */
+    public function setujui(
+        PengajuanIzin $pengajuan,
+        ?string $catatan = null,
+        ?float $vakasiDinas = null,
+    ): PengajuanIzin {
         if (!$pengajuan->isPending()) {
             throw new \InvalidArgumentException(
                 "Pengajuan ini sudah {$pengajuan->status}, tidak bisa disetujui."
             );
         }
 
-        return DB::transaction(function () use ($pengajuan, $catatan) {
+        return DB::transaction(function () use ($pengajuan, $catatan, $vakasiDinas) {
 
             $pengajuan->update([
                 'status'            => 'disetujui',
@@ -107,7 +116,7 @@ class PengajuanIzinService
                 'tanggal_keputusan' => now(),
             ]);
 
-            $this->prosesSetelahDisetujui($pengajuan->fresh('jenisPengajuan'));
+            $this->prosesSetelahDisetujui($pengajuan->fresh('jenisPengajuan'), $vakasiDinas);
 
             // Notifikasi ke guru
             $this->kirimNotifKeGuru($pengajuan, 'disetujui');
@@ -204,7 +213,7 @@ class PengajuanIzinService
     // PROSES SETELAH DISETUJUI — inti integrasi
     // ════════════════════════════════════════════════════════════════════════
 
-    private function prosesSetelahDisetujui(PengajuanIzin $pengajuan): void
+    private function prosesSetelahDisetujui(PengajuanIzin $pengajuan, ?float $vakasiDinas = null): void
     {
         $jenis = $pengajuan->jenisPengajuan;
         $guru  = $pengajuan->tenagaPendidik;
@@ -219,8 +228,13 @@ class PengajuanIzinService
         // sendiri (kategori dinas + sakelar per jenis + idempoten) ada di
         // TugasDinasLuarService; servicenya tidak pernah melempar galat supaya
         // kegagalan menerbitkan tugas tidak membatalkan persetujuan izinnya.
+        //
+        // `$vakasiDinas` adalah nominal yang ditetapkan penyetuju di layar
+        // persetujuan (web admin / PWA pimpinan); null = pakai tarif Setting
+        // Vakasi. Jalur auto-approve saat guru mengisi formulir tidak pernah
+        // mengirimnya — jadi guru tidak bisa menetapkan vakasinya sendiri.
         app(\App\Services\TugasDinasLuarService::class)
-            ->buatDariPengajuan($pengajuan, Auth::id());
+            ->buatDariPengajuan($pengajuan, Auth::id(), $vakasiDinas);
 
         // 2. Kurangi kuota jika ada
         $this->kurangiKuota($pengajuan);

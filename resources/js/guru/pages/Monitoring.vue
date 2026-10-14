@@ -13,6 +13,7 @@ const d = ref(null)
 // Aksi persetujuan izin
 const aksi = ref(null)
 const catatanAksi = ref('')
+const vakasiDinas = ref('')
 const jamAksi = ref('')
 const saving = ref(false)
 
@@ -58,14 +59,34 @@ async function load() {
 }
 onMounted(load)
 
-function bukaAksi(i, tipe) { aksi.value = { izin: i, tipe }; catatanAksi.value = ''; jamAksi.value = '' }
+const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+
+function bukaAksi(i, tipe) {
+    aksi.value = { izin: i, tipe }
+    catatanAksi.value = ''
+    jamAksi.value = ''
+    // Kosong = pakai tarif Setting Vakasi; tidak diisi angka bawaan agar
+    // pimpinan tidak merasa sudah menetapkan padahal hanya membiarkan.
+    vakasiDinas.value = ''
+}
 async function kirimAksi() {
     const { izin: i, tipe } = aksi.value
     if (tipe === 'tolak' && catatanAksi.value.trim().length < 3) { error.value = 'Alasan penolakan wajib (min 3 huruf).'; return }
+
+    const nominal = vakasiDinas.value
+    const terbit = tipe === 'setujui' && i.dinas?.akan_terbit
+    if (terbit && nominal !== '' && nominal !== null) {
+        const n = Number(nominal)
+        if (!Number.isFinite(n) || n < 0) { error.value = 'Nominal vakasi tidak boleh minus.'; return }
+        if (n > i.dinas.batas_nominal) { error.value = 'Nominal vakasi terlalu besar — periksa jumlah nolnya.'; return }
+    }
+
     saving.value = true; error.value = ''
     try {
         const body = { catatan: catatanAksi.value.trim() || undefined }
         if (tipe === 'setujui' && i.datang_terlambat && jamAksi.value) body.jam_mulai = jamAksi.value
+        // '0' tetap dikirim: nol adalah keputusan sadar, bukan "tidak diisi".
+        if (terbit && nominal !== '' && nominal !== null) body.vakasi_dinas = Number(nominal)
         await api.post(`/monitoring/perizinan/${i.id}/${tipe}`, body)
         aksi.value = null
         await load()
@@ -265,6 +286,35 @@ async function kirimAksi() {
                     <label class="block text-[11px] font-medium text-gray-600 mb-1">Batas jam datang (opsional)</label>
                     <input v-model="jamAksi" type="time" step="60" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none mb-3" />
                 </template>
+
+                <!-- Vakasi tugas dinas luar — ditetapkan bersama keputusannya -->
+                <div v-if="aksi.tipe === 'setujui' && aksi.izin.dinas?.akan_terbit"
+                    class="rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-3 mb-3">
+                    <p class="text-[12px] font-bold text-indigo-900">Tugas tambahan dinas luar</p>
+                    <p class="text-[11px] text-indigo-700/80 mt-0.5 mb-2">
+                        Guru akan mendapat tugas tambahan berisi keperluan yang ia tulis. Vakasinya cair
+                        setelah ia melapor (batas {{ aksi.izin.dinas.batas_laporan }}).
+                    </p>
+                    <label class="block text-[11px] font-medium text-indigo-900 mb-1">Nominal vakasi (Rp)</label>
+                    <input v-model="vakasiDinas" type="number" inputmode="numeric" min="0" step="1000"
+                        :max="aksi.izin.dinas.batas_nominal"
+                        :placeholder="`Bawaan: ${rupiah(aksi.izin.dinas.nominal_default)}`"
+                        class="w-full px-3 py-2.5 rounded-xl border border-indigo-200 bg-white text-sm outline-none" />
+                    <p v-if="vakasiDinas === '' || vakasiDinas === null" class="text-[11px] mt-1.5"
+                        :class="aksi.izin.dinas.tarif_diatur ? 'text-indigo-600' : 'text-amber-700'">
+                        <template v-if="aksi.izin.dinas.tarif_diatur">
+                            Kosongkan untuk memakai tarif Setting Vakasi
+                            <b>{{ rupiah(aksi.izin.dinas.nominal_default) }}</b>.
+                        </template>
+                        <template v-else>
+                            ⚠️ Tarif dinas luar belum diatur. Bila kosong, vakasinya <b>Rp 0</b>.
+                        </template>
+                    </p>
+                    <p v-else class="text-[11px] text-indigo-700 mt-1.5">
+                        Ditetapkan <b>{{ rupiah(Number(vakasiDinas)) }}</b> — tercatat di tugasnya
+                        dan terlihat oleh guru.
+                    </p>
+                </div>
 
                 <label class="block text-[11px] font-medium text-gray-600 mb-1">
                     {{ aksi.tipe === 'setujui' ? 'Catatan (opsional)' : 'Alasan penolakan' }}

@@ -347,6 +347,46 @@
                             ℹ️ Absensi <strong>{{ aksiTarget?.jumlah_hari }} hari</strong> akan diupdate otomatis
                             setelah disetujui.
                         </p>
+
+                        <!-- Vakasi tugas dinas luar — ditetapkan bersamaan dengan keputusan -->
+                        <div v-if="aksiTarget?.dinas?.akan_terbit"
+                            class="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 mb-4">
+                            <p class="text-sm font-semibold text-indigo-900">Tugas tambahan dinas luar</p>
+                            <p class="text-xs text-indigo-700/80 mt-0.5 mb-2.5">
+                                Begitu disetujui, guru mendapat tugas tambahan berisi keperluan yang ia tulis.
+                                Vakasinya cair setelah ia melapor (batas
+                                <strong>{{ aksiTarget.dinas.batas_laporan }}</strong>).
+                            </p>
+
+                            <label class="block text-xs font-medium text-indigo-900 mb-1">
+                                Nominal vakasi (Rp)
+                            </label>
+                            <input v-model="vakasiDinas" type="number" min="0" step="1000"
+                                :max="aksiTarget.dinas.batas_nominal"
+                                :placeholder="`Bawaan Setting Vakasi: ${rupiah(aksiTarget.dinas.nominal_default)}`"
+                                class="w-full px-4 py-2.5 rounded-xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+
+                            <p v-if="vakasiDinas === '' || vakasiDinas === null"
+                                class="text-xs mt-1.5"
+                                :class="aksiTarget.dinas.tarif_diatur ? 'text-indigo-600' : 'text-amber-700'">
+                                <template v-if="aksiTarget.dinas.tarif_diatur">
+                                    Dibiarkan kosong → pakai tarif Setting Vakasi
+                                    <strong>{{ rupiah(aksiTarget.dinas.nominal_default) }}</strong>.
+                                </template>
+                                <template v-else>
+                                    ⚠️ Tarif dinas luar belum diatur di Setting Vakasi. Bila dibiarkan kosong,
+                                    tugasnya terbit dengan vakasi <strong>Rp 0</strong>.
+                                </template>
+                            </p>
+                            <p v-else class="text-xs text-indigo-700 mt-1.5">
+                                Ditetapkan <strong>{{ rupiah(Number(vakasiDinas)) }}</strong>
+                                <span v-if="Number(vakasiDinas) !== aksiTarget.dinas.nominal_default">
+                                    (bawaan {{ rupiah(aksiTarget.dinas.nominal_default) }})
+                                </span>
+                                — tercatat di tugasnya dan terlihat oleh guru.
+                            </p>
+                            <p v-if="errVakasi" class="text-xs text-red-600 mt-1.5">{{ errVakasi }}</p>
+                        </div>
                         <label class="block text-sm font-medium text-gray-700 mb-1.5">
                             Catatan (opsional)
                         </label>
@@ -540,23 +580,54 @@ const catatanSetujui = ref('')
 const jamSetujui = ref('')
 const aksiTarget = ref(null)
 const loading = ref(false)
+const vakasiDinas = ref('')
+const errVakasi = ref('')
+
+const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 
 function bukaModalSetujui(p) {
     aksiTarget.value = p
     catatanSetujui.value = ''
     jamSetujui.value = (p.jam_mulai || '').slice(0, 5)
+    // Sengaja KOSONG, bukan diisi tarif bawaan: kotak yang sudah terisi angka
+    // membuat penyetuju merasa sudah menetapkan sesuatu, padahal ia hanya
+    // membiarkan nilai bawaan. Kosong = "pakai tarif Setting Vakasi".
+    vakasiDinas.value = ''
+    errVakasi.value = ''
     showModalSetujui.value = true
 }
 
 function doSetujui() {
+    const dinas = aksiTarget.value?.dinas
+    const nominal = vakasiDinas.value
+    errVakasi.value = ''
+
+    if (dinas?.akan_terbit && nominal !== '' && nominal !== null) {
+        const n = Number(nominal)
+        if (!Number.isFinite(n) || n < 0) {
+            errVakasi.value = 'Nominal vakasi tidak boleh minus.'
+            return
+        }
+        if (n > dinas.batas_nominal) {
+            errVakasi.value = 'Nominal terlalu besar — periksa jumlah nolnya.'
+            return
+        }
+    }
+
     loading.value = true
     const payload = { catatan: catatanSetujui.value }
     if (aksiTarget.value.is_datang_terlambat && jamSetujui.value) payload.jam_mulai = jamSetujui.value
+    // Hanya dikirim bila diisi — '0' TETAP dikirim karena nol adalah keputusan
+    // sadar (dinas tanpa vakasi), berbeda dari "tidak diisi".
+    if (dinas?.akan_terbit && nominal !== '' && nominal !== null) {
+        payload.vakasi_dinas = Number(nominal)
+    }
     router.post(
         route('admin.smart-payroll.pengajuan-izin.setujui', aksiTarget.value.id),
         payload,
         {
             onSuccess: () => { showModalSetujui.value = false },
+            onError: (e) => { errVakasi.value = e.vakasi_dinas || '' },
             onFinish: () => { loading.value = false },
         }
     )

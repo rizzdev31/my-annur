@@ -173,6 +173,38 @@
                     <input v-model="jamSetujui" type="time" step="60" :class="fieldCls" class="mb-3" />
                 </template>
 
+                <!-- Vakasi tugas dinas luar — ditetapkan bersama keputusannya -->
+                <div v-if="pengajuan.dinas?.akan_terbit"
+                    class="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3 mb-3">
+                    <p class="text-sm font-semibold text-indigo-900">Tugas tambahan dinas luar</p>
+                    <p class="text-xs text-indigo-700/80 mt-0.5 mb-2.5">
+                        Begitu disetujui, guru mendapat tugas tambahan berisi keperluan yang ia tulis.
+                        Vakasinya cair setelah ia melapor (batas
+                        <strong>{{ pengajuan.dinas.batas_laporan }}</strong>).
+                    </p>
+                    <label class="block text-xs font-medium text-indigo-900 mb-1">Nominal vakasi (Rp)</label>
+                    <input v-model="vakasiDinas" type="number" min="0" step="1000"
+                        :max="pengajuan.dinas.batas_nominal"
+                        :placeholder="`Bawaan Setting Vakasi: ${rupiah(pengajuan.dinas.nominal_default)}`"
+                        :class="fieldCls" />
+                    <p v-if="vakasiDinas === '' || vakasiDinas === null" class="text-xs mt-1.5"
+                        :class="pengajuan.dinas.tarif_diatur ? 'text-indigo-600' : 'text-amber-700'">
+                        <template v-if="pengajuan.dinas.tarif_diatur">
+                            Dibiarkan kosong → pakai tarif Setting Vakasi
+                            <strong>{{ rupiah(pengajuan.dinas.nominal_default) }}</strong>.
+                        </template>
+                        <template v-else>
+                            ⚠️ Tarif dinas luar belum diatur di Setting Vakasi. Bila kosong, vakasinya
+                            <strong>Rp 0</strong>.
+                        </template>
+                    </p>
+                    <p v-else class="text-xs text-indigo-700 mt-1.5">
+                        Ditetapkan <strong>{{ rupiah(Number(vakasiDinas)) }}</strong> — tercatat di
+                        tugasnya dan terlihat oleh guru.
+                    </p>
+                    <p v-if="errVakasi" class="text-xs text-red-600 mt-1.5">{{ errVakasi }}</p>
+                </div>
+
                 <label class="block text-xs font-medium text-gray-500 mb-1">Catatan (opsional)</label>
                 <textarea v-model="catatanSetujui" rows="3" :class="fieldCls" placeholder="Catatan untuk guru…"></textarea>
 
@@ -258,9 +290,16 @@ const catatanTolak = ref('')
 const errorTolak = ref(false)
 const jamSetujui = ref('')
 
+const vakasiDinas = ref('')
+const errVakasi = ref('')
+const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+
 function bukaSetujui() {
     catatanSetujui.value = ''
     jamSetujui.value = props.pengajuan.jam_mulai || ''
+    // Kosong = pakai tarif Setting Vakasi (lihat catatan di Index.vue).
+    vakasiDinas.value = ''
+    errVakasi.value = ''
     modalSetujui.value = true
 }
 function bukaTolak() {
@@ -270,12 +309,25 @@ function bukaTolak() {
 }
 
 function kirimSetujui() {
+    const dinas = props.pengajuan.dinas
+    const nominal = vakasiDinas.value
+    errVakasi.value = ''
+
+    if (dinas?.akan_terbit && nominal !== '' && nominal !== null) {
+        const n = Number(nominal)
+        if (!Number.isFinite(n) || n < 0) { errVakasi.value = 'Nominal vakasi tidak boleh minus.'; return }
+        if (n > dinas.batas_nominal) { errVakasi.value = 'Nominal terlalu besar — periksa jumlah nolnya.'; return }
+    }
+
     loading.value = true
     const payload = { catatan: catatanSetujui.value }
     if (props.pengajuan.is_datang_terlambat && jamSetujui.value) payload.jam_mulai = jamSetujui.value
+    // '0' tetap dikirim: nol adalah keputusan sadar, bukan "tidak diisi".
+    if (dinas?.akan_terbit && nominal !== '' && nominal !== null) payload.vakasi_dinas = Number(nominal)
 
     router.post(route('admin.smart-payroll.pengajuan-izin.setujui', props.pengajuan.id), payload, {
         onSuccess: () => { modalSetujui.value = false },
+        onError: (e) => { errVakasi.value = e.vakasi_dinas || '' },
         onFinish: () => { loading.value = false },
     })
 }

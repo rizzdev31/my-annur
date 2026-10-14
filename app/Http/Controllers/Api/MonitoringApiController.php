@@ -138,7 +138,11 @@ class MonitoringApiController extends Controller
                     'sampai'=> $i->tanggal_selesai?->toDateString(),
                 ])->values();
 
-            $menunggu = \App\Models\PengajuanIzin::with(['tenagaPendidik.user:id,name', 'jenisPengajuan:id,nama'])
+            $menunggu = \App\Models\PengajuanIzin::with(['tenagaPendidik.user:id,name',
+                    // kategori + sakelar WAJIB ikut: pratinjau dinas luar membacanya,
+                    // dan kolom yang tidak diambil terbaca null -> pratinjaunya
+                    // selalu menjawab "bukan dinas" tanpa galat apa pun.
+                    'jenisPengajuan:id,nama,kategori,buat_tugas_tambahan'])
                 ->whereIn('tenaga_pendidik_id', $guruIds)->where('status', 'pending')
                 ->orderBy('tanggal_mulai')->get()->map(fn($i) => [
                     'id'    => $i->id,
@@ -148,6 +152,7 @@ class MonitoringApiController extends Controller
                     'selesai' => $i->tanggal_selesai?->toDateString(),
                     'alasan'  => $i->alasan,
                     'datang_terlambat' => (bool) $i->is_datang_terlambat,
+                    'dinas'   => app(\App\Services\TugasDinasLuarService::class)->pratinjau($i),
                 ])->values();
 
             $out['izin'] = [
@@ -344,7 +349,7 @@ class MonitoringApiController extends Controller
         }
 
         $status = $request->get('status'); // pending|disetujui|ditolak|null(semua)
-        $q = \App\Models\PengajuanIzin::with(['tenagaPendidik.user:id,name', 'jenisPengajuan:id,nama,kategori'])
+        $q = \App\Models\PengajuanIzin::with(['tenagaPendidik.user:id,name', 'jenisPengajuan:id,nama,kategori,buat_tugas_tambahan'])
             ->whereIn('tenaga_pendidik_id', $ids);
         if (in_array($status, ['pending', 'disetujui', 'ditolak'], true)) {
             $q->where('status', $status);
@@ -365,6 +370,11 @@ class MonitoringApiController extends Controller
                 'catatan_admin'   => $i->catatan_admin,
                 'sementara'       => (bool) $i->is_sementara,
                 'datang_terlambat'=> (bool) $i->is_datang_terlambat,
+                // Pratinjau tugas dinas luar: pimpinan menetapkan nominalnya
+                // di detik yang sama dengan keputusan izinnya, jadi tarif
+                // bawaannya harus ikut terkirim ke layar.
+                'dinas'           => $i->status === 'pending'
+                    ? app(\App\Services\TugasDinasLuarService::class)->pratinjau($i) : null,
             ])->values();
 
         $ringkas = [];
@@ -409,6 +419,13 @@ class MonitoringApiController extends Controller
         $request->validate([
             'catatan'   => 'nullable|string|max:500',
             'jam_mulai' => 'nullable|date_format:H:i,H:i:s', // khusus izin datang terlambat
+            // Nominal vakasi tugas dinas luar, ditetapkan pimpinan saat menyetujui.
+            'vakasi_dinas' => 'nullable|numeric|min:0|max:'
+                . \App\Services\TugasDinasLuarService::BATAS_NOMINAL,
+        ], [
+            'vakasi_dinas.numeric' => 'Nominal vakasi dinas harus berupa angka.',
+            'vakasi_dinas.min'     => 'Nominal vakasi dinas tidak boleh minus.',
+            'vakasi_dinas.max'     => 'Nominal vakasi dinas terlalu besar — periksa jumlah nolnya.',
         ]);
 
         if ($pesan = $this->tolakAksiIzin($tp, $izin)) {
@@ -442,12 +459,24 @@ class MonitoringApiController extends Controller
         try {
             // Reuse service admin → absensi & status kepegawaian ikut diproses,
             // audit (diproses_oleh + tanggal_keputusan) tercatat otomatis.
-            app(\App\Services\PengajuanIzinService::class)->setujui($izin, $request->catatan);
+            app(\App\Services\PengajuanIzinService::class)->setujui(
+                $izin,
+                $request->catatan,
+                // null = pakai tarif Setting Vakasi; 0 = sengaja tanpa vakasi.
+                $request->filled('vakasi_dinas') ? (float) $request->vakasi_dinas : null,
+            );
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
 
-        return response()->json(['success' => true, 'message' => 'Izin disetujui. Absensi guru diperbarui otomatis.']);
+        $pesan = 'Izin disetujui. Absensi guru diperbarui otomatis.';
+        if ($tt = $izin->fresh()->tugasTambahan) {
+            $pesan .= ' Tugas tambahan dinas luar diterbitkan (vakasi Rp '
+                . number_format((float) $tt->vakasi_override, 0, ',', '.')
+                . ', cair setelah guru melapor).';
+        }
+
+        return response()->json(['success' => true, 'message' => $pesan]);
     }
 
     /** POST /monitoring/perizinan/{izin}/tolak — alasan WAJIB (tercatat). */
