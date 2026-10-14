@@ -76,16 +76,20 @@ class TugasDinasLuarService
         if (!$jenis->buat_tugas_tambahan) {
             return "Otomatisasi tugas tambahan untuk jenis \"{$jenis->nama}\" sedang dimatikan.";
         }
+        // Izin sementara (berbasis jam) bukan penugasan sehari penuh; tidak
+        // diterbitkan agar tidak ada vakasi untuk keluar sebentar. Diperiksa
+        // SEBELUM status: ini sifat bawaan pengajuannya, bukan tahap alurnya,
+        // jadi alasannya harus sama baik pengajuannya masih pending maupun
+        // sudah disetujui — kalau tidak, admin yang bertanya "kenapa dinas
+        // sejam tidak dapat tugas?" akan dijawab "belum disetujui".
+        if ($p->is_sementara) {
+            return 'Dinas luar berbasis jam (izin sementara) tidak menerbitkan tugas tambahan.';
+        }
         if ($p->status !== 'disetujui') {
             return 'Tugas tambahan hanya terbit untuk pengajuan yang sudah disetujui.';
         }
         if ($p->tugas_tambahan_id) {
             return 'Pengajuan ini sudah punya tugas tambahan.';
-        }
-        // Izin sementara (berbasis jam) bukan penugasan sehari penuh; tidak
-        // diterbitkan agar tidak ada vakasi untuk keluar sebentar.
-        if ($p->is_sementara) {
-            return 'Dinas luar berbasis jam (izin sementara) tidak menerbitkan tugas tambahan.';
         }
 
         return null;
@@ -129,7 +133,14 @@ class TugasDinasLuarService
                     // cair setelah laporan masuk.
                     'wajib_laporan'   => true,
                     'status'          => 'aktif',
-                    'dibuat_oleh'     => $userId,
+                    // `dibuat_oleh` NOT NULL tanpa default. Bila pemicunya
+                    // bukan manusia yang masuk (scheduler, perintah konsol,
+                    // jalur auto-approve), tanpa cadangan ini insert-nya gagal
+                    // dan tugasnya hilang DIAM-DIAM karena galatnya hanya
+                    // dicatat di log.
+                    'dibuat_oleh'     => $userId
+                        ?? $p->diproses_oleh
+                        ?? $guru->user_id,
                 ]);
 
                 // Bila jenisnya auto-approve, tidak ada manusia yang memeriksa
