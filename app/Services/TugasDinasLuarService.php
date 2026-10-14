@@ -79,6 +79,23 @@ class TugasDinasLuarService
     public const BATAS_NOMINAL = 100_000_000;
 
     /**
+     * Otomatisasi ini berlaku untuk dinas luar KE DEPAN saja.
+     *
+     * Izin dinas yang keputusannya sudah terbit sebelum tanggal ini (50 di
+     * produksi) tidak boleh mendapat tugas tambahan secara surut: gurunya tidak
+     * pernah diberi tahu ada tugas yang harus dilaporkan, periodenya banyak
+     * yang sudah berslip, dan vakasi yang muncul belakangan atas pekerjaan
+     * berbulan-bulan lalu bukan hal yang bisa dipertanggungjawabkan.
+     *
+     * Dalam operasi normal hal ini tidak mungkin terjadi — pemicunya hanya saat
+     * izin BERPINDAH dari pending ke disetujui. Penjaga ini untuk hal di luar
+     * alur normal: skrip pemeliharaan, perintah konsol, atau pemrosesan ulang.
+     * (Penjaga ini ada karena kejadian nyata: sebuah skrip pemeriksaan memanggil
+     * service ini pada izin lama dan tugasnya benar-benar terbit.)
+     */
+    public const BERLAKU_SEJAK = '2026-10-14';
+
+    /**
      * Apakah pengajuan ini berhak menerbitkan tugas tambahan?
      *
      * @param  bool  $abaikanStatus  untuk PRATINJAU sebelum disetujui: menjawab
@@ -110,6 +127,20 @@ class TugasDinasLuarService
         }
         if (!$abaikanStatus && $p->status !== 'disetujui') {
             return 'Tugas tambahan hanya terbit untuk pengajuan yang sudah disetujui.';
+        }
+        // KE DEPAN SAJA. Diperiksa dari saat KEPUTUSANNYA, bukan dari kapan
+        // izinnya dibuat: izin yang diajukan sebelum fitur ini ada lalu baru
+        // disetujui sekarang tetap berhak. Yang masih pending belum punya
+        // keputusan, jadi tidak tersentuh penjaga ini.
+        if ($p->status === 'disetujui') {
+            $keputusan = $p->tanggal_keputusan ?? $p->created_at;
+            if ($keputusan && $keputusan->lt(\Carbon\Carbon::parse(self::BERLAKU_SEJAK)->startOfDay())) {
+                return 'Izin dinas ini sudah disetujui pada '
+                    . $keputusan->locale('id')->isoFormat('D MMMM YYYY')
+                    . ', sebelum otomatisasi tugas tambahan berlaku ('
+                    . \Carbon\Carbon::parse(self::BERLAKU_SEJAK)->locale('id')->isoFormat('D MMMM YYYY')
+                    . '). Tugasnya tidak diterbitkan secara surut.';
+            }
         }
         if ($p->tugas_tambahan_id) {
             return 'Pengajuan ini sudah punya tugas tambahan.';
