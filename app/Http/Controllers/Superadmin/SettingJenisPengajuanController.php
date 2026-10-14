@@ -39,7 +39,10 @@ class SettingJenisPengajuanController extends Controller
             'update_status_kepegawaian'     => 'boolean',
             'status_kepegawaian_tujuan'     => 'nullable|string',
             'min_hari_untuk_update_status'  => 'nullable|integer|min:0',
+            'buat_tugas_tambahan'          => 'boolean',
         ]);
+
+        $validated['buat_tugas_tambahan'] = $this->buatTugasTambahanSah($validated);
 
         SettingJenisPengajuan::create(array_merge($validated, ['is_aktif' => true]));
 
@@ -71,7 +74,10 @@ class SettingJenisPengajuanController extends Controller
             'update_status_kepegawaian'     => 'boolean',
             'status_kepegawaian_tujuan'     => 'nullable|string',
             'min_hari_untuk_update_status'  => 'nullable|integer|min:0',
+            'buat_tugas_tambahan'          => 'boolean',
         ]);
+
+        $validated['buat_tugas_tambahan'] = $this->buatTugasTambahanSah($validated);
 
         $settingPengajuan->update($validated);
 
@@ -88,6 +94,20 @@ class SettingJenisPengajuanController extends Controller
         $settingPengajuan->update(['is_aktif' => false]);
 
         return back()->with('success', "{$settingPengajuan->nama} berhasil dinonaktifkan.");
+    }
+
+    /**
+     * Otomatisasi tugas tambahan hanya sah untuk kategori dinas.
+     *
+     * Formulir sudah menyembunyikan sakelarnya pada kategori lain, tetapi nilai
+     * lamanya masih ikut terkirim bila admin mengubah kategori dinas menjadi
+     * cuti/izin — dan permintaan HTTP bisa dikirim langsung tanpa formulir.
+     * Dipaksa di sini supaya sakelar yang menyala di basis data selalu berarti.
+     */
+    private function buatTugasTambahanSah(array $data): bool
+    {
+        return ($data['kategori'] ?? null) === 'dinas'
+            && (bool) ($data['buat_tugas_tambahan'] ?? false);
     }
 
     public function toggleAktif(SettingJenisPengajuan $settingPengajuan)

@@ -89,6 +89,11 @@
                                         class="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 text-xs font-medium">
                                         H-{{ s.min_hari_pengajuan_sebelumnya }}
                                     </span>
+                                    <span v-if="s.buat_tugas_tambahan"
+                                        class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-medium"
+                                        title="Pengajuan yang disetujui otomatis menerbitkan tugas tambahan">
+                                        Tugas tambahan otomatis
+                                    </span>
                                 </div>
                             </div>
                         </td>

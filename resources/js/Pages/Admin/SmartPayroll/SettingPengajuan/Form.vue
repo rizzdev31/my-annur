@@ -162,6 +162,34 @@
                                     </p>
                                 </div>
                             </div>
+
+                            <!-- Tugas tambahan otomatis — hanya untuk kategori dinas.
+                                 Sakelar ini sengaja tidak ditampilkan pada kategori
+                                 lain: sakit/izin/cuti adalah ketidakhadiran, dan
+                                 servicenya memang menolak menerbitkan tugas untuk
+                                 kategori itu — menampilkan sakelar yang tidak
+                                 berefek hanya menyesatkan admin. -->
+                            <div v-if="form.kategori === 'dinas'"
+                                class="flex items-start gap-3 p-4 rounded-xl border border-gray-200 hover:border-indigo-200 transition-colors cursor-pointer"
+                                @click="form.buat_tugas_tambahan = !form.buat_tugas_tambahan">
+                                <div :class="[
+                                    'relative mt-0.5 rounded-full transition-colors flex-shrink-0 cursor-pointer',
+                                    form.buat_tugas_tambahan ? 'bg-indigo-600' : 'bg-gray-300'
+                                ]" style="height:22px; width:40px;">
+                                    <span :class="[
+                                        'absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200',
+                                        form.buat_tugas_tambahan ? 'translate-x-5' : 'translate-x-0.5'
+                                    ]"></span>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-medium text-gray-800">Tugas Tambahan Otomatis</p>
+                                    <p class="text-xs text-gray-400 mt-0.5">
+                                        Saat pengajuan disetujui, guru otomatis mendapat tugas tambahan berisi
+                                        keperluan yang ia tulis. Vakasinya (Setting Vakasi &rarr; Dinas Luar)
+                                        baru cair setelah ia melaporkan hasilnya.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -339,6 +367,7 @@ const form = useForm({
     butuh_dokumen: props.setting?.butuh_dokumen ?? false,
     keterangan_dokumen: props.setting?.keterangan_dokumen ?? '',
     auto_approve: props.setting?.auto_approve ?? false,
+    buat_tugas_tambahan: props.setting?.buat_tugas_tambahan ?? false,
     pengaruh_gaji: props.setting?.pengaruh_gaji ?? 'potong_absensi',
     persen_potongan: props.setting?.persen_potongan ?? 0,
     update_status_kepegawaian: props.setting?.update_status_kepegawaian ?? false,

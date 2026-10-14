@@ -197,6 +197,7 @@ function badgeTipe(t) {
         tasnif: { label: 'Tasnif (Tahsin)', class: 'bg-emerald-50 text-emerald-700' },
         ekstrakurikuler: { label: 'Ekstrakurikuler', class: 'bg-sky-50 text-sky-700' },
         jaga_ujian: { label: 'Jaga Ujian (per sesi)', class: 'bg-rose-50 text-rose-700' },
+        dinas_luar: { label: 'Dinas Luar (per penugasan)', class: 'bg-indigo-50 text-indigo-700' },
     }[t] ?? { label: t, class: 'bg-gray-100 text-gray-600' }
 }
 

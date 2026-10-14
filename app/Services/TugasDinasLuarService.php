@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PengajuanIzin;
 use App\Models\PenugasanTambahan;
 use App\Models\SettingVakasi;
+use App\Models\TenagaPendidik;
 use App\Models\TugasTambahan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -51,11 +52,37 @@ class TugasDinasLuarService
 {
     public const TIPE_VAKASI = 'dinas_luar';
 
-    /** Nominal berlaku; 0 bila belum diatur di Setting Vakasi. */
-    public function nominal(): float
+    /**
+     * Nominal berlaku untuk guru tertentu; 0 bila belum diatur di Setting Vakasi.
+     *
+     * Lingkup WAJIB dihormati: tanpa ini setting ber-lingkup `per_individu`
+     * (misal hanya untuk pimpinan yang sering diundang keluar) akan terbaca
+     * sebagai tarif semua orang, dan vakasinya menempel di tugas lewat
+     * `vakasi_override` — artinya kekeliruannya langsung jadi uang.
+     */
+    public function nominal(?TenagaPendidik $tp = null): float
     {
-        return (float) (SettingVakasi::where('tipe_aktivitas', self::TIPE_VAKASI)
-            ->where('is_aktif', true)->value('nominal') ?? 0);
+        $setting = SettingVakasi::where('tipe_aktivitas', self::TIPE_VAKASI)
+            ->where('is_aktif', true)->get()
+            ->first(function ($v) use ($tp) {
+                if ($v->berlaku_untuk_semua || $v->lingkup === 'semua') {
+                    return true;
+                }
+                if (!$tp) {
+                    return false;
+                }
+                $individu = in_array((int) $tp->id, array_map('intval', (array) $v->tenaga_pendidik_ids), true);
+                $jabatan  = in_array((int) $tp->jabatan_id, array_map('intval', (array) $v->jabatan_ids), true);
+
+                return match ($v->lingkup) {
+                    'per_individu' => $individu,
+                    'per_jabatan'  => $jabatan,
+                    'custom'       => $individu || $jabatan,
+                    default        => false,
+                };
+            });
+
+        return (float) ($setting->nominal ?? 0);
     }
 
     /**
@@ -113,7 +140,7 @@ class TugasDinasLuarService
             return DB::transaction(function () use ($p, $userId) {
                 $guru    = $p->tenagaPendidik;
                 $jenis   = $p->jenisPengajuan;
-                $nominal = $this->nominal();
+                $nominal = $this->nominal($guru);
 
                 // Judul diambil dari ALASAN yang diisi guru — di produksi kolom
                 // itu sudah berisi nama kegiatan ("Workshop Guru Ismuba di SMP
