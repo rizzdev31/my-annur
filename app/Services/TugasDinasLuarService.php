@@ -51,6 +51,9 @@ class TugasDinasLuarService
 {
     public const TIPE_VAKASI = 'dinas_luar';
 
+    /** Hari jendela laporan setelah hari dinas berakhir. */
+    public const HARI_JENDELA_LAPORAN = 7;
+
     /**
      * Nominal berlaku untuk guru tertentu; 0 bila belum diatur di Setting Vakasi.
      *
@@ -166,6 +169,16 @@ class TugasDinasLuarService
                     'tenaga_pendidik_id' => $guru->id,
                     'status_pengerjaan'  => 'belum',
                     'disetujui'          => $disetujui,
+                    // Tenggat laporan BAWAAN tugas adalah akhir `tanggal_selesai`,
+                    // dan tanggal itu di sini adalah hari dinasnya sendiri —
+                    // artinya guru yang pulang malam lalu melapor besok pagi
+                    // selalu tertolak "tenggat lewat" dan harus minta
+                    // perpanjangan ke admin SETIAP kali. Otomatisasi yang
+                    // menambah pekerjaan admin bukan otomatisasi. Diberi
+                    // jendela laporan; admin tetap bisa mengubah/mencabutnya
+                    // dari halaman Tugas Tambahan.
+                    'tenggat_perpanjangan' => $p->tanggal_selesai->copy()
+                        ->addDays(self::HARI_JENDELA_LAPORAN)->toDateString(),
                 ]);
 
                 $p->update(['tugas_tambahan_id' => $tt->id, 'penugasan_id' => $pn->id]);
@@ -235,7 +248,9 @@ class TugasDinasLuarService
         if ($p->nama_dokumen) {
             $baris[] = 'Dokumen: ' . $p->nama_dokumen;
         }
-        $baris[] = 'Laporkan hasil dinas pada tugas ini agar vakasinya dapat diproses.';
+        $baris[] = 'Laporkan hasil dinas pada tugas ini agar vakasinya dapat diproses '
+            . '(batas pengisian ' . $p->tanggal_selesai->copy()
+                ->addDays(self::HARI_JENDELA_LAPORAN)->locale('id')->isoFormat('D MMMM YYYY') . ').';
 
         return implode("\n", $baris);
     }
