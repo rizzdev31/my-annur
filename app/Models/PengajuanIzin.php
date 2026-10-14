@@ -30,6 +30,11 @@ class PengajuanIzin extends Model
         'tanggal_keputusan',
         'absensi_sudah_diupdate',
         'status_kepegawaian_diupdate',
+        // Tautan ke tugas tambahan yang terbit otomatis dari dinas luar.
+        // WAJIB didaftarkan: tanpa ini Eloquent melewati update()-nya tanpa
+        // galat, tautannya tidak tersimpan, dan otomatisasinya kehilangan
+        // sifat idempoten (tugas terbit berulang setiap proses persetujuan).
+        'tugas_tambahan_id', 'penugasan_id',
     ];
 
     protected function casts(): array
@@ -111,5 +116,15 @@ class PengajuanIzin extends Model
     {
         return $query->whereMonth('tanggal_mulai', $bulan)
                      ->whereYear('tanggal_mulai', $tahun);
+    }
+
+    public function tugasTambahan()
+    {
+        return $this->belongsTo(TugasTambahan::class, 'tugas_tambahan_id');
+    }
+
+    public function penugasan()
+    {
+        return $this->belongsTo(PenugasanTambahan::class, 'penugasan_id');
     }
 }

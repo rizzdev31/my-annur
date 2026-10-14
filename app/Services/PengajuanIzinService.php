@@ -181,6 +181,19 @@ class PengajuanIzinService
                 $this->rollbackKuota($pengajuan);
             }
 
+            // Tugas tambahan dinas luar yang sudah terbit ikut dibatalkan,
+            // supaya vakasinya tidak terbayar untuk dinas yang tidak terjadi.
+            // Ditolak bila vakasinya sudah masuk periode berslip — pesannya
+            // disampaikan ke admin lewat flash, tanpa menggagalkan pembatalan
+            // izinnya.
+            if ($pengajuan->tugas_tambahan_id) {
+                $pesan = app(\App\Services\TugasDinasLuarService::class)
+                    ->batalkanDariPengajuan($pengajuan, $alasan);
+                if ($pesan) {
+                    session()->flash('warning', $pesan);
+                }
+            }
+
             $this->log('batalkan_pengajuan', $pengajuan, ['alasan' => $alasan]);
 
             return $pengajuan->fresh();
@@ -198,6 +211,16 @@ class PengajuanIzinService
 
         // 1. Update absensi harian untuk setiap hari dalam rentang
         $this->generateAbsensi($pengajuan);
+
+        // 1b. DINAS LUAR → terbitkan tugas tambahan otomatis.
+        //
+        // Dipasang di sini, BUKAN saat guru mengisi formulir: tugas tambahan
+        // membawa vakasi, jadi tidak boleh terbit tanpa persetujuan. Gerbangnya
+        // sendiri (kategori dinas + sakelar per jenis + idempoten) ada di
+        // TugasDinasLuarService; servicenya tidak pernah melempar galat supaya
+        // kegagalan menerbitkan tugas tidak membatalkan persetujuan izinnya.
+        app(\App\Services\TugasDinasLuarService::class)
+            ->buatDariPengajuan($pengajuan, Auth::id());
 
         // 2. Kurangi kuota jika ada
         $this->kurangiKuota($pengajuan);

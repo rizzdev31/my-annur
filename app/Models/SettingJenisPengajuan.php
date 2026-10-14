@@ -19,6 +19,8 @@ class SettingJenisPengajuan extends Model
         'status_kepegawaian_tujuan',
         'min_hari_untuk_update_status',
         'is_aktif',
+        // Sakelar otomatisasi tugas tambahan (dinyalakan untuk kategori dinas).
+        'buat_tugas_tambahan',
     ];
 
     protected function casts(): array
@@ -29,6 +31,7 @@ class SettingJenisPengajuan extends Model
             'update_status_kepegawaian'    => 'boolean',
             'is_aktif'                     => 'boolean',
             'persen_potongan'              => 'float',
+            'buat_tugas_tambahan'          => 'boolean',
         ];
     }
 
