@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\PengajuanIzin;
 use App\Models\PenugasanTambahan;
-use App\Models\SettingVakasi;
 use App\Models\TenagaPendidik;
 use App\Models\TugasTambahan;
 use Illuminate\Support\Facades\DB;
@@ -55,32 +54,20 @@ class TugasDinasLuarService
     /**
      * Nominal berlaku untuk guru tertentu; 0 bila belum diatur di Setting Vakasi.
      *
-     * Lingkup WAJIB dihormati: tanpa ini setting ber-lingkup `per_individu`
-     * (misal hanya untuk pimpinan yang sering diundang keluar) akan terbaca
-     * sebagai tarif semua orang, dan vakasinya menempel di tugas lewat
-     * `vakasi_override` — artinya kekeliruannya langsung jadi uang.
+     * Memakai resolver penggajian apa adanya, bukan query sendiri. Lingkup,
+     * masa berlaku, dan prioritas (individu → jabatan → semua) WAJIB sama
+     * dengan yang dipakai slip gaji: nominalnya menempel di tugas lewat
+     * `vakasi_override`, jadi selisih tafsir sekecil apa pun langsung menjadi
+     * uang yang salah.
      */
     public function nominal(?TenagaPendidik $tp = null): float
     {
-        $setting = SettingVakasi::where('tipe_aktivitas', self::TIPE_VAKASI)
-            ->where('is_aktif', true)->get()
-            ->first(function ($v) use ($tp) {
-                if ($v->berlaku_untuk_semua || $v->lingkup === 'semua') {
-                    return true;
-                }
-                if (!$tp) {
-                    return false;
-                }
-                $individu = in_array((int) $tp->id, array_map('intval', (array) $v->tenaga_pendidik_ids), true);
-                $jabatan  = in_array((int) $tp->jabatan_id, array_map('intval', (array) $v->jabatan_ids), true);
+        if (!$tp) {
+            return 0.0;
+        }
 
-                return match ($v->lingkup) {
-                    'per_individu' => $individu,
-                    'per_jabatan'  => $jabatan,
-                    'custom'       => $individu || $jabatan,
-                    default        => false,
-                };
-            });
+        $setting = app(PayrollCalculationService::class)
+            ->getVakasiUntukGuru(self::TIPE_VAKASI, $tp);
 
         return (float) ($setting->nominal ?? 0);
     }

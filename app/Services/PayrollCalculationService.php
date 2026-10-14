@@ -1048,7 +1048,14 @@ class PayrollCalculationService
         return $setting ? (float) $setting->nominal : 0.0;
     }
 
-    private function getVakasiUntukGuru(string $tipeAktivitas, TenagaPendidik $guru): ?SettingVakasi
+    /**
+     * Publik agar service lain memakai resolver YANG SAMA, bukan salinan yang
+     * nyaris sama. Di sini sudah dihormati: lingkup (individu → jabatan →
+     * semua, berurut prioritas), masa berlaku, dan baris terbaru bila ada
+     * beberapa setting aktif sekaligus. Salinan tangan selalu melewatkan
+     * salah satunya — dan selisihnya langsung menjadi uang.
+     */
+    public function getVakasiUntukGuru(string $tipeAktivitas, TenagaPendidik $guru): ?SettingVakasi
     {
         $jabatanIds = $guru->jabatanGuru()
             ->whereNull('berlaku_selesai')
