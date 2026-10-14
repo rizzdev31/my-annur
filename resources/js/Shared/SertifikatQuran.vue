@@ -146,18 +146,21 @@ defineProps({
                         </div>
                     </div>
 
-                    <div v-if="data.catatan" class="kotak-catatan">
-                        <p class="kc-label">Catatan Penguji</p>
-                        <p class="kc-isi">{{ data.catatan }}</p>
-                        <p class="kc-oleh">— {{ data.penguji }}</p>
-                    </div>
+                    <!-- Berdampingan bila keduanya ada; ditumpuk membuat
+                         halaman nilai luber keluar bingkai. -->
+                    <div v-if="data.catatan || data.masukan"
+                        :class="['catatan-grid', (data.catatan && data.masukan) ? 'dua' : '']">
+                        <div v-if="data.catatan" class="kotak-catatan">
+                            <p class="kc-label">Catatan Penguji</p>
+                            <p class="kc-isi">{{ data.catatan }}</p>
+                            <p class="kc-oleh">— {{ data.penguji }}</p>
+                        </div>
 
-                    <!-- Masukan pimpinan: ruang yang sebelumnya tidak ada sama
-                         sekali, padahal superadmin yang memantau mutu penilaian. -->
-                    <div v-if="data.masukan" class="kotak-catatan kotak-masukan">
-                        <p class="kc-label">Masukan Pimpinan</p>
-                        <p class="kc-isi">{{ data.masukan }}</p>
-                        <p v-if="data.masukan_oleh" class="kc-oleh">— {{ data.masukan_oleh }}</p>
+                        <div v-if="data.masukan" class="kotak-catatan kotak-masukan">
+                            <p class="kc-label">Masukan Pimpinan</p>
+                            <p class="kc-isi">{{ data.masukan }}</p>
+                            <p v-if="data.masukan_oleh" class="kc-oleh">— {{ data.masukan_oleh }}</p>
+                        </div>
                     </div>
 
                     <div class="ttd ttd-nilai">
@@ -176,7 +179,23 @@ defineProps({
 </template>
 
 <style scoped>
-.cert-wrap { --gold: #b8912f; --emer: #0f766e; --ink: #23303a; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+/*
+ * SATUAN: semuanya cqh (1% TINGGI kotak sertifikat), bukan cqw atau persen.
+ *
+ * Versi sebelumnya memakai cqw untuk font dan PERSEN untuk margin. Persen
+ * selalu dihitung dari LEBAR, jadi pada A4 landscape (960x679) tiap
+ * `margin-top: 2.6%` menjadi 25px dan delapan margin saja sudah memakan 200px
+ * dari 679px yang tersedia. Begitu satu teks membungkus (nama panjang, nama
+ * pengampu panjang), isinya tumpah keluar bingkai. Terukur: butuh 1.368px pada
+ * ruang 679px -- hampir dua kali.
+ *
+ * Dengan `container-type: size` tinggi kotak menjadi acuan (cqh), sehingga
+ * seluruh anggaran ruang bisa dijumlahkan dan dijaga di bawah 100cqh.
+ * `overflow: hidden` jadi jaring terakhir: bila ada data yang di luar dugaan
+ * panjang, hasilnya terpotong rapi, bukan berantakan menimpa bingkai.
+ */
+.cert-wrap { --gold: #b8912f; --emer: #0f766e; --ink: #23303a;
+    display: flex; flex-direction: column; align-items: center; gap: 20px; }
 
 .cert {
     width: 100%;
@@ -186,90 +205,105 @@ defineProps({
     box-shadow: 0 18px 50px rgba(30, 40, 60, .18);
     color: var(--ink);
     font-family: Georgia, 'Times New Roman', serif;
-    container-type: inline-size;
+    container-type: size;                 /* membuka satuan cqh */
+    overflow: hidden;                     /* jaring terakhir */
 }
 .cert-border {
-    height: 100%; margin: 2.2%;
-    border: 2.5px solid var(--gold);
-    outline: 6px solid var(--gold); outline-offset: 5px;
-    position: relative; display: flex;
+    height: 100%; margin: 1.6cqh 1.1cqh;
+    border: 2px solid var(--gold);
+    outline: 5px solid var(--gold); outline-offset: 4px;
+    position: relative; display: flex; overflow: hidden;
 }
-.corner { position: absolute; width: 26px; height: 26px; border: 3px solid var(--emer); }
-.corner.tl { top: -3px; left: -3px; border-right: 0; border-bottom: 0; }
-.corner.tr { top: -3px; right: -3px; border-left: 0; border-bottom: 0; }
-.corner.bl { bottom: -3px; left: -3px; border-right: 0; border-top: 0; }
-.corner.br { bottom: -3px; right: -3px; border-left: 0; border-top: 0; }
+.corner { position: absolute; width: 3.4cqh; height: 3.4cqh; border: 2.5px solid var(--emer); }
+.corner.tl { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+.corner.tr { top: -2px; right: -2px; border-left: 0; border-bottom: 0; }
+.corner.bl { bottom: -2px; left: -2px; border-right: 0; border-top: 0; }
+.corner.br { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
 
-.cert-inner { flex: 1; padding: 4.5% 6% 3.5%; text-align: center; display: flex; flex-direction: column; align-items: center; }
+.cert-inner { flex: 1; min-height: 0; padding: 3cqh 5cqh 2.5cqh; text-align: center;
+    display: flex; flex-direction: column; align-items: center; }
+/* Margin bawaan peramban pada p/h1/h2/table dinolkan: seluruh jarak diatur
+   eksplisit dalam cqh, kalau tidak anggaran ruang tidak pernah akurat. */
+.cert p, .cert h1, .cert h2, .cert table { margin: 0; }
 
-/* ── Halaman depan ───────────────────────────────────────────────────────── */
-.bismillah { font-size: 6cqw; color: var(--gold); line-height: 1; margin-bottom: 1.5%; }
-.lembaga { font-size: 3.4cqw; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.program { font-size: 2.1cqw; color: var(--emer); font-weight: 600; margin-top: .3%; }
-.alamat { font-size: 1.5cqw; color: #8a7f6a; margin-top: .4%; font-family: system-ui, sans-serif; }
+/* -- Halaman depan -------------------------------------------------------- */
+.bismillah { font-size: 5cqh; color: var(--gold); line-height: 1; }
+.lembaga { font-size: 3.6cqh; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; line-height: 1.2; margin-top: 1cqh; }
+.program { font-size: 2.4cqh; color: var(--emer); font-weight: 600; }
+.alamat { font-size: 1.8cqh; color: #8a7f6a; font-family: system-ui, sans-serif; line-height: 1.3; }
 
-.rule { display: flex; align-items: center; gap: 10px; width: 55%; margin: 2.5% 0 1.5%; }
+.rule { display: flex; align-items: center; gap: 1cqh; width: 50%; margin: 1.2cqh 0; }
 .rule span { flex: 1; height: 2px; background: linear-gradient(90deg, transparent, var(--gold)); }
 .rule span:last-child { background: linear-gradient(90deg, var(--gold), transparent); }
-.rule i { color: var(--gold); font-style: normal; font-size: 2.4cqw; }
+.rule i { color: var(--gold); font-style: normal; font-size: 2.2cqh; }
 
-.judul { font-size: 6.6cqw; font-weight: 700; letter-spacing: .22em; color: var(--emer); text-indent: .22em; }
-.sub { font-size: 2.2cqw; color: var(--gold); font-style: italic; margin-top: -.4%; }
-.nomor { font-size: 1.5cqw; color: #8a7f6a; margin-top: .8%; font-family: system-ui, sans-serif; }
+.judul { font-size: 6.4cqh; font-weight: 700; letter-spacing: .2em; color: var(--emer); text-indent: .2em; line-height: 1.05; }
+.sub { font-size: 2.4cqh; color: var(--gold); font-style: italic; }
+.nomor { font-size: 1.8cqh; color: #8a7f6a; font-family: system-ui, sans-serif; margin-top: .4cqh; }
 
-.diberikan { font-size: 1.9cqw; color: #6b6151; margin-top: 3.2%; }
-/* Nama bisa lebih besar sekarang karena tabel nilai pindah ke halaman 2. */
-.nama { font-size: 6cqw; font-weight: 700; margin-top: .4%; border-bottom: 2px dotted var(--gold); padding: 0 4% 1%; line-height: 1.1; }
-.nip { font-size: 1.6cqw; color: #8a7f6a; margin-top: 1.2%; font-family: system-ui, sans-serif; }
+.diberikan { font-size: 2.2cqh; color: #6b6151; margin-top: 2cqh; }
+/* Nama: dua baris maksimal, dipotong rapi bila lebih panjang dari dugaan. */
+.nama { font-size: 5.6cqh; font-weight: 700; line-height: 1.15; margin-top: .6cqh;
+    border-bottom: 2px dotted var(--gold); padding: 0 3cqh 1cqh; max-width: 92%;
+    max-height: 14cqh; overflow: hidden; }
+.nip { font-size: 1.9cqh; color: #8a7f6a; font-family: system-ui, sans-serif; margin-top: .8cqh; }
 
-.narasi { font-size: 2.1cqw; line-height: 1.6; max-width: 82%; margin-top: 3%; }
+.narasi { font-size: 2.4cqh; line-height: 1.45; max-width: 88%; margin-top: 1.8cqh;
+    max-height: 11cqh; overflow: hidden; }
 .narasi .predikat { color: var(--emer); }
-.rujuk-nilai { font-size: 1.4cqw; color: #8a7f6a; font-style: italic; margin-top: 1.4%; font-family: system-ui, sans-serif; }
+.rujuk-nilai { font-size: 1.7cqh; color: #8a7f6a; font-style: italic; margin-top: 1.2cqh; font-family: system-ui, sans-serif; }
 
-.ttd { margin-top: auto; padding-top: 3%; display: flex; align-items: flex-end; justify-content: space-between; width: 100%; }
-.ttd-col { width: 30%; }
-.ttd-role { font-size: 1.6cqw; color: #6b6151; font-family: system-ui, sans-serif; }
-.ttd-space { height: 4cqw; }
-.ttd-nama { font-size: 1.9cqw; font-weight: 700; border-top: 1.5px solid var(--ink); padding-top: 4%; }
-.ttd-seal { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.seal { width: 11cqw; height: 11cqw; border-radius: 50%; border: 3px double var(--gold); color: var(--emer);
+.ttd { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; width: 100%; }
+.ttd-col { width: 31%; }
+.ttd-role { font-size: 1.9cqh; color: #6b6151; font-family: system-ui, sans-serif; line-height: 1.3; }
+.ttd-space { height: 3.5cqh; }
+/* Nama penanda tangan juga dibatasi dua baris supaya tinggi blok tetap. */
+.ttd-nama { font-size: 2.1cqh; font-weight: 700; border-top: 1.5px solid var(--ink); padding-top: .9cqh;
+    line-height: 1.2; max-height: 6.2cqh; overflow: hidden; }
+.ttd-seal { display: flex; flex-direction: column; align-items: center; gap: .6cqh; }
+.seal { width: 10cqh; height: 10cqh; border-radius: 50%; border: 3px double var(--gold); color: var(--emer);
     display: grid; place-items: center; text-align: center; background: radial-gradient(circle, #fff, #fbf3dd); transform: rotate(-8deg); }
-.seal-in { font-size: 2.4cqw; font-weight: 700; line-height: 1; }
-.seal-in small { font-size: 1.1cqw; letter-spacing: .1em; color: var(--gold); font-family: system-ui, sans-serif; }
-.ttd-tanggal { font-size: 1.5cqw; color: #6b6151; font-family: system-ui, sans-serif; }
+.seal-in { font-size: 2.2cqh; font-weight: 700; line-height: 1; }
+.seal-in small { font-size: 1.5cqh; letter-spacing: .1em; color: var(--gold); font-family: system-ui, sans-serif; }
+.ttd-tanggal { font-size: 1.8cqh; color: #6b6151; font-family: system-ui, sans-serif; }
 
-/* ── Halaman nilai ───────────────────────────────────────────────────────── */
-.nilai-inner { padding-top: 3.5%; }
-.pengait { width: 100%; display: flex; align-items: flex-start; justify-content: space-between;
-    border-bottom: 1.5px solid #e7dcc0; padding-bottom: 1.4%; text-align: left; }
-.pengait-nama { font-size: 2.4cqw; font-weight: 700; }
-.pengait-sub { font-size: 1.5cqw; color: #8a7f6a; font-family: system-ui, sans-serif; }
-.pengait-nomor { font-size: 1.4cqw; color: #8a7f6a; font-family: system-ui, sans-serif; }
+/* -- Halaman nilai -------------------------------------------------------- */
+.nilai-inner { padding: 3cqh 5cqh 2.5cqh; }
+.pengait { width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 2cqh;
+    border-bottom: 1.5px solid #e7dcc0; padding-bottom: 1.4cqh; text-align: left; }
+.pengait-nama { font-size: 2.6cqh; font-weight: 700; line-height: 1.2;
+    max-height: 6.5cqh; overflow: hidden; }
+.pengait-sub { font-size: 1.8cqh; color: #8a7f6a; font-family: system-ui, sans-serif; }
+.pengait-nomor { font-size: 1.7cqh; color: #8a7f6a; font-family: system-ui, sans-serif; white-space: nowrap; }
 
-.judul-nilai { font-size: 4.4cqw; font-weight: 700; letter-spacing: .18em; color: var(--emer); text-indent: .18em; margin-top: 2.4%; }
-.sub-nilai { font-size: 1.9cqw; color: var(--gold); font-style: italic; }
+.judul-nilai { font-size: 4.6cqh; font-weight: 700; letter-spacing: .16em; color: var(--emer); text-indent: .16em; margin-top: 2cqh; line-height: 1.1; }
+.sub-nilai { font-size: 2.1cqh; color: var(--gold); font-style: italic; }
 
-.tabel-nilai { width: 78%; border-collapse: collapse; margin-top: 1.5%; font-family: system-ui, sans-serif; }
-.tabel-nilai th, .tabel-nilai td { border: 1.2px solid #e0d3b0; padding: 1.3% 2%; font-size: 1.7cqw; text-align: center; }
-.tabel-nilai th { background: #faf4e6; color: #6b6151; font-size: 1.5cqw; text-transform: uppercase; letter-spacing: .06em; }
+.tabel-nilai { width: 74%; border-collapse: collapse; margin-top: 1cqh; font-family: system-ui, sans-serif; }
+.tabel-nilai th, .tabel-nilai td { border: 1.2px solid #e0d3b0; padding: .8cqh 2cqh; font-size: 2cqh; text-align: center; line-height: 1.2; }
+.tabel-nilai th { background: #faf4e6; color: #6b6151; font-size: 1.7cqh; text-transform: uppercase; letter-spacing: .06em; }
 .tabel-nilai .kiri { text-align: left; }
-.tabel-nilai .angka { font-weight: 700; font-size: 2cqw; }
+.tabel-nilai .angka { font-weight: 700; font-size: 2.2cqh; }
 .tabel-nilai tfoot td { background: var(--emer); color: #fff; font-weight: 700; border-color: var(--emer); }
-.rubrik-none { margin-top: 2.6%; font-size: 2.2cqw; }
+.rubrik-none { margin-top: 2cqh; font-size: 2.8cqh; }
 
-.predikat-box { display: flex; align-items: center; gap: 3%; margin-top: 2.4%;
-    background: #fff; border: 1.5px solid #e7dcc0; border-radius: 12px; padding: 1.6% 4%; }
-.pk-sep { width: 1.5px; height: 4cqw; background: #e7dcc0; }
-.pk-label { font-size: 1.3cqw; color: #8a7f6a; font-family: system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
-.pk-nilai { font-size: 2.1cqw; font-weight: 700; color: var(--emer); }
-.pk-angka { font-size: 3cqw; font-weight: 700; font-family: system-ui, sans-serif; }
+.predikat-box { display: flex; align-items: center; gap: 3cqh; margin-top: 1.8cqh;
+    background: #fff; border: 1.5px solid #e7dcc0; border-radius: 1.4cqh; padding: 1cqh 3cqh; }
+.pk-sep { width: 1.5px; height: 5cqh; background: #e7dcc0; }
+.pk-label { font-size: 1.5cqh; color: #8a7f6a; font-family: system-ui, sans-serif; text-transform: uppercase; letter-spacing: .06em; }
+.pk-nilai { font-size: 2.2cqh; font-weight: 700; color: var(--emer); line-height: 1.2; white-space: nowrap; }
+.pk-angka { font-size: 3cqh; font-weight: 700; font-family: system-ui, sans-serif; line-height: 1.2; }
 
-.kotak-catatan { width: 78%; margin-top: 2%; text-align: left;
-    background: #fff; border: 1.5px solid #e7dcc0; border-left: 4px solid var(--gold); border-radius: 8px; padding: 1.4% 2.2%; }
+/* Dua kotak catatan BERDAMPINGAN -- ditumpuk membuat halaman nilai luber. */
+.catatan-grid { width: 88%; margin-top: 1.6cqh; display: grid; gap: 1.6cqh; grid-template-columns: 1fr; }
+.catatan-grid.dua { grid-template-columns: 1fr 1fr; }
+.kotak-catatan { text-align: left; background: #fff; border: 1.5px solid #e7dcc0;
+    border-left: 4px solid var(--gold); border-radius: 1cqh; padding: 1.2cqh 1.8cqh; }
 .kotak-masukan { border-left-color: var(--emer); }
-.kc-label { font-size: 1.3cqw; color: #8a7f6a; font-family: system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
-.kc-isi { font-size: 1.7cqw; line-height: 1.5; margin-top: .4%; font-style: italic; }
-.kc-oleh { font-size: 1.3cqw; color: #8a7f6a; margin-top: .6%; font-family: system-ui, sans-serif; text-align: right; }
+.kc-label { font-size: 1.5cqh; color: #8a7f6a; font-family: system-ui, sans-serif; text-transform: uppercase; letter-spacing: .06em; }
+.kc-isi { font-size: 1.9cqh; line-height: 1.4; margin-top: .3cqh; font-style: italic;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.kc-oleh { font-size: 1.5cqh; color: #8a7f6a; margin-top: .4cqh; font-family: system-ui, sans-serif; text-align: right; }
 
 .ttd-nilai { justify-content: flex-end; }
 .ttd-nilai .ttd-col { width: 34%; }
