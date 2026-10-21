@@ -30,15 +30,29 @@ use Illuminate\Support\Facades\DB;
  * Kewenangan inval (keputusan 17 Sep 2026) — inval hampir selalu bukan pengampu,
  * karena seluruh kelas tahfidz dan tahsin berjalan serentak:
  *  - reguler : absen, jurnal, absensi santri
- *  - tahfidz : absen, jurnal, absensi santri, setoran MUROJAAH saja
- *              (hafalan baru memajukan batas hafalan; tasmi' tetap pengampu)
+ *  - tahfidz : absen, jurnal, absensi santri, setoran murojaah DAN hafalan baru
+ *              (tasmi' tetap pengampu — itu penunjukan penguji, bukan setoran)
  *  - tahsin  : absen, jurnal, absensi santri, materi tambahan (catatan)
  *              (penilaian kelulusan materi, tasnif, naik level tetap pengampu)
  */
 class PenggantiMengajarService
 {
-    /** Jenis setoran tahfidz yang boleh dicatat guru inval. */
-    public const JENIS_SETORAN_INVAL = ['murojaah_wajib', 'murojaah_tambahan'];
+    /**
+     * Jenis setoran tahfidz yang boleh dicatat guru inval.
+     *
+     * Keputusan 22 Okt 2026: hafalan baru DIBUKA untuk inval. Aturan 17 Sep
+     * membatasi inval pada murojaah saja agar pencapaian permanen santri tetap
+     * ditentukan pengampunya. Hasilnya terukur: dalam 60 hari ada 31 sesi
+     * tahfidz di-inval dengan 36 setoran, SELURUHNYA murojaah — artinya setiap
+     * kali pengampu izin, ziyadah satu halaqoh berhenti sehari. Pesantren
+     * memilih kelangsungan setoran; jejaknya tetap ada karena
+     * `setoran_tahfidz.tenaga_pendidik_id` mencatat pencatat sebenarnya dan
+     * muncul sebagai nama guru di Laporan Pencapaian santri.
+     *
+     * Tasmi' tetap di luar: itu penunjukan penguji & penentu kelulusan juz,
+     * bukan pencatatan setoran harian.
+     */
+    public const JENIS_SETORAN_INVAL = ['ziyadah', 'murojaah_wajib', 'murojaah_tambahan'];
 
     /** Guru izin menunjuk pengganti untuk satu jadwal pada tanggal tertentu. */
     public function tunjukPengganti(

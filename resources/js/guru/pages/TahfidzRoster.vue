@@ -201,7 +201,7 @@ async function kirimTunjuk() {
 const koreksi = ref(null)
 function bukaKoreksi(s) { koreksi.value = s }
 
-// Guru inval hanya melihat jenis yang boleh ia catat (murojaah).
+// Guru inval hanya melihat jenis yang boleh ia catat (jenis_diizinkan dari server).
 const jenisTabs = computed(() => {
     const semua = [['ziyadah', 'Hafalan Baru'], ['murojaah_wajib', 'Murojaah'], ['murojaah_tambahan', 'Murojaah+']]
     const boleh = info.value?.jenis_diizinkan
@@ -223,7 +223,7 @@ const bannerInfo = computed(() => {
     const i = info.value
     if (!i) return null
     if (i.inval) {
-        if (i.wajib_absen) return { c: 'amber', t: `Kelas inval — menggantikan ${i.guru_asli}. Absen kehadiran santri dulu, lalu catat murojaah. Hafalan baru & tasmi' tetap dicatat pengampu.` }
+        if (i.wajib_absen) return { c: 'amber', t: `Kelas inval — menggantikan ${i.guru_asli}. Absen kehadiran santri dulu, lalu catat setoran seperti biasa. Tasmi' tetap dicatat pengampu.` }
         if (i.sudah_absen && i.boleh_isi) return { c: 'emerald', t: `Sudah absen inval. Murojaah bisa dicatat sampai jam kelas berakhir (${jamKelas.value}).` }
         if (i.sudah_absen) return { c: 'sky', t: 'Jam kelas inval sudah berakhir — pencatatan ditutup.' }
         return { c: 'amber', t: `Kelas inval (gantikan ${i.guru_asli}) hanya bisa diisi selama jam kelas ${jamKelas.value}. Bila tidak diisi, sesi tercatat tidak terlaksana.` }

@@ -355,7 +355,8 @@ class TahfidzApiController extends Controller
             'dalam_jam'   => $dalamJam,
         ];
 
-        // ── Mode INVAL: hanya dalam jam, hanya murojaah, tanpa tasmi'/sinkron ────
+        // ── Mode INVAL: hanya dalam jam, setoran sesuai JENIS_SETORAN_INVAL ─────
+        // (murojaah + hafalan baru sejak 22 Okt 2026), tanpa tasmi'/sinkron.
         if ($jadwal->tenaga_pendidik_id !== $tp->id) {
             $svc   = new \App\Services\PenggantiMengajarService();
             $inval = $svc->tugasInvalHariIni($jadwal->id, $tp->id);
@@ -691,12 +692,15 @@ class TahfidzApiController extends Controller
             if (!$svc->milikInval($am, $tp->id)) {
                 return response()->json(['success' => false, 'message' => 'Sesi ini bukan milik Anda.'], 403);
             }
-            // Inval (keputusan 17 Sep 2026): hanya murojaah. Hafalan baru memajukan
-            // batas hafalan santri secara permanen, dan tasmi' menentukan kelulusan
-            // juz — keduanya tetap di tangan pengampu yang mengenal santrinya.
+            // Inval (keputusan 22 Okt 2026): murojaah DAN hafalan baru - supaya
+            // ziyadah satu halaqoh tidak berhenti setiap kali pengampunya izin.
+            // Jejaknya tetap ada: tenaga_pendidik_id merekam pencatat sebenarnya
+            // dan muncul sebagai nama guru di Laporan Pencapaian santri.
+            // Tasmi' tetap pengampu - itu penunjukan penguji & penentu kelulusan
+            // juz, bukan setoran harian.
             if (!in_array($request->jenis, \App\Services\PenggantiMengajarService::JENIS_SETORAN_INVAL, true)) {
                 return response()->json(['success' => false,
-                    'message' => 'Guru inval hanya bisa mencatat murojaah. Hafalan baru & tasmi\' dicatat oleh pengampu.',
+                    'message' => "Tasmi' hanya bisa dicatat oleh guru pengampu santri ini.",
                     'code' => 'KEWENANGAN'], 403);
             }
             if (!$svc->sudahDiisiInval($am)) {
