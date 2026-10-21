@@ -199,6 +199,112 @@ class KelasController extends Controller
             ($hasil['dilewati'] ? ", {$hasil['dilewati']} dikecualikan (tinggal kelas)" : '') . '.');
     }
 
+    /**
+     * GET kelas/perombakan — papan perombakan halaqoh.
+     *
+     * Satu layar memuat SELURUH santri pada satu kelompok kelas (tahfidz/tahsin,
+     * sekolah, atau pesantren) beserta halaqoh/kelasnya saat ini, sehingga admin
+     * bisa menetapkan tujuan santri satu per satu lalu menyimpannya sekali.
+     *
+     * Pencapaian tahfidz sengaja ikut ditampilkan: itulah dasar admin membagi
+     * halaqoh, dan sekaligus bukti bahwa perpindahan tidak mengubahnya.
+     */
+    public function perombakan(Request $request)
+    {
+        $slotDipilih = in_array($request->slot, ['quran', 'sekolah', 'pesantren'], true)
+            ? $request->slot : 'quran';
+        $jenis = $slotDipilih === 'quran' ? ['tahfidz', 'tahsin'] : [$slotDipilih];
+
+        $kelas = Kelas::whereIn('jenis', $jenis)
+            ->withCount(['santri as santri_count' => fn ($q) => $q->where('kelas_santri.is_aktif', true)])
+            ->orderBy('jenis')->orderBy('nama')->get()
+            ->map(fn ($k) => [
+                'id' => $k->id, 'nama' => $k->nama, 'jenis' => $k->jenis,
+                'level_tahsin' => $k->level_tahsin, 'is_aktif' => (bool) $k->is_aktif,
+                'jumlah_santri' => $k->santri_count,
+                'pengampu' => \App\Models\JadwalMengajar::where('kelas_id', $k->id)
+                    ->where('is_aktif', true)->with('tenagaPendidik.user:id,name')->get()
+                    ->map(fn ($j) => $j->tenagaPendidik?->user?->name)->filter()->unique()->values()->all(),
+            ])->values();
+
+        // Keanggotaan AKTIF pada slot ini → kelas santri sekarang.
+        $anggota = \Illuminate\Support\Facades\DB::table('kelas_santri')
+            ->join('kelas', 'kelas.id', '=', 'kelas_santri.kelas_id')
+            ->where('kelas_santri.is_aktif', true)->whereIn('kelas.jenis', $jenis)
+            ->get(['kelas_santri.santri_id', 'kelas.id as kelas_id', 'kelas.nama'])
+            ->keyBy('santri_id');
+
+        $hafalan   = \App\Models\HafalanSantri::pluck('total_ayat', 'santri_id');
+        $juzSelesai = \App\Models\HafalanJuz::whereIn('status', ['selesai', 'tasmi_lulus'])
+            ->selectRaw('santri_id, COUNT(*) n')->groupBy('santri_id')->pluck('n', 'santri_id');
+
+        $santri = \App\Models\Santri::aktif()->orderBy('nama_lengkap')
+            ->get(['id', 'nip', 'nama_lengkap', 'jenis_kelamin', 'tahsin_level'])
+            ->map(function ($s) use ($anggota, $hafalan, $juzSelesai) {
+                $a = $anggota->get($s->id);
+
+                return [
+                    'id' => $s->id, 'nip' => $s->nip, 'nama' => $s->nama_lengkap,
+                    'jenis_kelamin' => $s->jenis_kelamin,
+                    'kelas_id'   => $a ? (int) $a->kelas_id : null,
+                    'kelas_nama' => $a->nama ?? null,
+                    'hafalan_ayat' => (int) ($hafalan[$s->id] ?? 0),
+                    'juz_selesai'  => (int) ($juzSelesai[$s->id] ?? 0),
+                    'tahsin_level' => $s->tahsin_level,
+                ];
+            })->values();
+
+        return Inertia::render('Admin/SmartEducation/Kelas/Perombakan', [
+            'slot'   => $slotDipilih,
+            'kelas'  => $kelas,
+            'santri' => $santri,
+        ]);
+    }
+
+    /**
+     * POST kelas/perombakan — simpan perombakan.
+     *
+     * Hanya santri yang disebut yang berpindah. Tidak ada yang dikeluarkan —
+     * beda dengan panel centang per kelas, yang mengeluarkan siapa pun yang
+     * tidak tercentang.
+     */
+    public function simpanPerombakan(Request $request)
+    {
+        $d = $request->validate([
+            'pindah'              => 'required|array|min:1',
+            'pindah.*.santri_id'  => 'required|integer|exists:santri,id',
+            'pindah.*.kelas_id'   => 'required|integer|exists:kelas,id',
+            'tanggal'             => 'nullable|date_format:Y-m-d',
+            'keterangan'          => 'nullable|string|max:150',
+        ], [
+            'pindah.required' => 'Belum ada santri yang ditetapkan kelas tujuannya.',
+        ]);
+
+        $peta = collect($d['pindah'])->mapWithKeys(
+            fn ($r) => [(int) $r['santri_id'] => (int) $r['kelas_id']]
+        )->all();
+
+        try {
+            $hasil = app(\App\Services\KenaikanKelasService::class)
+                ->rombak($peta, $d['tanggal'] ?? null, $d['keterangan'] ?? null);
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $n = count($hasil['dipindah']);
+        $pesan = $n
+            ? "$n santri dipindah." . (count($hasil['tetap']) ? ' ' . count($hasil['tetap']) . ' sudah di kelas tujuannya.' : '')
+            : 'Tidak ada perpindahan — semua santri sudah berada di kelas tujuannya.';
+        if ($hasil['gagal']) {
+            $pesan .= ' ' . count($hasil['gagal']) . ' dilewati (santri tidak aktif).';
+        }
+        if ($n) {
+            $pesan .= ' Pencapaian hafalan tidak berubah; pengampu sudah dikabari.';
+        }
+
+        return back()->with($n || !$hasil['gagal'] ? 'success' : 'error', $pesan);
+    }
+
     private function validateData(Request $request): array
     {
         return $request->validate([

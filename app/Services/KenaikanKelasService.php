@@ -172,6 +172,91 @@ class KenaikanKelasService
         return ['dipindah' => $dipindah, 'dilewati' => $dilewati];
     }
 
+    /**
+     * PEROMBAKAN — pindahkan santri TERPILIH ke halaqoh tujuan masing-masing,
+     * sekali simpan.
+     *
+     * Berbeda dari naikKelasMassal() yang memindah SATU kelas utuh ke SATU
+     * tujuan (pola "naik kelas"): perombakan halaqoh tahfidz tidak begitu.
+     * Satu halaqoh dipecah ke beberapa halaqoh lain menurut kemampuan santri,
+     * dan sebagian tetap di tempat. Dengan alat lama hal itu harus dikerjakan
+     * kelas per kelas lewat panel centang — yang juga MENGELUARKAN santri yang
+     * tidak dicentang, sehingga sekali lupa mencentang berarti santri terlempar
+     * dari halaqohnya.
+     *
+     * Di sini tidak ada yang dikeluarkan: hanya santri yang disebut yang
+     * berpindah, masing-masing ke tujuannya sendiri. Riwayat, aturan satu kelas
+     * per slot, penempatan level tahsin, sinkron RamahAnak, dan pemberitahuan
+     * pengampu semuanya ikut karena memakai buka() yang sama.
+     *
+     * @param  array<int,int>  $peta  santri_id => kelas_tujuan_id
+     * @return array{dipindah:array, tetap:array, gagal:array}
+     * @throws \DomainException
+     */
+    public function rombak(array $peta, ?string $tanggal = null, ?string $keterangan = null): array
+    {
+        $peta = collect($peta)
+            ->mapWithKeys(fn ($kelasId, $santriId) => [(int) $santriId => (int) $kelasId])
+            ->filter(fn ($kelasId, $santriId) => $santriId > 0 && $kelasId > 0);
+
+        if ($peta->isEmpty()) {
+            throw new \DomainException('Belum ada santri yang dipilih untuk dipindah.');
+        }
+
+        $tujuanList = Kelas::whereIn('id', $peta->values()->unique())->get()->keyBy('id');
+        foreach ($peta->values()->unique() as $kid) {
+            $k = $tujuanList->get($kid);
+            if (!$k) {
+                throw new \DomainException("Kelas tujuan #$kid tidak ditemukan.");
+            }
+            if (!$k->is_aktif) {
+                throw new \DomainException("Kelas {$k->nama} nonaktif — aktifkan dulu sebelum menerima santri.");
+            }
+        }
+
+        $tanggal ??= $this->hariIni();
+        $santri   = Santri::aktif()->whereIn('id', $peta->keys())->get(['id', 'nama_lengkap'])->keyBy('id');
+
+        $this->mulai();
+        $hasil = DB::transaction(function () use ($peta, $santri, $tujuanList, $tanggal, $keterangan) {
+            $dipindah = []; $tetap = []; $gagal = [];
+
+            foreach ($peta as $santriId => $kelasId) {
+                $s = $santri->get($santriId);
+                if (!$s) {
+                    // Santri nonaktif/terhapus tidak dipindah diam-diam.
+                    $gagal[] = ['santri_id' => $santriId, 'alasan' => 'Santri tidak aktif atau tidak ditemukan.'];
+                    continue;
+                }
+                $tujuan = $tujuanList->get($kelasId);
+                $dari   = $this->buka($santriId, $tujuan, $tanggal, $keterangan ?? 'Perombakan kelas');
+
+                if ($dari === false) {   // sudah anggota aktif kelas itu
+                    $tetap[] = ['santri_id' => $santriId, 'nama' => $s->nama_lengkap, 'kelas' => $tujuan->nama];
+                } else {
+                    $dipindah[] = ['santri_id' => $santriId, 'nama' => $s->nama_lengkap,
+                                   'dari' => $dari ?: null, 'ke' => $tujuan->nama];
+                }
+            }
+
+            return ['dipindah' => $dipindah, 'tetap' => $tetap, 'gagal' => $gagal];
+        });
+        $this->selesai();
+
+        return $hasil;
+    }
+
+    /**
+     * Pindahkan beberapa santri terpilih ke SATU kelas tujuan.
+     * Jalan pintas rombak() untuk kasus "ambil 8 santri ini, taruh di Tahfidz 2".
+     */
+    public function pindahTerpilih(array $santriIds, Kelas $tujuan, ?string $tanggal = null, ?string $keterangan = null): array
+    {
+        $peta = collect($santriIds)->mapWithKeys(fn ($id) => [(int) $id => $tujuan->id])->all();
+
+        return $this->rombak($peta, $tanggal, $keterangan);
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // Inti
     // ══════════════════════════════════════════════════════════════════════

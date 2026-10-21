@@ -194,6 +194,13 @@ async function kirimTunjuk() {
     } finally { tSaving.value = false }
 }
 
+// ── Juz yang tercatat selesai tapi cakupannya kurang ───────────────────────
+// Dulu juz seperti ini tetap memunculkan tombol tasmi', lalu ditolak saat
+// penguji ditunjuk. Sekarang tombolnya tidak muncul — dan supaya guru tidak
+// menyimpulkan "tombolnya rusak", kekurangannya ditampilkan apa adanya.
+const koreksi = ref(null)
+function bukaKoreksi(s) { koreksi.value = s }
+
 // Guru inval hanya melihat jenis yang boleh ia catat (murojaah).
 const jenisTabs = computed(() => {
     const semua = [['ziyadah', 'Hafalan Baru'], ['murojaah_wajib', 'Murojaah'], ['murojaah_tambahan', 'Murojaah+']]
@@ -354,11 +361,39 @@ const bannerClass = { amber: 'bg-amber-50 border-amber-200 text-amber-700', emer
                         </div>
                         <button v-if="info.boleh_tasmi !== false && s.juz_perlu_tasmi && s.juz_perlu_tasmi.length" @click.stop="bukaTunjuk(s)"
                             class="text-[10px] font-bold text-white bg-emerald-600 px-2.5 py-1.5 rounded-lg shrink-0 active:scale-95 transition">Tasmi'</button>
+                        <button v-else-if="s.juz_perlu_koreksi && s.juz_perlu_koreksi.length" @click.stop="bukaKoreksi(s)"
+                            class="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-1 rounded shrink-0 active:scale-95 transition">Perlu koreksi</button>
                         <span v-else-if="s.perlu_murojaah" class="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded shrink-0">Murojaah</span>
                     </div>
                 </li>
             </ul>
         </template>
+
+        <!-- Sheet: juz perlu koreksi superadmin -->
+        <BottomSheet :model-value="!!koreksi" @update:model-value="koreksi = null"
+            :title="koreksi?.nama" subtitle="Pencapaian perlu dikoreksi">
+            <template v-if="koreksi">
+                <p class="text-[12px] text-gray-600 mb-3">
+                    Juz di bawah ini <b>tercatat selesai</b>, tetapi catatan hafalannya masih kurang.
+                    Tombol tasmi' sengaja tidak dimunculkan supaya tidak ditolak di langkah berikutnya.
+                </p>
+                <ul class="space-y-2 mb-4">
+                    <li v-for="k in koreksi.juz_perlu_koreksi" :key="k.juz"
+                        class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                        <p class="text-[12px] font-bold text-amber-900">Juz {{ k.juz }} — kurang {{ k.kurang }} ayat</p>
+                        <p v-if="k.belum && k.belum.length" class="text-[11px] text-amber-700 mt-0.5">
+                            Belum tercatat: {{ k.belum.join(', ') }}
+                        </p>
+                    </li>
+                </ul>
+                <p class="text-[11px] text-gray-500 mb-4">
+                    Bila santri <b>sebenarnya sudah hafal</b> bagian itu, minta superadmin mengoreksi
+                    pencapaiannya (Monitoring Tahfidz → koreksi/kunci status juz). Bila belum, catat
+                    sisanya lewat <b>Hafalan Baru</b>.
+                </p>
+                <button @click="koreksi = null" class="w-full py-3 rounded-xl bg-gray-100 text-gray-600 font-bold text-sm">Tutup</button>
+            </template>
+        </BottomSheet>
 
         <!-- Sheet setoran -->
         <BottomSheet :model-value="!!aktif" @update:model-value="aktif = null" :title="aktif?.nama" :subtitle="aktif ? `${aktif.total_ayat} ayat hafal · ${aktif.persen}%` : ''">
@@ -391,6 +426,15 @@ const bannerClass = { amber: 'bg-amber-50 border-amber-200 text-amber-700', emer
                     <p class="text-[10px] text-gray-400 mb-3">Rentang hafalan {{ jenis === 'ziyadah' ? 'BARU (boleh juz mana saja)' : 'yang dimurojaah' }} — boleh lintas surah. Kosongkan <b>Surah Selesai</b> bila 1 surah. <b>Ayat kosong</b> = otomatis: mulai→ayat 1, selesai→akhir surah (surah penuh). Contoh: Abasa 1 → At-Takwir 8.</p>
                 </template>
                 <p v-else class="text-[11px] text-gray-400 bg-gray-50 rounded-xl px-3 py-2 mb-3">Murojaah wajib: rentang ditentukan otomatis oleh sistem.</p>
+
+                <!-- Murojaah tambahan sering disalahpahami sebagai penambah progres.
+                     Ia hanya tercatat sebagai laporan; batas hafalan & gerbang tasmi'
+                     hanya bergerak dari Hafalan Baru yang LULUS. -->
+                <p v-if="jenis === 'murojaah_tambahan'" class="text-[11px] text-sky-700 bg-sky-50 rounded-xl px-3 py-2 mb-3">
+                    Murojaah+ hanya <b>dicatat sebagai laporan</b> — tidak menambah progres hafalan,
+                    tidak menggerakkan batas hafalan, dan tidak memunculkan tasmi'. Untuk menambah
+                    hafalan gunakan <b>Hafalan Baru</b>.
+                </p>
 
                 <div v-if="jenis === 'ziyadah'" class="mb-3">
                     <label class="block text-[11px] font-medium text-gray-600 mb-1">Nilai (1–10) <span class="text-red-500">*</span></label>

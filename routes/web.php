@@ -684,6 +684,11 @@ Route::prefix('admin')
             Route::patch('kelas/{kelas}/aktifkan', [KelasController::class, 'aktifkan'])->name('kelas.aktifkan');
             Route::get('kelas/{kelas}/santri', [KelasController::class, 'santriKelas'])->name('kelas.santri');
             Route::post('kelas/{kelas}/naik-kelas', [KelasController::class, 'naikKelas'])->name('kelas.naik-kelas');
+            // Papan perombakan: banyak santri → banyak kelas tujuan, sekali simpan.
+            // Dipasang SEBELUM rute ber-parameter {kelas} agar "perombakan" tidak
+            // ditangkap sebagai nama kelas.
+            Route::get('kelas/perombakan',  [KelasController::class, 'perombakan'])->name('kelas.perombakan');
+            Route::post('kelas/perombakan', [KelasController::class, 'simpanPerombakan'])->name('kelas.perombakan.simpan');
             // Panel centang "Atur Santri": satu layanan keanggotaan, riwayat dijaga.
             Route::get('kelas/{kelas}/atur-santri', [KelasController::class, 'aturSantriData'])->name('kelas.atur-santri.data');
             Route::post('kelas/{kelas}/atur-santri', [KelasController::class, 'aturSantri'])->name('kelas.atur-santri');

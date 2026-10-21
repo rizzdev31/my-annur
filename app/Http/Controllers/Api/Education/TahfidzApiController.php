@@ -434,16 +434,52 @@ class TahfidzApiController extends Controller
 
         $ids      = $santri->pluck('id');
         $hafalan  = HafalanSantri::whereIn('santri_id', $ids)->get()->keyBy('santri_id');
-        $tasmiJuz = HafalanJuz::whereIn('santri_id', $ids)->where('status', 'selesai')
-            ->get()->groupBy('santri_id');
         $quran = new \App\Services\QuranReferenceService();
+
+        // ── Gerbang tasmi': HARUS sama dengan gerbang resmi ──────────────────
+        // Dulu di sini hanya `status = 'selesai'`, tanpa memeriksa cakupan nyata —
+        // padahal TahfidzService::alasanBelumBolehTasmi() (yang dipakai saat
+        // penguji ditunjuk) mensyaratkan cakupannya penuh. Akibatnya tombol
+        // tasmi' muncul di halaqoh untuk juz yang belum khatam, lalu baru
+        // ditolak di langkah berikutnya. Terukur 22 Okt 2026: dari 21 baris
+        // 'selesai', 3 memunculkan tombol yang gerbangnya menolak (kurang 1,
+        // 13, dan 130 ayat).
+        //
+        // Guru mengira pemicunya murojaah+, karena roster hanya dimuat ulang
+        // setelah setoran disimpan — jadi tombol yang SUDAH tertunggak baru
+        // terlihat tepat setelah murojaah+ tersimpan. Murojaah+ sendiri tidak
+        // pernah menyentuh progres: cakupan dihitung HANYA dari ziyadah lulus.
+        $svcTahfidz   = new \App\Services\TahfidzService();
+        $tasmiSah     = [];
+        $tasmiKoreksi = [];
+        foreach (HafalanJuz::whereIn('santri_id', $ids)->where('status', 'selesai')->get() as $hj) {
+            $sid = (int) $hj->santri_id;
+            $juz = (int) $hj->juz;
+            if ($hj->status_dikunci) {        // diakui manual superadmin → menang
+                $tasmiSah[$sid][] = $juz;
+                continue;
+            }
+            $c = $svcTahfidz->cakupanJuz($sid, $juz);
+            if ($c['penuh']) {
+                $tasmiSah[$sid][] = $juz;
+            } else {
+                // Jangan hilang diam-diam: guru harus tahu juznya tercatat
+                // selesai tetapi cakupannya kurang, supaya ia meminta koreksi
+                // superadmin alih-alih menyimpulkan tombolnya rusak.
+                $tasmiKoreksi[$sid][] = [
+                    'juz'    => $juz,
+                    'kurang' => $c['kurang'],
+                    'belum'  => collect($c['belum'])->map(fn ($b) => $b['teks'])->take(2)->values()->all(),
+                ];
+            }
+        }
 
         // Izin (Perizinan Santri) & sakit (Smart Health) → status awal absensi,
         // sama persis dengan roster mengajar reguler.
         $kh      = app(\App\Services\KehadiranSantriService::class);
         $konteks = $kh->konteks($ids, $tanggal ?? TimezoneHelper::today()->toDateString());
 
-        $data = $santri->map(function ($s) use ($hafalan, $tasmiJuz, $totalQuran, $quran, $kh, $konteks, $tersimpan) {
+        $data = $santri->map(function ($s) use ($hafalan, $tasmiSah, $tasmiKoreksi, $totalQuran, $quran, $kh, $konteks, $tersimpan) {
             $h = $hafalan->get($s->id);
             $total = $h?->total_ayat ?? 0;
             // Saran "lanjut dari" = ayat setelah hafalan terakhir (untuk hafalan baru).
@@ -461,7 +497,10 @@ class TahfidzApiController extends Controller
                 'total_ayat'      => $total,
                 'persen'          => $totalQuran > 0 ? round($total / $totalQuran * 100, 2) : 0,
                 'perlu_murojaah'  => (bool) ($h?->perlu_murojaah ?? false),
-                'juz_perlu_tasmi' => $tasmiJuz->get($s->id)?->pluck('juz')->values() ?? [],
+                'juz_perlu_tasmi'   => $tasmiSah[$s->id] ?? [],
+                // Juz yang tercatat selesai tapi cakupannya kurang → butuh
+                // koreksi superadmin, bukan tombol tasmi'.
+                'juz_perlu_koreksi' => $tasmiKoreksi[$s->id] ?? [],
                 'last_surah'         => $h?->last_surah,
                 'last_surah_selesai' => $h?->last_surah_selesai,
                 'last_ayat_mulai'    => $h?->last_ayat_mulai,

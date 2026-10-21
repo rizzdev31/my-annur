@@ -11,6 +11,16 @@
                     {{ summary.tahfidz }} tahfidz · {{ summary.tahsin }} tahsin
                 </p>
             </div>
+            <div class="flex items-center gap-2">
+            <Link :href="route('admin.smart-education.kelas.perombakan')"
+                class="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl transition-colors"
+                title="Pindahkan banyak santri ke beberapa kelas sekaligus">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 7h12m0 0l-4-4m4 4l-4 4M16 17H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                Perombakan Kelas
+            </Link>
             <button @click="openCreate"
                 class="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm shadow-indigo-200">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -18,6 +28,7 @@
                 </svg>
                 Tambah Kelas
             </button>
+            </div>
         </div>
 
         <!-- Filter jenis -->
@@ -388,7 +399,7 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
+import { Head, Link, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import { confirm } from '@/composables/useConfirm'
 
