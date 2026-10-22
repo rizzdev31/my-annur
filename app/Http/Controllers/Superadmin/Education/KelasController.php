@@ -104,7 +104,9 @@ class KelasController extends Controller
         $kelasSlot = \Illuminate\Support\Facades\DB::table('kelas_santri')
             ->join('kelas', 'kelas.id', '=', 'kelas_santri.kelas_id')
             ->where('kelas_santri.is_aktif', true)->whereIn('kelas.jenis', $slot)
-            ->get(['kelas_santri.santri_id', 'kelas.id', 'kelas.nama'])
+            // jenis & tingkat ikut: panel perlu tahu apakah mencentang santri ini
+            // berarti NAIK/TURUN kelas, bukan sekadar pindah.
+            ->get(['kelas_santri.santri_id', 'kelas.id', 'kelas.nama', 'kelas.jenis', 'kelas.tingkat'])
             ->keyBy('santri_id');
 
         // Pencapaian yang DIBAWA santri — ditampilkan di konfirmasi agar admin
@@ -123,7 +125,9 @@ class KelasController extends Controller
                     'jenis_kelamin' => $s->jenis_kelamin,
                     'anggota'       => $k && (int) $k->id === $kelas->id,
                     // Kelas lain di slot yang sama → akan DIPINDAH bila dicentang.
-                    'kelas_lain'    => $k && (int) $k->id !== $kelas->id ? $k->nama : null,
+                    'kelas_lain'         => $k && (int) $k->id !== $kelas->id ? $k->nama : null,
+                    'kelas_lain_jenis'   => $k && (int) $k->id !== $kelas->id ? $k->jenis : null,
+                    'kelas_lain_tingkat' => $k && (int) $k->id !== $kelas->id ? $k->tingkat : null,
                     'hafalan_ayat'  => (int) ($hafalan[$s->id] ?? 0),
                     'tahsin_level'  => $s->tahsin_level,
                     'progres_tahsin'=> $progresTahsin->has($s->id),
@@ -137,6 +141,7 @@ class KelasController extends Controller
         return response()->json(['success' => true, 'data' => [
             'kelas' => [
                 'id' => $kelas->id, 'nama' => $kelas->nama, 'jenis' => $kelas->jenis,
+                'tingkat' => $kelas->tingkat,
                 'level_tahsin' => $kelas->level_tahsin,
                 'slot_label' => $kelas->slotLabel(),
             ],

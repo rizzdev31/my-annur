@@ -30,14 +30,17 @@ class SantriController extends Controller
                 'program_quran'  => $s->program_quran,
                 'is_aktif'       => $s->is_aktif,
                 'punya_password' => $s->password !== null,   // status aktivasi Portal Santri
-                'kelas'          => $s->kelas->map(fn($k) => ['id' => $k->id, 'nama' => $k->nama, 'jenis' => $k->jenis]),
+                // `tingkat` ikut: formulir memakainya untuk memperingatkan bahwa
+                // mengganti kelas di sini berarti NAIK/TURUN, bukan pindah.
+                'kelas'          => $s->kelas->map(fn($k) => ['id' => $k->id, 'nama' => $k->nama,
+                                        'jenis' => $k->jenis, 'tingkat' => $k->tingkat]),
                 'kelas_ids'      => $s->kelas->pluck('id'),
             ]);
 
         return Inertia::render('Admin/SmartEducation/Santri/Index', [
             'santri' => $santri,
             'kelas'  => Kelas::aktif()->orderBy('jenis')->orderBy('nama')
-                ->get(['id', 'nama', 'jenis']),
+                ->get(['id', 'nama', 'jenis', 'tingkat']),
             'summary' => [
                 'total' => Santri::count(),
                 'aktif' => Santri::aktif()->count(),

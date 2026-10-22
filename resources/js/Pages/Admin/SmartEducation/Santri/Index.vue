@@ -201,11 +201,38 @@
                                 </label>
                             </div>
                             <p v-else class="text-xs text-gray-400">Belum ada kelas. Tambahkan di menu Kelas dulu.</p>
+
+                            <!-- PERINGATAN: mengganti kelas di sini bisa berarti NAIK/TURUN.
+                                 Formulir ini sengaja tidak menolaknya (penetapan satu-satu
+                                 tetap boleh), tapi admin harus sadar bedanya. -->
+                            <div v-if="peringatanSifat.length"
+                                class="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
+                                <p class="text-xs font-bold text-amber-900">⚠ Ini bukan pindah kelas</p>
+                                <ul class="mt-1 space-y-1 text-[11px] text-amber-800 leading-snug">
+                                    <li v-for="(w, i) in peringatanSifat" :key="i">
+                                        <b>{{ w.sifat === 'naik' ? 'NAIK' : 'TURUN' }}</b>
+                                        dari {{ w.dari }} ke {{ w.ke }}
+                                        <span class="text-amber-700">({{ w.sebab }})</span>
+                                    </li>
+                                </ul>
+                                <p class="mt-1.5 text-[11px] text-amber-700">
+                                    Kenaikan sebaiknya lewat tombol <b>Naik Kelas</b> di menu Kelas, supaya
+                                    seluruh santri kelas itu diproses sekaligus. Dari sini pun boleh —
+                                    riwayatnya tetap tercatat sebagai kenaikan — tapi hanya santri ini yang berubah.
+                                </p>
+                                <label class="mt-2 flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" v-model="akuiSifat"
+                                        class="mt-0.5 rounded border-amber-300 text-amber-600 focus:ring-amber-200" />
+                                    <span class="text-[11px] font-semibold text-amber-900">
+                                        Saya mengerti ini kenaikan/penurunan kelas, bukan pindah kelas.
+                                    </span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <div class="flex gap-3 mt-6">
                         <button @click="closeForm" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50">Batal</button>
-                        <button @click="submit" :disabled="saving"
+                        <button @click="submit" :disabled="saving || (peringatanSifat.length && !akuiSifat)"
                             class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-60 transition-colors">
                             {{ saving ? 'Menyimpan...' : (editTarget ? 'Simpan' : 'Tambah') }}
                         </button>
@@ -294,6 +321,7 @@ function openCreate() {
 }
 function openEdit(s) {
     editTarget.value = s
+    akuiSifat.value = false
     Object.assign(form, {
         nip: s.nip, nama_lengkap: s.nama_lengkap, nama_panggilan: s.nama_panggilan ?? '',
         email: s.email ?? '', jenis_kelamin: s.jenis_kelamin, tempat_lahir: s.tempat_lahir ?? '',
@@ -303,9 +331,52 @@ function openEdit(s) {
     })
     showForm.value = true
 }
+// Tingkat sebagai angka; cermin KenaikanKelasService::angkaTingkat().
+const angkaTingkat = (t) => (t != null && /^\d+$/.test(String(t).trim()) ? Number(t) : null)
+const slotDari = (jenis) => ({ sekolah: 'sekolah', pesantren: 'pesantren' }[jenis] ?? 'quran')
+
+const akuiSifat = ref(false)
+
+// Kelas yang DIPILIH tapi berarti kenaikan/penurunan dibanding kelas santri
+// sekarang — dibandingkan per slot, karena satu santri boleh punya kelas
+// sekolah dan kelas Quran sekaligus.
+const peringatanSifat = computed(() => {
+    const s = editTarget.value
+    if (!s) return []        // santri baru = penempatan, bukan naik/turun
+
+    const hasil = []
+    for (const id of form.kelas_ids) {
+        const baru = props.kelas.find((k) => k.id === id)
+        if (!baru) continue
+        const lama = (s.kelas ?? []).find((k) => slotDari(k.jenis) === slotDari(baru.jenis))
+        if (!lama || lama.id === baru.id) continue
+
+        if (lama.jenis !== baru.jenis) {
+            if (lama.jenis === 'tahsin' && baru.jenis === 'tahfidz') {
+                hasil.push({ sifat: 'naik', dari: lama.nama, ke: baru.nama,
+                    sebab: 'ganti program tahsin → tahfidz' })
+            } else if (lama.jenis === 'tahfidz' && baru.jenis === 'tahsin') {
+                hasil.push({ sifat: 'turun', dari: lama.nama, ke: baru.nama,
+                    sebab: 'kembali ke program tahsin' })
+            }
+            continue
+        }
+        if (baru.jenis === 'sekolah') {
+            const a = angkaTingkat(lama.tingkat)
+            const b = angkaTingkat(baru.tingkat)
+            if (a !== null && b !== null && a !== b) {
+                hasil.push({ sifat: b > a ? 'naik' : 'turun', dari: lama.nama, ke: baru.nama,
+                    sebab: `tingkat ${lama.tingkat} → ${baru.tingkat}` })
+            }
+        }
+    }
+    return hasil
+})
+
 function closeForm() {
     showForm.value = false
     editTarget.value = null
+    akuiSifat.value = false
     Object.assign(form, blank())
 }
 function submit() {

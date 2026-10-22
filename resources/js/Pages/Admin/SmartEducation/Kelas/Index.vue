@@ -342,7 +342,9 @@
                                     <span v-if="s.anggota && !pilih.has(s.id)" class="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-50 text-red-600">akan keluar</span>
                                     <span v-else-if="!s.anggota && pilih.has(s.id)" class="text-[10px] font-semibold px-2 py-0.5 rounded"
                                         :class="s.kelas_lain ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'">
-                                        {{ s.kelas_lain ? `pindah dari ${s.kelas_lain}` : 'masuk' }}
+                                        {{ s.kelas_lain
+                                            ? `${['naik','turun'].includes(sifatCentang(s)) ? sifatCentang(s).toUpperCase() : 'pindah'} dari ${s.kelas_lain}`
+                                            : 'masuk' }}
                                     </span>
                                     <span v-else-if="s.anggota" class="text-[10px] text-gray-400">anggota</span>
                                     <span v-else-if="s.kelas_lain" class="text-[10px] text-gray-400 truncate max-w-[120px]">{{ s.kelas_lain }}</span>
@@ -365,6 +367,38 @@
                                 <b>Pencapaian tidak berubah karena pindah kelas.</b>
                                 Hafalan tahfidz lanjut dari capaian terakhir; santri dari tahsin memulai hafalan tahfidz baru
                                 (nilai tahsinnya tetap tersimpan); level tahsin santri yang sudah punya nilai tidak diubah.
+                            </div>
+
+                            <!-- PERINGATAN: ini kenaikan/penurunan, bukan pindah kelas.
+                                 Panel ini sengaja tidak menolaknya (penetapan satu-satu tetap
+                                 boleh), tapi admin harus sadar apa yang ia lakukan. -->
+                            <div v-if="perluAkuiSifat"
+                                class="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
+                                <p class="text-xs font-bold text-amber-900">
+                                    ⚠ Ini bukan pindah kelas
+                                </p>
+                                <ul class="mt-1 space-y-1 text-[11px] text-amber-800 leading-snug">
+                                    <li v-for="s in diff.naik" :key="'n' + s.id">
+                                        <b>{{ s.nama }}</b> — <b>NAIK</b> dari {{ s.kelas_lain }} ke {{ atur.nama }}
+                                        <span v-if="s.kelas_lain_jenis !== atur.jenis"> (ganti program {{ s.kelas_lain_jenis }} → {{ atur.jenis }})</span>
+                                        <span v-else> (naik tingkat {{ s.kelas_lain_tingkat }} → {{ atur.tingkat }})</span>
+                                    </li>
+                                    <li v-for="s in diff.turun" :key="'t' + s.id">
+                                        <b>{{ s.nama }}</b> — <b>TURUN</b> dari {{ s.kelas_lain }} ke {{ atur.nama }}
+                                    </li>
+                                </ul>
+                                <p class="mt-1.5 text-[11px] text-amber-700">
+                                    Kenaikan semestinya lewat tombol <b>Naik Kelas</b> pada kelas asalnya, supaya
+                                    seluruh santri kelas itu diproses sekaligus. Dari panel ini pun boleh —
+                                    riwayatnya tetap tercatat sebagai kenaikan — tapi hanya santri ini yang berubah.
+                                </p>
+                                <label class="mt-2 flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" v-model="akuiSifat"
+                                        class="mt-0.5 rounded border-amber-300 text-amber-600 focus:ring-amber-200" />
+                                    <span class="text-[11px] font-semibold text-amber-900">
+                                        Saya mengerti ini kenaikan/penurunan kelas, bukan pindah kelas.
+                                    </span>
+                                </label>
                             </div>
 
                             <div v-if="diff.pindah.length" class="mb-3">
@@ -417,7 +451,8 @@
                         </template>
                         <template v-else>
                             <button @click="aturKonfirmasi = false" :disabled="aturSaving" class="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">Kembali</button>
-                            <button @click="simpanAtur" :disabled="aturSaving"
+                            <button @click="simpanAtur" :disabled="aturSaving || (perluAkuiSifat && !akuiSifat)"
+                                :title="perluAkuiSifat && !akuiSifat ? 'Centang dulu pernyataan kenaikan/penurunan di atas' : ''"
                                 class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50">
                                 {{ aturSaving ? 'Menyimpan…' : 'Simpan Perubahan' }}
                             </button>
@@ -585,6 +620,7 @@ const pilih = ref(new Set())
 
 async function openAtur(k) {
     atur.value = k; aturData.value = null; aturKonfirmasi.value = false
+    akuiSifat.value = false   // pengakuan tidak boleh terbawa dari kelas sebelumnya
     aturQ.value = ''; aturStatus.value = 'semua'; aturJk.value = 'semua'
     aturTanggal.value = new Date().toISOString().slice(0, 10)
     pilih.value = new Set(); aturLoading.value = true
@@ -632,14 +668,42 @@ function centangSemua(nyala) {
 }
 
 const dipilih = computed(() => [...pilih.value])
+// Sifat perubahan untuk SATU santri bila ia dicentang ke kelas ini.
+// Cerminan KenaikanKelasService::sifatPerpindahan() — panel ini memang TIDAK
+// dibatasi servernya (aturan 22 Okt: penetapan satu-satu tetap boleh), jadi
+// tugas layar ini memperingatkan, bukan menolak.
+function sifatCentang(s) {
+    const k = aturData.value?.kelas
+    if (!k || !s.kelas_lain_jenis) return 'penempatan'
+    if (s.kelas_lain_jenis !== k.jenis) {
+        if (s.kelas_lain_jenis === 'tahsin' && k.jenis === 'tahfidz') return 'naik'
+        if (s.kelas_lain_jenis === 'tahfidz' && k.jenis === 'tahsin') return 'turun'
+        return 'pindah'
+    }
+    if (k.jenis === 'sekolah') {
+        const a = angkaTingkat(s.kelas_lain_tingkat)
+        const b = angkaTingkat(k.tingkat)
+        if (a !== null && b !== null && a !== b) return b > a ? 'naik' : 'turun'
+    }
+    return 'pindah'
+}
+
 const diff = computed(() => {
     const s = semuaSantri.value
+    const pindah = s.filter(x => !x.anggota && pilih.value.has(x.id) && x.kelas_lain)
     return {
         baru:   s.filter(x => !x.anggota && pilih.value.has(x.id) && !x.kelas_lain),
-        pindah: s.filter(x => !x.anggota && pilih.value.has(x.id) && x.kelas_lain),
+        pindah,
         keluar: s.filter(x => x.anggota && !pilih.value.has(x.id)),
+        // Yang sebenarnya KENAIKAN/PENURUNAN, bukan pindah kelas.
+        naik:  pindah.filter(x => sifatCentang(x) === 'naik'),
+        turun: pindah.filter(x => sifatCentang(x) === 'turun'),
     }
 })
+
+// Peringatan wajib diakui dulu bila ada kenaikan/penurunan di antara perubahan.
+const perluAkuiSifat = computed(() => diff.value.naik.length + diff.value.turun.length > 0)
+const akuiSifat = ref(false)
 // Pencapaian yang dibawa santri ke kelas ini — sama dengan aturan di server
 // (KenaikanKelasService / Santri::tempatkanLevelTahsin).
 const labelLevel = (lv) => (lv === 6 ? 'Persiapan Tahfidz' : `Level ${lv ?? '?'}`)
