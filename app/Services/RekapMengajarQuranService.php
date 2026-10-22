@@ -84,6 +84,32 @@ class RekapMengajarQuranService
                     'jurnal_kosong'    => $g->whereIn('kategori', ['mengajar', 'inval'])->where('aktivitas', 0)->count(),
                     'aktivitas'        => (int) $g->sum('aktivitas'),
                     'persen'           => $dasar > 0 ? round($mengajar / $dasar * 100, 1) : null,
+
+                    // ── TANGGALNYA, bukan hanya jumlahnya ────────────────────
+                    // Angka "tidak masuk 4" tidak bisa diaudit: yang diperiksa
+                    // adalah tanggal mana, kelas mana, dan sebabnya. Dulu itu
+                    // hanya terlihat bila admin menyaring satu guru lalu membuka
+                    // tabel rincian — sehingga memeriksa 30 guru = 30 kali muat.
+                    'tanggal_masuk'       => $g->where('milik_sendiri', true)->where('kategori', 'mengajar')
+                        ->pluck('tanggal')->unique()->sort()->values()->all(),
+                    'tanggal_tidak_masuk' => $g->where('milik_sendiri', true)
+                        ->whereIn('kategori', ['tidak_terlaksana', 'tanpa_catatan'])
+                        ->sortBy('tanggal')
+                        ->map(fn ($x) => ['tanggal' => $x['tanggal'], 'kelas' => $x['kelas'],
+                            'jam' => $x['jam'], 'kategori' => $x['kategori'],
+                            'sebab' => $x['keterangan']])->values()->all(),
+                    'tanggal_izin'        => $g->where('milik_sendiri', true)->where('kategori', 'izin')
+                        ->sortBy('tanggal')
+                        ->map(fn ($x) => ['tanggal' => $x['tanggal'], 'kelas' => $x['kelas'],
+                            'sebab' => $x['keterangan']])->values()->all(),
+                    'tanggal_digantikan'  => $g->where('milik_sendiri', true)->where('kategori', 'digantikan')
+                        ->sortBy('tanggal')
+                        ->map(fn ($x) => ['tanggal' => $x['tanggal'], 'kelas' => $x['kelas'],
+                            'sebab' => $x['keterangan']])->values()->all(),
+                    'tanggal_inval_tidak_datang' => $g->where('milik_sendiri', false)
+                        ->where('kategori', 'tidak_terlaksana')->sortBy('tanggal')
+                        ->map(fn ($x) => ['tanggal' => $x['tanggal'], 'kelas' => $x['kelas'],
+                            'sebab' => $x['keterangan']])->values()->all(),
                 ];
             })
             ->sortBy([['tipe', 'asc'], ['persen', 'asc'], ['guru', 'asc']])
@@ -142,6 +168,10 @@ class RekapMengajarQuranService
             ->get([
                 'a.id', 'a.jadwal_mengajar_id', 'a.tanggal', 'a.status', 'a.tenaga_pendidik_id',
                 'a.digantikan_oleh', 'a.jam_selesai_aktual', 'a.jp_terlaksana',
+                // Alasan yang SUDAH tercatat sistem/guru. Dulu tidak diambil sama
+                // sekali, padahal inilah bahan audit: 156/156 sesi tidak terlaksana,
+                // 32/32 izin, dan 38/38 sesi pengganti punya isinya.
+                'a.keterangan as keterangan_tercatat',
                 'j.jam_mulai', 'j.jam_selesai', 'j.jumlah_jp', 'm.tipe', 'k.nama as kelas',
             ]);
 
@@ -161,6 +191,34 @@ class RekapMengajarQuranService
 
         $guruNama = DB::table('tenaga_pendidik as tp')->join('users as u', 'u.id', '=', 'tp.user_id')
             ->pluck('u.name', 'tp.id');
+
+        // ── Rujukan izin: guru|tanggal → "Dinas Luar #156" ──────────────────
+        // Keterangan tersimpan sudah menyebut JENIS izinnya, tetapi tidak nomor
+        // pengajuannya. Nomor itulah yang membuat keterangan bisa DIPERIKSA:
+        // auditor bisa membuka pengajuan aslinya, bukan hanya membaca kalimat.
+        $izinPeta = [];
+        foreach (DB::table('pengajuan_izin as p')
+            ->join('setting_jenis_pengajuan as sj', 'sj.id', '=', 'p.setting_jenis_pengajuan_id')
+            ->where('p.status', 'disetujui')
+            ->where('p.tanggal_mulai', '<=', $sampai)->where('p.tanggal_selesai', '>=', $dari)
+            ->get(['p.id', 'p.tenaga_pendidik_id', 'p.tanggal_mulai', 'p.tanggal_selesai',
+                   'p.is_sementara', 'p.jam_mulai', 'p.jam_selesai', 'sj.nama']) as $iz) {
+            $d1 = Carbon::parse($iz->tanggal_mulai)->max($mulai);
+            $d2 = Carbon::parse($iz->tanggal_selesai)->min($selesai);
+            $jam = $iz->is_sementara && $iz->jam_mulai
+                ? ' ' . substr((string) $iz->jam_mulai, 0, 5) . '–' . substr((string) $iz->jam_selesai, 0, 5)
+                : '';
+            for ($d = $d1->copy(); $d->lte($d2); $d->addDay()) {
+                $izinPeta[$iz->tenaga_pendidik_id . '|' . $d->toDateString()]
+                    = $iz->nama . $jam . ' #' . $iz->id;
+            }
+        }
+
+        /** Gabung beberapa penggal keterangan tanpa duplikasi/penggal kosong. */
+        $rangkai = fn (array $bagian) => implode(' · ', array_values(array_unique(array_filter(
+            array_map(fn ($x) => trim(rtrim((string) $x, '.')), $bagian),
+            fn ($x) => $x !== ''
+        )))) ?: null;
 
         $baris = collect();
         $tercatat = [];
@@ -184,11 +242,19 @@ class RekapMengajarQuranService
                 'santri_total' => (int) ($santri[$a->id]->total ?? 0),
             ];
 
+            $izinRujukan = $izinPeta[$a->tenaga_pendidik_id . '|' . $tgl] ?? null;
+            $ditutup = $a->jam_selesai_aktual
+                ? 'ditutup ' . substr((string) $a->jam_selesai_aktual, 0, 5) : null;
+
             if ($a->digantikan_oleh) {
                 // Guru asli: netral.
                 $baris->push($dasar + ['guru_id' => (int) $a->tenaga_pendidik_id, 'milik_sendiri' => true,
                     'kategori' => 'digantikan', 'jp' => 0, 'aktivitas' => 0,
-                    'keterangan' => 'Digantikan ' . ($guruNama[$a->digantikan_oleh] ?? 'guru lain')]);
+                    'keterangan' => $rangkai([
+                        'Digantikan ' . ($guruNama[$a->digantikan_oleh] ?? 'guru lain'),
+                        $izinRujukan ? 'izin ' . $izinRujukan : null,
+                        $a->keterangan_tercatat,
+                    ])]);
 
                 // Pengganti: inval / tidak terlaksana / belum waktunya.
                 $katInval = match (true) {
@@ -200,7 +266,12 @@ class RekapMengajarQuranService
                     $baris->push($dasar + ['guru_id' => (int) $a->digantikan_oleh, 'milik_sendiri' => false,
                         'kategori' => $katInval, 'jp' => (int) $a->jp_terlaksana,
                         'aktivitas' => $katInval === 'inval' ? $aktivitasUntuk((int) $a->digantikan_oleh) : 0,
-                        'keterangan' => 'Inval untuk ' . ($guruNama[$a->tenaga_pendidik_id] ?? 'guru lain')]);
+                        'keterangan' => $rangkai([
+                            'Inval untuk ' . ($guruNama[$a->tenaga_pendidik_id] ?? 'guru lain'),
+                            $katInval === 'inval' ? $ditutup : 'tidak datang sampai batas '
+                                . KebijakanMengajar::batasAbsenSesi($tgl, (string) $a->jam_selesai)->format('H:i'),
+                            $a->keterangan_tercatat,
+                        ])]);
                 }
                 continue;
             }
@@ -214,10 +285,29 @@ class RekapMengajarQuranService
             };
             if (!$kategori || $kategori === 'libur') continue; // hari libur bukan jadwal wajib
 
+            // Keterangan diisi untuk SEMUA kategori — termasuk "masuk" dan "tidak
+            // masuk". Dulu hanya baris inval/digantikan/tanpa-catatan yang punya
+            // keterangan, sehingga justru 156 sesi tidak terlaksana (bahan audit
+            // utama) tampil tanpa sebab apa pun padahal sebabnya tersimpan.
+            $keterangan = match ($kategori) {
+                'mengajar' => $rangkai([$ditutup, $a->keterangan_tercatat]),
+                'izin'     => $rangkai([
+                    $izinRujukan ? 'Izin: ' . $izinRujukan : 'Izin',
+                    $a->keterangan_tercatat,
+                ]),
+                'tidak_terlaksana' => $rangkai([
+                    $a->keterangan_tercatat
+                        ?: 'Tidak ada absen sampai batas '
+                            . KebijakanMengajar::batasAbsenSesi($tgl, (string) $a->jam_selesai)->format('H:i'),
+                    $izinRujukan ? 'guru punya izin ' . $izinRujukan : null,
+                ]),
+                default => $rangkai([$a->keterangan_tercatat]),
+            };
+
             $baris->push($dasar + ['guru_id' => (int) $a->tenaga_pendidik_id, 'milik_sendiri' => true,
                 'kategori' => $kategori, 'jp' => $kategori === 'mengajar' ? (int) $a->jp_terlaksana : 0,
                 'aktivitas' => $kategori === 'mengajar' ? $aktivitasUntuk((int) $a->tenaga_pendidik_id) : 0,
-                'keterangan' => null]);
+                'keterangan' => $keterangan]);
         }
 
         // ── Terjadwal tetapi tanpa catatan apa pun ──────────────────────────
@@ -254,7 +344,8 @@ class RekapMengajarQuranService
                     'santri_hadir' => 0, 'santri_total' => 0,
                     'guru_id'    => (int) $j->tenaga_pendidik_id, 'milik_sendiri' => true,
                     'kategori'   => 'tanpa_catatan', 'jp' => 0, 'aktivitas' => 0,
-                    'keterangan' => 'Terjadwal, tidak ada catatan',
+                    'keterangan' => 'Terjadwal, tidak ada catatan sama sekali (batas '
+                        . KebijakanMengajar::batasAbsenSesi($tgl, (string) $j->jam_selesai)->format('H:i') . ')',
                 ]);
             }
         }

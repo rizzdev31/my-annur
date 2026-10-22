@@ -101,6 +101,18 @@
                             <span v-if="a.is_koreksi" class="ml-1 text-xs text-amber-500">✎</span>
                             <p v-if="a.status === 'pengganti' && a.pengganti_nama"
                                 class="text-xs text-violet-600 mt-1">🔄 oleh {{ a.pengganti_nama }}</p>
+
+                            <!-- Keterangan sudah dikirim controller sejak lama tapi tidak
+                                 pernah dirender, padahal inilah SEBAB sesi tidak terlaksana
+                                 ("Otomatis: absen & jurnal tidak diisi sampai batas 06:00",
+                                 "guru izin Dinas Luar tanpa pengganti"). Tanpa ini halaman
+                                 hanya memperlihatkan status tanpa alasannya. -->
+                            <p v-if="a.keterangan" class="text-[11px] text-gray-500 mt-1 max-w-[260px] leading-snug">
+                                {{ a.keterangan }}
+                            </p>
+                            <p v-if="a.jam_mulai_aktual" class="text-[11px] text-gray-400 mt-0.5">
+                                diisi {{ String(a.jam_mulai_aktual).slice(0, 5) }}
+                            </p>
                         </td>
                         <td class="px-4 py-3.5 text-right whitespace-nowrap">
                             <button @click="openInput(a)"

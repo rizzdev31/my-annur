@@ -157,6 +157,7 @@
                         <th class="border border-gray-200 px-2 py-2">Masuk</th>
                         <th class="border border-gray-200 px-2 py-2">Tidak<br>Masuk</th>
                         <th class="border border-gray-200 px-2 py-2">%</th>
+                        <th class="border border-gray-200 px-2 py-2 text-left">Tanggal<br><span class="font-normal text-[10px] opacity-75">masuk &amp; tidak masuk</span></th>
                         <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">Terjadwal</th>
                         <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">Izin /<br>Dialihkan</th>
                         <th class="border border-gray-200 px-2 py-2 text-[10px] font-normal opacity-80">Inval</th>
@@ -181,6 +182,57 @@
                                 <span v-if="b.tanpa_catatan" class="block text-[10px] font-normal text-amber-600">{{ b.tanpa_catatan }} tanpa catatan</span>
                             </td>
                             <td class="border border-gray-200 px-2 py-2 text-center font-bold" :class="persenCls(b.persen)">{{ fmtPersen(b.persen) }}</td>
+
+                            <!-- Tanggalnya langsung di baris guru: angka "tidak masuk 4"
+                                 tidak bisa diaudit tanpa tahu tanggal & sebabnya. -->
+                            <td class="border border-gray-200 px-2 py-2 align-top">
+                                <div v-if="b.tanggal_tidak_masuk?.length" class="mb-1">
+                                    <p class="text-[10px] font-bold text-red-700 uppercase tracking-wide">Tidak masuk</p>
+                                    <ul class="text-[11px] text-red-700 leading-snug">
+                                        <li v-for="(t, k) in b.tanggal_tidak_masuk" :key="'tm' + k">
+                                            <b>{{ tglSingkat(t.tanggal) }}</b>
+                                            <span class="text-gray-500"> · {{ t.kelas }} {{ t.jam }}</span>
+                                            <span v-if="t.sebab" class="block text-[10px] text-gray-500 pl-2">{{ t.sebab }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div v-if="b.tanggal_izin?.length" class="mb-1">
+                                    <p class="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Izin</p>
+                                    <ul class="text-[11px] text-amber-700 leading-snug">
+                                        <li v-for="(t, k) in b.tanggal_izin" :key="'iz' + k">
+                                            <b>{{ tglSingkat(t.tanggal) }}</b>
+                                            <span v-if="t.sebab" class="text-gray-500"> · {{ t.sebab }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div v-if="b.tanggal_digantikan?.length" class="mb-1">
+                                    <p class="text-[10px] font-bold text-sky-700 uppercase tracking-wide">Dialihkan</p>
+                                    <ul class="text-[11px] text-sky-700 leading-snug">
+                                        <li v-for="(t, k) in b.tanggal_digantikan" :key="'dg' + k">
+                                            <b>{{ tglSingkat(t.tanggal) }}</b>
+                                            <span v-if="t.sebab" class="text-gray-500"> · {{ t.sebab }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div v-if="b.tanggal_inval_tidak_datang?.length" class="mb-1">
+                                    <p class="text-[10px] font-bold text-red-700 uppercase tracking-wide">Inval tak datang</p>
+                                    <ul class="text-[11px] text-red-700 leading-snug">
+                                        <li v-for="(t, k) in b.tanggal_inval_tidak_datang" :key="'in' + k">
+                                            <b>{{ tglSingkat(t.tanggal) }}</b>
+                                            <span class="text-gray-500"> · {{ t.kelas }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div v-if="b.tanggal_masuk?.length">
+                                    <p class="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">
+                                        Masuk ({{ b.tanggal_masuk.length }} sesi)
+                                    </p>
+                                    <p class="text-[11px] text-gray-600 leading-snug">{{ ringkasTanggal(b.tanggal_masuk) }}</p>
+                                </div>
+                                <span v-if="!b.tanggal_tidak_masuk?.length && !b.tanggal_masuk?.length
+                                            && !b.tanggal_izin?.length && !b.tanggal_digantikan?.length"
+                                    class="text-gray-300 text-xs">—</span>
+                            </td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.terjadwal }}</td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.izin }} / {{ b.digantikan }}</td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs" :class="b.inval ? 'text-sky-700 font-semibold' : 'text-gray-300'">
@@ -190,7 +242,7 @@
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs text-gray-500">{{ b.jp }}</td>
                             <td class="border border-gray-200 px-2 py-2 text-center text-xs" :class="b.jurnal_kosong ? 'text-amber-600 font-semibold' : 'text-gray-300'">{{ b.jurnal_kosong }}</td>
                         </tr>
-                        <tr v-if="!baris.length"><td colspan="13" class="border border-gray-200 py-10 text-center text-gray-400">Tidak ada sesi tahfidz/tahsin pada periode ini.</td></tr>
+                        <tr v-if="!baris.length"><td colspan="14" class="border border-gray-200 py-10 text-center text-gray-400">Tidak ada sesi tahfidz/tahsin pada periode ini.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -355,6 +407,26 @@ const KAT = {
 const katLabel = (k) => KAT[k]?.[0] ?? k
 const katCls = (k) => KAT[k]?.[1] ?? 'bg-gray-50 text-gray-500 border-gray-200'
 const tglLabel = (t) => new Date(t + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+
+// Tanggal pendek untuk kolom audit: "Sen 6 Okt".
+const tglSingkat = (t) => new Date(t + 'T00:00:00')
+    .toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })
+
+// Tanggal "masuk" bisa puluhan; dirangkum per bulan ("6, 7, 9, 13 Okt")
+// supaya kolomnya tetap terbaca tanpa menyembunyikan satu tanggal pun.
+function ringkasTanggal(list) {
+    if (!list?.length) return '—'
+    const perBulan = new Map()
+    list.forEach((t) => {
+        const d = new Date(t + 'T00:00:00')
+        const bulan = d.toLocaleDateString('id-ID', { month: 'short' })
+        if (!perBulan.has(bulan)) perBulan.set(bulan, [])
+        perBulan.get(bulan).push(d.getDate())
+    })
+    return [...perBulan.entries()]
+        .map(([bulan, hari]) => `${[...new Set(hari)].sort((a, b) => a - b).join(', ')} ${bulan}`)
+        .join(' · ')
+}
 
 const tabCls = 'px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
 const fieldCls = 'px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all bg-white'
