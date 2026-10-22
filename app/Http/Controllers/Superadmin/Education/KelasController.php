@@ -231,7 +231,10 @@ class KelasController extends Controller
         $anggota = \Illuminate\Support\Facades\DB::table('kelas_santri')
             ->join('kelas', 'kelas.id', '=', 'kelas_santri.kelas_id')
             ->where('kelas_santri.is_aktif', true)->whereIn('kelas.jenis', $jenis)
-            ->get(['kelas_santri.santri_id', 'kelas.id as kelas_id', 'kelas.nama'])
+            // `jenis` WAJIB ikut: papan perombakan memakainya untuk membatasi
+            // tujuan ke pembelajaran yang sama (tahsin → tahfidz adalah naik
+            // kelas, bukan pindah, dan ditolak servicenya).
+            ->get(['kelas_santri.santri_id', 'kelas.id as kelas_id', 'kelas.nama', 'kelas.jenis'])
             ->keyBy('santri_id');
 
         $hafalan   = \App\Models\HafalanSantri::pluck('total_ayat', 'santri_id');
@@ -246,8 +249,9 @@ class KelasController extends Controller
                 return [
                     'id' => $s->id, 'nip' => $s->nip, 'nama' => $s->nama_lengkap,
                     'jenis_kelamin' => $s->jenis_kelamin,
-                    'kelas_id'   => $a ? (int) $a->kelas_id : null,
-                    'kelas_nama' => $a->nama ?? null,
+                    'kelas_id'    => $a ? (int) $a->kelas_id : null,
+                    'kelas_nama'  => $a->nama ?? null,
+                    'kelas_jenis' => $a->jenis ?? null,
                     'hafalan_ayat' => (int) ($hafalan[$s->id] ?? 0),
                     'juz_selesai'  => (int) ($juzSelesai[$s->id] ?? 0),
                     'tahsin_level' => $s->tahsin_level,

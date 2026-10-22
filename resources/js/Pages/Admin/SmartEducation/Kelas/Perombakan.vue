@@ -26,6 +26,15 @@
             ]">{{ s.label }}</button>
         </div>
 
+        <!-- Batas kewenangan papan ini: PINDAH, bukan naik kelas. -->
+        <p v-if="slot === 'quran'" class="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 mb-3">
+            Papan ini memindahkan santri <strong>di dalam pembelajaran yang sama</strong> —
+            tahsin ke tahsin, tahfidz ke tahfidz. Perpindahan <strong>tahsin → tahfidz adalah
+            naik kelas</strong> (ganti program) dan dikerjakan dari
+            <Link :href="route('admin.smart-education.kelas.index')" class="font-semibold underline">Daftar Kelas</Link>
+            lewat tombol Naik Kelas pada kelas tahsinnya.
+        </p>
+
         <!-- Pencapaian tidak berubah: alasan utama admin ragu memindahkan santri. -->
         <p class="text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-2.5 mb-5">
             Hafalan, juz, setoran, dan hasil tasmi' melekat pada santri — pindah halaqoh
@@ -65,7 +74,7 @@
                         <select v-model="tujuanMassal" :disabled="!terpilih.length"
                             class="px-3 py-1.5 rounded-xl border border-gray-200 text-sm disabled:bg-gray-50 disabled:text-gray-400">
                             <option value="">— tetapkan tujuan untuk yang dipilih —</option>
-                            <option v-for="k in kelasAktif" :key="k.id" :value="k.id">{{ k.nama }}</option>
+                            <option v-for="k in kelasAktif" :key="k.id" :value="k.id">{{ k.nama }} ({{ k.jenis }})</option>
                         </select>
                         <button @click="terapkanMassal" :disabled="!terpilih.length || !tujuanMassal"
                             class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-40">
@@ -73,6 +82,7 @@
                         </button>
                         <button v-if="terpilih.length" @click="terpilih = []"
                             class="px-3 py-1.5 rounded-xl border border-gray-200 text-sm text-gray-500">Bersihkan</button>
+                        <span v-if="pesanMassal" class="text-[11px] text-amber-700">{{ pesanMassal }}</span>
                     </div>
                 </div>
 
@@ -118,11 +128,17 @@
                                         :class="tujuan[s.id] ? 'border-emerald-300 bg-white text-emerald-800 font-medium'
                                                              : 'border-gray-200 text-gray-500'">
                                         <option value="">— tetap —</option>
-                                        <option v-for="k in kelasAktif" :key="k.id" :value="k.id"
+                                        <!-- Hanya kelas sejenis: lintas program ditolak servicenya,
+                                             jadi jangan ditawarkan lalu gagal saat disimpan. -->
+                                        <option v-for="k in kelasUntuk(s)" :key="k.id" :value="k.id"
                                             :disabled="k.id === s.kelas_id">
                                             {{ k.nama }}{{ k.id === s.kelas_id ? ' (sekarang)' : '' }}
                                         </option>
                                     </select>
+                                    <p v-if="s.kelas_jenis && !kelasUntuk(s).some(k => k.id !== s.kelas_id)"
+                                        class="text-[11px] text-gray-400 mt-1">
+                                        Tidak ada kelas {{ s.kelas_jenis }} lain.
+                                    </p>
                                 </td>
                             </tr>
                             <tr v-if="!tampil.length">
@@ -253,6 +269,16 @@ const tujuan = reactive({})
 const form = reactive({ tanggal: new Date().toISOString().slice(0, 10), keterangan: '' })
 
 const kelasAktif = computed(() => props.kelas.filter((k) => k.is_aktif))
+const pesanMassal = ref('')
+
+// Tujuan yang SAH untuk satu santri: hanya kelas sejenis dengan kelasnya
+// sekarang (pindah di dalam pembelajaran yang sama). Santri yang belum punya
+// kelas di slot ini boleh ditempatkan ke mana saja — itu penempatan, bukan
+// pindah, dan tidak melompati program apa pun.
+function kelasUntuk(s) {
+    if (!s.kelas_jenis) return kelasAktif.value
+    return kelasAktif.value.filter((k) => k.jenis === s.kelas_jenis)
+}
 
 const tampil = computed(() => {
     const q = cari.value.trim().toLowerCase()
@@ -276,14 +302,27 @@ function togglePilihSemua() {
 function setTujuan(s, kelasId) {
     const id = Number(kelasId)
     // "tetap" atau memilih kelasnya sendiri = tidak ada perpindahan.
-    if (!id || id === s.kelas_id) delete tujuan[s.id]
-    else tujuan[s.id] = id
+    if (!id || id === s.kelas_id) { delete tujuan[s.id]; return false }
+    // Lintas program ditolak servicenya; cegah di sini supaya tidak terkumpul
+    // lalu menggagalkan seluruh perombakan saat disimpan.
+    if (!kelasUntuk(s).some((k) => k.id === id)) return false
+    tujuan[s.id] = id
+    return true
 }
 
 function terapkanMassal() {
     const id = Number(tujuanMassal.value)
     if (!id) return
-    props.santri.filter((s) => terpilih.value.includes(s.id)).forEach((s) => setTujuan(s, id))
+    const dipilih = props.santri.filter((s) => terpilih.value.includes(s.id))
+    let kena = 0
+    dipilih.forEach((s) => { if (setTujuan(s, id)) kena++ })
+
+    const lewat = dipilih.length - kena
+    const kelas = props.kelas.find((k) => k.id === id)
+    pesanMassal.value = lewat
+        ? `${kena} ditetapkan, ${lewat} dilewati (program berbeda dari ${kelas?.jenis ?? 'kelas tujuan'}` +
+          ` — tahsin → tahfidz lewat Naik Kelas).`
+        : ''
     terpilih.value = []
     tujuanMassal.value = ''
 }
