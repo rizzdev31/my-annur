@@ -14,7 +14,12 @@ class SantriController extends Controller
 
     public function index(Request $request)
     {
-        $santri = Santri::with(['kelas' => fn ($q) => $q->select('kelas.id', 'nama', 'jenis')->where('kelas_santri.is_aktif', true)])
+        // `tingkat` WAJIB ikut di-select: formulir memakainya untuk membedakan
+        // naik tingkat dari pindah kelas. Kolom yang tidak diambil terbaca null,
+        // dan peringatannya tidak akan pernah muncul untuk kelas sekolah -
+        // tanpa galat apa pun.
+        $santri = Santri::with(['kelas' => fn ($q) => $q
+            ->select('kelas.id', 'nama', 'jenis', 'tingkat')->where('kelas_santri.is_aktif', true)])
             ->orderBy('nama_lengkap')->get()
             ->map(fn($s) => [
                 'id'             => $s->id,
