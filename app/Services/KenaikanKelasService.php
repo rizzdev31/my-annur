@@ -19,10 +19,11 @@ use Illuminate\Support\Facades\DB;
  *     Quran (tahfidz ∪ tahsin) = 1. Memasukkan santri ke kelas lain di slot yang
  *     sama otomatis MEMINDAHKAN-nya; slot berbeda berjalan berdampingan, sehingga
  *     santri kelas X bisa sekaligus menjadi anggota kelas pesantren.
- *  2b. NAIK KELAS ≠ PINDAH KELAS. Naik kelas hanya tahsin → tahfidz (ganti
- *     program); pindah kelas hanya di dalam pembelajaran yang sama. Ditegakkan
- *     di buka() lewat $mode, dan setiap baris riwayat diberi label sesuai
- *     SIFATNYA (naik / turun / pindah / penempatan), bukan sesuai tombol.
+ *  2b. NAIK KELAS ≠ PINDAH KELAS. Naik kelas = tahsin → tahfidz (ganti program)
+ *     ATAU sekolah → tingkat lebih tinggi; pindah kelas = antar kelas SEJAJAR
+ *     di pembelajaran yang sama. Ditegakkan di buka() lewat $mode, dan setiap
+ *     baris riwayat diberi label sesuai SIFATNYA (naik / turun / pindah /
+ *     penempatan), bukan sesuai tombol yang dipakai.
  *  3. PENCAPAIAN TIDAK BERUBAH KARENA PINDAH: hafalan tahfidz & level/nilai tahsin
  *     melekat pada santri. Level tahsin hanya ditempatkan saat santri tanpa progres
  *     tahsin masuk kelas tahsin. Tahsin → tahfidz memulai hafalan tahfidz baru.
@@ -38,48 +39,90 @@ class KenaikanKelasService
     public const JENIS_DIKABARI = ['tahfidz', 'tahsin'];
 
     /**
-     * NAIK KELAS vs PINDAH KELAS — dua hal berbeda (keputusan 22 Okt 2026).
+     * NAIK KELAS vs PINDAH KELAS - dua hal berbeda (keputusan 22 Okt 2026).
      *
-     *  - NAIK KELAS hanya ada pada satu jalur: tahsin → tahfidz. Itulah satu-
-     *    satunya perpindahan yang mengubah PROGRAM santri: ia berhenti dinilai
-     *    per materi tahsin dan mulai menyetor hafalan.
-     *  - PINDAH KELAS berlaku di dalam setiap pembelajaran: sekolah → sekolah,
-     *    pesantren → pesantren, tahfidz → tahfidz, tahsin → tahsin. Programnya
-     *    tetap, yang berganti hanya kelas/halaqoh dan pengampunya.
+     * NAIK KELAS punya DUA jalur:
+     *   1. tahsin -> tahfidz. Ini ganti PROGRAM: santri berhenti dinilai per
+     *      materi tahsin dan mulai menyetor hafalan. Tidak ada tingkat yang
+     *      dibandingkan, sebab tahfidz tak berjenjang kelas.
+     *   2. sekolah -> sekolah dengan TINGKAT lebih tinggi (VII -> VIII -> ...).
+     *      Program & pembelajarannya sama, yang naik adalah jenjangnya.
+     *
+     * PINDAH KELAS = perpindahan tanpa kenaikan: kelas sejajar di pembelajaran
+     * yang sama (VII A -> VII B, Tahfidz 1 -> Tahfidz 2, Tahsin Putra 1 ->
+     * Tahsin Putra 2, Muhadoroh Putri -> Putra).
      *
      * Dulu keduanya memakai satu syarat yang sama ("slot harus sama"), sehingga
-     * tahfidz → tahfidz bisa dikerjakan lewat tombol Naik Kelas dan tahsin →
-     * tahfidz bisa lewat perombakan. Akibatnya riwayat kelas tidak bisa dibaca:
-     * di produksi ada baris berketerangan "Naik kelas dari Tahfidz Putri 5"
-     * (padahal itu pindah halaqoh) dan tahsin → tahfidz yang hanya tercatat
-     * "Diatur lewat panel kelas" (padahal itu naik program).
+     * satu tombol mengerjakan dua hal. Bukti kerusakannya ada di riwayat
+     * produksi: baris berketerangan "Naik kelas dari Tahfidz Putri 5" (padahal
+     * itu pindah halaqoh) dan 19 perpindahan tahsin -> tahfidz yang sebagian
+     * hanya tercatat "Diatur lewat panel kelas" (padahal itu naik program).
      */
     public const NAIK_DARI = 'tahsin';
     public const NAIK_KE   = 'tahfidz';
 
     /**
-     * Sifat perpindahan berdasarkan jenis kelas lama → baru.
+     * Jenis kelas yang BERJENJANG, sehingga perpindahan antar tingkatnya
+     * adalah kenaikan - bukan sekadar pindah kelas.
+     *
+     * Tahsin sengaja TIDAK termasuk walau kelasnya punya `level_tahsin`:
+     * level tahsin melekat pada SANTRI (`santri.tahsin_level`, dinaikkan oleh
+     * TasnifService), bukan pada keanggotaan kelas. Memindahkan santri ke
+     * halaqoh tahsin berlevel lain adalah perombakan halaqoh, bukan kenaikan.
+     */
+    public const JENIS_BERTINGKAT = ['sekolah'];
+
+    /** Tingkat sebagai angka; null bila tak berjenjang angka (mis. "SMA"). */
+    public static function angkaTingkat(?string $tingkat): ?int
+    {
+        $t = trim((string) $tingkat);
+
+        return $t !== '' && ctype_digit($t) ? (int) $t : null;
+    }
+
+    /**
+     * Sifat perpindahan: dasar tunggal bagi penegakan aturan DAN label riwayat.
      *
      * @return string 'penempatan' | 'pindah' | 'naik' | 'turun'
      */
-    public function sifatPerpindahan(?string $jenisLama, string $jenisBaru): string
-    {
-        if ($jenisLama === null)        return 'penempatan';
-        if ($jenisLama === $jenisBaru)  return 'pindah';
-        if ($jenisLama === self::NAIK_DARI && $jenisBaru === self::NAIK_KE) return 'naik';
-        if ($jenisLama === self::NAIK_KE && $jenisBaru === self::NAIK_DARI) return 'turun';
+    public function sifatPerpindahan(
+        ?string $jenisLama,
+        string $jenisBaru,
+        ?string $tingkatLama = null,
+        ?string $tingkatBaru = null,
+    ): string {
+        if ($jenisLama === null) {
+            return 'penempatan';
+        }
 
-        return 'pindah';   // slot berbeda tidak pernah sampai ke sini
+        // Lintas pembelajaran: hanya tahsin <-> tahfidz yang punya makna naik/turun.
+        if ($jenisLama !== $jenisBaru) {
+            if ($jenisLama === self::NAIK_DARI && $jenisBaru === self::NAIK_KE) return 'naik';
+            if ($jenisLama === self::NAIK_KE && $jenisBaru === self::NAIK_DARI) return 'turun';
+
+            return 'pindah';
+        }
+
+        // Pembelajaran sama: untuk jenjang bertingkat, tingkatnya yang menentukan.
+        if (in_array($jenisBaru, self::JENIS_BERTINGKAT, true)) {
+            $a = self::angkaTingkat($tingkatLama);
+            $b = self::angkaTingkat($tingkatBaru);
+            if ($a !== null && $b !== null && $a !== $b) {
+                return $b > $a ? 'naik' : 'turun';
+            }
+        }
+
+        return 'pindah';
     }
 
     /** Label riwayat yang jujur, dipakai semua jalur. */
     private function labelSifat(string $sifat, ?string $namaLama): string
     {
         return match ($sifat) {
-            'naik'  => 'Naik kelas dari ' . $namaLama,
-            'turun' => 'Turun program dari ' . $namaLama,
+            'naik'   => 'Naik kelas dari ' . $namaLama,
+            'turun'  => 'Turun kelas dari ' . $namaLama,
             'pindah' => 'Pindah dari ' . $namaLama,
-            default => 'Penempatan kelas',
+            default  => 'Penempatan kelas',
         };
     }
 
@@ -192,11 +235,12 @@ class KenaikanKelasService
     }
 
     /**
-     * NAIK KELAS massal: seluruh santri kelas tahsin → satu kelas tahfidz.
+     * NAIK KELAS massal — seluruh santri satu kelas naik ke kelas tujuan.
      *
-     * Hanya jalur itu. Memindahkan santri antar kelas sejenis (termasuk
-     * sekolah VII → VIII dan antar halaqoh tahfidz) bukan naik kelas — itu
-     * pindah kelas, dikerjakan lewat rombak()/papan Perombakan Kelas.
+     * Dua jalur sah (lihat sifatPerpindahan): tahsin → tahfidz, dan sekolah →
+     * sekolah bertingkat lebih tinggi. Perpindahan antar kelas SEJAJAR (VII A →
+     * VII B, antar halaqoh tahfidz/tahsin) bukan naik kelas — itu pindah kelas,
+     * dikerjakan lewat rombak()/papan Perombakan Kelas.
      *
      * @return array{dipindah:int,dilewati:int}
      */
@@ -205,15 +249,21 @@ class KenaikanKelasService
         if ($sumber->id === $tujuan->id) {
             throw new \DomainException('Kelas tujuan tidak boleh sama dengan kelas sumber.');
         }
-        // NAIK KELAS = satu jalur saja: tahsin → tahfidz. Dulu syaratnya hanya
-        // "satu slot", sehingga tombol ini juga memindahkan tahfidz → tahfidz
-        // dan sekolah → sekolah, lalu riwayatnya tertulis "Naik kelas" padahal
-        // itu pindah kelas biasa.
-        if ($sumber->jenis !== self::NAIK_DARI || $tujuan->jenis !== self::NAIK_KE) {
+        // Gerbang naik kelas memakai sifatPerpindahan yang sama dengan buka(),
+        // supaya validasi tingkat kelas (sekolah) dan validasi program
+        // (tahsin → tahfidz) tidak pernah berbeda pendapat.
+        $sifat = $this->sifatPerpindahan(
+            $sumber->jenis, $tujuan->jenis, $sumber->tingkat, $tujuan->tingkat
+        );
+        if ($sifat !== 'naik') {
+            $detil = $sumber->jenis === $tujuan->jenis
+                ? "{$sumber->nama} (tingkat " . ($sumber->tingkat ?: '—') . ") → {$tujuan->nama} (tingkat "
+                    . ($tujuan->tingkat ?: '—') . ')'
+                : "{$sumber->jenis} → {$tujuan->jenis}";
             throw new \DomainException(
-                'Naik kelas hanya berlaku dari kelas ' . self::NAIK_DARI . ' ke kelas ' . self::NAIK_KE
-                . " (dipilih: {$sumber->jenis} → {$tujuan->jenis}). "
-                . 'Untuk memindahkan santri antar kelas yang sejenis, gunakan Perombakan Kelas.'
+                "Itu bukan kenaikan kelas: $detil. Naik kelas hanya dari kelas tahsin ke kelas "
+                . 'tahfidz, atau dari kelas sekolah ke tingkat yang lebih tinggi. Untuk memindahkan '
+                . 'santri antar kelas sejajar, gunakan Perombakan Kelas.'
             );
         }
 
@@ -342,27 +392,37 @@ class KenaikanKelasService
         $lama = DB::table('kelas_santri')->join('kelas', 'kelas.id', '=', 'kelas_santri.kelas_id')
             ->where('kelas_santri.santri_id', $santriId)->where('kelas_santri.is_aktif', true)
             ->whereIn('kelas.jenis', $tujuan->jenisSeslot())
-            ->get(['kelas_santri.kelas_id', 'kelas.nama', 'kelas.jenis']);
+            ->get(['kelas_santri.kelas_id', 'kelas.nama', 'kelas.jenis', 'kelas.tingkat']);
 
-        $namaLama  = $lama->isNotEmpty() ? $lama->pluck('nama')->implode(', ') : null;
-        $jenisLama = $lama->first()->jenis ?? null;
-        $sifat     = $this->sifatPerpindahan($jenisLama, $tujuan->jenis);
+        $namaLama    = $lama->isNotEmpty() ? $lama->pluck('nama')->implode(', ') : null;
+        $jenisLama   = $lama->first()->jenis ?? null;
+        $tingkatLama = $lama->first()->tingkat ?? null;
+        $sifat       = $this->sifatPerpindahan(
+            $jenisLama, $tujuan->jenis, $tingkatLama, $tujuan->tingkat
+        );
 
         // ── Penegakan aturan, satu tempat untuk semua jalur ─────────────────
         if ($mode === 'pindah' && in_array($sifat, ['naik', 'turun'], true)) {
             $nama = Santri::find($santriId)?->nama_lengkap ?? "santri #$santriId";
+            // Dua sebab berbeda, dijelaskan berbeda — admin perlu tahu harus ke mana.
+            $alasan = $jenisLama !== $tujuan->jenis
+                ? "ada di kelas $jenisLama ($namaLama), sedangkan {$tujuan->nama} adalah kelas "
+                    . "{$tujuan->jenis}. Perpindahan tahsin → tahfidz adalah NAIK KELAS (ganti program)"
+                : "ada di $namaLama (tingkat $tingkatLama), sedangkan {$tujuan->nama} tingkat "
+                    . "{$tujuan->tingkat}. Perpindahan antar tingkat adalah NAIK KELAS";
             throw new \DomainException(
-                "$nama ada di kelas $jenisLama ($namaLama), sedangkan {$tujuan->nama} adalah kelas "
-                . "{$tujuan->jenis}. Pindah kelas hanya di dalam pembelajaran yang sama; "
-                . 'perpindahan tahsin → tahfidz dikerjakan lewat Naik Kelas.'
+                "$nama $alasan. Pindah kelas hanya untuk kelas sejajar; gunakan tombol Naik Kelas."
             );
         }
         if ($mode === 'naik' && $sifat !== 'naik') {
             $nama = Santri::find($santriId)?->nama_lengkap ?? "santri #$santriId";
             throw new \DomainException(
-                "$nama tidak bisa dinaikkan ke {$tujuan->nama}: naik kelas hanya berlaku dari kelas "
-                . self::NAIK_DARI . ' ke kelas ' . self::NAIK_KE
-                . ($jenisLama ? " (santri ini ada di kelas $jenisLama)." : ' (santri ini belum punya kelas tahsin).')
+                "$nama tidak bisa dinaikkan ke {$tujuan->nama}. Naik kelas hanya dari kelas tahsin "
+                . 'ke kelas tahfidz, atau dari kelas sekolah ke tingkat yang lebih tinggi'
+                . ($jenisLama
+                    ? " (santri ini ada di $namaLama, kelas $jenisLama"
+                        . ($tingkatLama ? " tingkat $tingkatLama" : '') . ').'
+                    : ' (santri ini belum punya kelas di kelompok itu).')
             );
         }
 

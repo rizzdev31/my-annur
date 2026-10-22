@@ -87,12 +87,12 @@
                                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-3-3" /></svg>
                                     Atur Santri
                                 </button>
-                                <!-- Naik kelas HANYA tahsin → tahfidz. Kelas lain memindahkan
-                                     santrinya lewat Perombakan Kelas; tombol ini sengaja tidak
-                                     ditampilkan di sana agar tidak ada lagi riwayat "Naik kelas"
-                                     untuk perpindahan antar halaqoh sejenis. -->
-                                <button v-if="k.jumlah_santri > 0 && k.jenis === 'tahsin'" @click="openNaik(k)"
-                                    title="Naik Kelas (tahsin → tahfidz)"
+                                <!-- Naik kelas ada dua jalur: tahsin → tahfidz (ganti program) dan
+                                     sekolah → tingkat lebih tinggi. Kelas sejajar (VII A → VII B,
+                                     antar halaqoh) dipindahkan lewat Perombakan Kelas, supaya tidak
+                                     ada lagi riwayat "Naik kelas" untuk perpindahan sejajar. -->
+                                <button v-if="k.jumlah_santri > 0 && bolehNaik(k)" @click="openNaik(k)"
+                                    :title="k.jenis === 'tahsin' ? 'Naik Kelas (tahsin → tahfidz)' : 'Naik Kelas (naik tingkat)'"
                                     class="p-2 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
                                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
                                 </button>
@@ -204,21 +204,38 @@
             <div v-if="naikSumber" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="naikSumber = null">
                 <div class="absolute inset-0 bg-black/40"></div>
                 <div class="relative bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-                    <h3 class="text-base font-semibold text-gray-900">Naik Kelas — tahsin ke tahfidz</h3>
-                    <p class="text-sm text-gray-500 mt-0.5">Dari <b>{{ naikSumber.nama }}</b> ({{ naikSumber.jenis }}) · {{ naikSumber.tahun_ajaran || '—' }}</p>
+                    <h3 class="text-base font-semibold text-gray-900">
+                        {{ naikSumber.jenis === 'tahsin' ? 'Naik Kelas — tahsin ke tahfidz' : 'Naik Kelas — naik tingkat' }}
+                    </h3>
+                    <p class="text-sm text-gray-500 mt-0.5">
+                        Dari <b>{{ naikSumber.nama }}</b> ({{ naikSumber.jenis
+                        }}<span v-if="naikSumber.tingkat"> · tingkat {{ naikSumber.tingkat }}</span>) ·
+                        {{ naikSumber.tahun_ajaran || '—' }}
+                    </p>
                     <p class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mt-2">
-                        Naik kelas berarti <b>ganti program</b>: santri berhenti dinilai per materi tahsin
-                        dan mulai menyetor hafalan. Level &amp; nilai tahsinnya tetap tersimpan.
-                        Untuk memindahkan santri antar kelas yang sejenis, gunakan
+                        <template v-if="naikSumber.jenis === 'tahsin'">
+                            Naik kelas berarti <b>ganti program</b>: santri berhenti dinilai per materi tahsin
+                            dan mulai menyetor hafalan. Level &amp; nilai tahsinnya tetap tersimpan.
+                        </template>
+                        <template v-else>
+                            Naik tingkat: seluruh santri kelas ini pindah ke kelas dengan
+                            <b>tingkat lebih tinggi</b>. Santri yang tinggal kelas cukup dicentang
+                            di daftar bawah agar dikecualikan.
+                        </template>
+                        Untuk memindahkan santri antar <b>kelas sejajar</b> (mis. {{ contohSejajar }}), gunakan
                         <Link :href="route('admin.smart-education.kelas.perombakan')" class="font-semibold underline">Perombakan Kelas</Link>.
                     </p>
 
                     <div class="grid grid-cols-2 gap-3 mt-4">
                         <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Kelas Tahfidz Tujuan</label>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">
+                                {{ naikSumber.jenis === 'tahsin' ? 'Kelas Tahfidz Tujuan' : 'Kelas Tingkat Berikutnya' }}
+                            </label>
                             <select v-model.number="naikTujuanId" :class="inputCls()">
                                 <option :value="null">— pilih kelas tujuan —</option>
-                                <option v-for="k in kelasTujuanOpsi" :key="k.id" :value="k.id">{{ k.nama }} · {{ k.tahun_ajaran || '—' }}</option>
+                                <option v-for="k in kelasTujuanOpsi" :key="k.id" :value="k.id">
+                                    {{ k.nama }}<span v-if="k.tingkat"> (tingkat {{ k.tingkat }})</span> · {{ k.tahun_ajaran || '—' }}
+                                </option>
                             </select>
                         </div>
                         <div>
@@ -226,7 +243,11 @@
                             <input v-model="naikTanggal" type="date" :class="inputCls()" />
                         </div>
                     </div>
-                    <p v-if="!kelasTujuanOpsi.length" class="text-xs text-amber-600 mt-2">Belum ada kelas tahfidz aktif sebagai tujuan. Buat kelas tahfidz dulu.</p>
+                    <p v-if="!kelasTujuanOpsi.length" class="text-xs text-amber-600 mt-2">
+                        {{ naikSumber.jenis === 'tahsin'
+                            ? 'Belum ada kelas tahfidz aktif sebagai tujuan. Buat kelas tahfidz dulu.'
+                            : `Tidak ada kelas sekolah aktif dengan tingkat di atas ${naikSumber.tingkat || '—'}. Buat kelas tingkat berikutnya dulu.` }}
+                    </p>
 
                     <div class="mt-4">
                         <div class="flex items-center justify-between mb-1">
@@ -251,7 +272,7 @@
                     <div class="flex gap-2 mt-5">
                         <button @click="naikSumber = null" class="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">Batal</button>
                         <button @click="submitNaik" :disabled="!naikTujuanId || naikSaving" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50">
-                            {{ naikSaving ? 'Memproses…' : 'Proses Naik Kelas' }}
+                            {{ naikSaving ? 'Memproses…' : (naikSumber.jenis === 'tahsin' ? 'Proses Naik Kelas' : 'Proses Naik Tingkat') }}
                         </button>
                     </div>
                 </div>
@@ -510,11 +531,36 @@ const kecuali = ref([])               // santri_id yang tinggal kelas
 const naikLoading = ref(false)
 const naikSaving = ref(false)
 
-// Tujuan naik kelas HANYA kelas tahfidz aktif (aturan 22 Okt 2026: naik kelas =
-// tahsin → tahfidz). Dulu daftarnya berisi seluruh kelas satu slot, sehingga
-// tahsin → tahsin pun bisa diproses sebagai "naik kelas".
-const kelasTujuanOpsi = computed(() =>
-    props.kelas.filter(k => k.jenis === 'tahfidz' && k.is_aktif))
+// Tingkat sebagai angka; null untuk tingkat non-angka seperti "SMA".
+// Sama dengan KenaikanKelasService::angkaTingkat() — kalau yang satu berubah,
+// yang lain harus ikut, kalau tidak layar menawarkan tujuan yang ditolak server.
+const angkaTingkat = (t) => (t != null && /^\d+$/.test(String(t).trim()) ? Number(t) : null)
+
+// Kelas yang punya tombol Naik Kelas: kelas tahsin (→ tahfidz) dan kelas
+// sekolah yang tingkatnya angka (→ tingkat lebih tinggi).
+const bolehNaik = (k) => k.jenis === 'tahsin'
+    || (k.jenis === 'sekolah' && angkaTingkat(k.tingkat) !== null)
+
+// Tujuan naik kelas sesuai jalurnya — bukan "semua kelas satu slot" seperti dulu,
+// yang membuat tahsin → tahsin pun bisa diproses sebagai naik kelas.
+const kelasTujuanOpsi = computed(() => {
+    const s = naikSumber.value
+    if (!s) return []
+    if (s.jenis === 'tahsin') return props.kelas.filter(k => k.jenis === 'tahfidz' && k.is_aktif)
+
+    const dari = angkaTingkat(s.tingkat)
+    return props.kelas.filter(k => k.jenis === 'sekolah' && k.is_aktif && k.id !== s.id
+        && dari !== null && angkaTingkat(k.tingkat) !== null && angkaTingkat(k.tingkat) > dari)
+})
+
+// Contoh kelas sejajar, untuk mengarahkan admin ke layar yang benar.
+const contohSejajar = computed(() => {
+    const s = naikSumber.value
+    if (!s) return 'VII A → VII B'
+    const sejajar = props.kelas.filter(k => k.jenis === s.jenis && k.id !== s.id
+        && String(k.tingkat ?? '') === String(s.tingkat ?? ''))
+    return sejajar.length ? `${s.nama} → ${sejajar[0].nama}` : 'kelas setingkat lainnya'
+})
 
 async function openNaik(k) {
     naikSumber.value = k; naikTujuanId.value = null; kecuali.value = []

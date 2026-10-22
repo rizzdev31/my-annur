@@ -26,13 +26,16 @@
             ]">{{ s.label }}</button>
         </div>
 
-        <!-- Batas kewenangan papan ini: PINDAH, bukan naik kelas. -->
-        <p v-if="slot === 'quran'" class="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 mb-3">
-            Papan ini memindahkan santri <strong>di dalam pembelajaran yang sama</strong> —
-            tahsin ke tahsin, tahfidz ke tahfidz. Perpindahan <strong>tahsin → tahfidz adalah
-            naik kelas</strong> (ganti program) dan dikerjakan dari
+        <!-- Batas kewenangan papan ini: PINDAH (kelas sejajar), bukan naik kelas. -->
+        <p class="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 mb-3">
+            Papan ini memindahkan santri antar <strong>kelas sejajar</strong>:
+            <template v-if="slot === 'quran'">tahsin ke tahsin, tahfidz ke tahfidz.</template>
+            <template v-else-if="slot === 'sekolah'">kelas yang tingkatnya sama (VII A ke VII B).</template>
+            <template v-else>kelas pesantren yang setingkat.</template>
+            Kenaikan — <strong>tahsin → tahfidz</strong> maupun <strong>naik tingkat</strong> —
+            dikerjakan dari
             <Link :href="route('admin.smart-education.kelas.index')" class="font-semibold underline">Daftar Kelas</Link>
-            lewat tombol Naik Kelas pada kelas tahsinnya.
+            lewat tombol <strong>Naik Kelas</strong> pada kelas asalnya.
         </p>
 
         <!-- Pencapaian tidak berubah: alasan utama admin ragu memindahkan santri. -->
@@ -120,6 +123,7 @@
                                 </td>
                                 <td class="px-3 py-2.5">
                                     <span v-if="s.kelas_nama" class="text-gray-700">{{ s.kelas_nama }}</span>
+                                    <span v-if="s.kelas_tingkat" class="block text-[11px] text-gray-400">tingkat {{ s.kelas_tingkat }}</span>
                                     <span v-else class="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">belum ada</span>
                                 </td>
                                 <td class="px-3 py-2.5">
@@ -271,13 +275,21 @@ const form = reactive({ tanggal: new Date().toISOString().slice(0, 10), keterang
 const kelasAktif = computed(() => props.kelas.filter((k) => k.is_aktif))
 const pesanMassal = ref('')
 
-// Tujuan yang SAH untuk satu santri: hanya kelas sejenis dengan kelasnya
-// sekarang (pindah di dalam pembelajaran yang sama). Santri yang belum punya
-// kelas di slot ini boleh ditempatkan ke mana saja — itu penempatan, bukan
-// pindah, dan tidak melompati program apa pun.
+// Tujuan yang SAH untuk satu santri: kelas SEJAJAR — pembelajaran sama, dan
+// untuk sekolah juga tingkat yang sama. Lintas program (tahsin → tahfidz) dan
+// lintas tingkat (VII → VIII) adalah naik kelas, bukan pindah.
+//
+// Santri yang belum punya kelas di slot ini boleh ditempatkan ke mana saja —
+// itu penempatan, bukan pindah, dan tidak melompati apa pun.
 function kelasUntuk(s) {
     if (!s.kelas_jenis) return kelasAktif.value
-    return kelasAktif.value.filter((k) => k.jenis === s.kelas_jenis)
+
+    return kelasAktif.value.filter((k) => {
+        if (k.jenis !== s.kelas_jenis) return false
+        if (k.jenis !== 'sekolah') return true
+        // Sekolah: hanya kelas setingkat (VII A ↔ VII B).
+        return String(k.tingkat ?? '') === String(s.kelas_tingkat ?? '')
+    })
 }
 
 const tampil = computed(() => {
@@ -320,8 +332,9 @@ function terapkanMassal() {
     const lewat = dipilih.length - kena
     const kelas = props.kelas.find((k) => k.id === id)
     pesanMassal.value = lewat
-        ? `${kena} ditetapkan, ${lewat} dilewati (program berbeda dari ${kelas?.jenis ?? 'kelas tujuan'}` +
-          ` — tahsin → tahfidz lewat Naik Kelas).`
+        ? `${kena} ditetapkan, ${lewat} dilewati karena bukan kelas sejajar dengan ` +
+          `${kelas?.nama ?? 'kelas tujuan'} — kenaikan program (tahsin → tahfidz) ` +
+          `maupun kenaikan tingkat dikerjakan lewat tombol Naik Kelas.`
         : ''
     terpilih.value = []
     tujuanMassal.value = ''

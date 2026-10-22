@@ -220,6 +220,7 @@ class KelasController extends Controller
             ->orderBy('jenis')->orderBy('nama')->get()
             ->map(fn ($k) => [
                 'id' => $k->id, 'nama' => $k->nama, 'jenis' => $k->jenis,
+                'tingkat' => $k->tingkat,
                 'level_tahsin' => $k->level_tahsin, 'is_aktif' => (bool) $k->is_aktif,
                 'jumlah_santri' => $k->santri_count,
                 'pengampu' => \App\Models\JadwalMengajar::where('kelas_id', $k->id)
@@ -231,10 +232,12 @@ class KelasController extends Controller
         $anggota = \Illuminate\Support\Facades\DB::table('kelas_santri')
             ->join('kelas', 'kelas.id', '=', 'kelas_santri.kelas_id')
             ->where('kelas_santri.is_aktif', true)->whereIn('kelas.jenis', $jenis)
-            // `jenis` WAJIB ikut: papan perombakan memakainya untuk membatasi
-            // tujuan ke pembelajaran yang sama (tahsin → tahfidz adalah naik
-            // kelas, bukan pindah, dan ditolak servicenya).
-            ->get(['kelas_santri.santri_id', 'kelas.id as kelas_id', 'kelas.nama', 'kelas.jenis'])
+            // `jenis` & `tingkat` WAJIB ikut: papan perombakan memakainya untuk
+            // membatasi tujuan ke kelas SEJAJAR. Lintas program (tahsin →
+            // tahfidz) dan lintas tingkat (VII → VIII) keduanya naik kelas,
+            // bukan pindah, dan ditolak servicenya.
+            ->get(['kelas_santri.santri_id', 'kelas.id as kelas_id', 'kelas.nama',
+                   'kelas.jenis', 'kelas.tingkat'])
             ->keyBy('santri_id');
 
         $hafalan   = \App\Models\HafalanSantri::pluck('total_ayat', 'santri_id');
@@ -252,6 +255,7 @@ class KelasController extends Controller
                     'kelas_id'    => $a ? (int) $a->kelas_id : null,
                     'kelas_nama'  => $a->nama ?? null,
                     'kelas_jenis' => $a->jenis ?? null,
+                    'kelas_tingkat' => $a->tingkat ?? null,
                     'hafalan_ayat' => (int) ($hafalan[$s->id] ?? 0),
                     'juz_selesai'  => (int) ($juzSelesai[$s->id] ?? 0),
                     'tahsin_level' => $s->tahsin_level,
