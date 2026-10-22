@@ -167,7 +167,7 @@ class RekapMengajarQuranService
             ->whereBetween('a.tanggal', [$dari, $sampai])
             ->get([
                 'a.id', 'a.jadwal_mengajar_id', 'a.tanggal', 'a.status', 'a.tenaga_pendidik_id',
-                'a.digantikan_oleh', 'a.jam_selesai_aktual', 'a.jp_terlaksana',
+                'a.digantikan_oleh', 'a.jam_mulai_aktual', 'a.jam_selesai_aktual', 'a.jp_terlaksana',
                 // Alasan yang SUDAH tercatat sistem/guru. Dulu tidak diambil sama
                 // sekali, padahal inilah bahan audit: 156/156 sesi tidak terlaksana,
                 // 32/32 izin, dan 38/38 sesi pengganti punya isinya.
@@ -246,6 +246,23 @@ class RekapMengajarQuranService
             $ditutup = $a->jam_selesai_aktual
                 ? 'ditutup ' . substr((string) $a->jam_selesai_aktual, 0, 5) : null;
 
+            // Untuk baris MASUK, fakta auditnya adalah jam PENGABSENAN. Terukur
+            // 30 hari: 543/543 sesi masuk punya jam_mulai_aktual, hanya 5 yang
+            // punya jam_selesai_aktual — jadi bila hanya jam penutupan yang
+            // dipakai, 477 baris "masuk" tetap tanpa keterangan.
+            $diabsen = null;
+            if ($a->jam_mulai_aktual) {
+                $jm = substr((string) $a->jam_mulai_aktual, 0, 5);
+                $diabsen = 'Diabsen ' . $jm;
+                // Diabsen setelah kelas berakhir = fakta yang perlu dilihat
+                // auditor, disebut apa adanya tanpa menghakimi.
+                if ($jm > substr((string) $a->jam_selesai, 0, 5)) {
+                    $diabsen .= ' (setelah kelas berakhir ' . substr((string) $a->jam_selesai, 0, 5) . ')';
+                } elseif ($jm > substr((string) $a->jam_mulai, 0, 5)) {
+                    $diabsen .= ' (jadwal ' . substr((string) $a->jam_mulai, 0, 5) . ')';
+                }
+            }
+
             if ($a->digantikan_oleh) {
                 // Guru asli: netral.
                 $baris->push($dasar + ['guru_id' => (int) $a->tenaga_pendidik_id, 'milik_sendiri' => true,
@@ -268,7 +285,7 @@ class RekapMengajarQuranService
                         'aktivitas' => $katInval === 'inval' ? $aktivitasUntuk((int) $a->digantikan_oleh) : 0,
                         'keterangan' => $rangkai([
                             'Inval untuk ' . ($guruNama[$a->tenaga_pendidik_id] ?? 'guru lain'),
-                            $katInval === 'inval' ? $ditutup : 'tidak datang sampai batas '
+                            $katInval === 'inval' ? $rangkai([$diabsen, $ditutup]) : 'tidak datang sampai batas '
                                 . KebijakanMengajar::batasAbsenSesi($tgl, (string) $a->jam_selesai)->format('H:i'),
                             $a->keterangan_tercatat,
                         ])]);
@@ -290,7 +307,7 @@ class RekapMengajarQuranService
             // keterangan, sehingga justru 156 sesi tidak terlaksana (bahan audit
             // utama) tampil tanpa sebab apa pun padahal sebabnya tersimpan.
             $keterangan = match ($kategori) {
-                'mengajar' => $rangkai([$ditutup, $a->keterangan_tercatat]),
+                'mengajar' => $rangkai([$diabsen, $ditutup, $a->keterangan_tercatat]),
                 'izin'     => $rangkai([
                     $izinRujukan ? 'Izin: ' . $izinRujukan : 'Izin',
                     $a->keterangan_tercatat,
