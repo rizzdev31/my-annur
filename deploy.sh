@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 # CVE-2026-109618 & CVE-2026-109619, CVSS 9.2). Perbarui daftar ini setiap ada
 # rilis keamanan PHP baru — inilah satu-satunya tempat yang perlu diubah.
 PHP_MIN_PER_CABANG="8.2:35 8.3:36 8.4:27 8.5:12"
-IMAGE_APP="annur-smart:latest"      # sama dengan `image:` service app di docker-compose.yml
+IMAGE_APP="${IMAGE_APP:-annur-smart:latest}"   # sama dengan `image:` service app di docker-compose.yml
 
 nilai_versi_php() {
   local ver="$1"
@@ -67,6 +67,14 @@ periksa_php() {
 
   nilai_versi_php "$ver"
 }
+
+# Periksa satu image saja, lalu keluar. Untuk membuktikan gerbangnya memang
+# menolak, dan untuk memeriksa image apa pun tanpa menjalankan deploy:
+#   bash deploy.sh --periksa-image php:8.1-fpm-alpine
+if [ "${1:-}" = "--periksa-image" ]; then
+  IMAGE_APP="${2:-$IMAGE_APP}"
+  periksa_php && { echo "  => LOLOS gerbang"; exit 0; } || { echo "  => DITOLAK gerbang"; exit 1; }
+fi
 
 # Mode uji: hanya menguji logika versi, tanpa menyentuh server sama sekali.
 if [ "${1:-}" = "--uji-versi" ]; then
