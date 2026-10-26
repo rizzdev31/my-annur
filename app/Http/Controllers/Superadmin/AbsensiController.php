@@ -232,6 +232,68 @@ class AbsensiController extends Controller
     // ABSENSI MENGAJAR
     // ══════════════════════════════════════════════════════════════════════════
 
+    /**
+     * SESI KOSONG dalam RENTANG TANGGAL — alat periksa sebelum penggajian.
+     *
+     * Halaman Absensi Mengajar bersifat per-hari. Untuk memeriksa satu periode
+     * gaji (mis. 1-22) admin harus membukanya 22 kali, dan sesi kosong tidak
+     * pernah terlihat sebagai satu daftar. Diukur 26 Okt 2026 pada rentang
+     * 1-22 Okt: 645 sesi reguler terjadwal, 156 di antaranya KOSONG - mustahil
+     * ditemukan dengan menyusuri hari per hari.
+     *
+     * Jenjang dipisah karena rentang periksanya bisa berbeda (mis. SMP 5-17
+     * sementara jenjang lain 1-22). SMP = tingkat 7-9, SMA/MA = 10-12.
+     *
+     * Perhitungannya memakai RekapMengajarService yang sama dengan laporan
+     * Qur'an, supaya definisi "kosong" (hari libur, libur pembelajaran, jadwal
+     * belum dibuat, batas absen, sesi inval) tidak punya dua tafsir.
+     */
+    public function mengajarKosong(Request $request, \App\Services\RekapMengajarService $svc)
+    {
+        $d = $request->validate([
+            'dari'    => 'nullable|date_format:Y-m-d',
+            'sampai'  => 'nullable|date_format:Y-m-d',
+            'jenjang' => 'nullable|in:semua,smp,sma',
+            'program' => 'nullable|in:reguler,quran,semua',
+            'guru_id' => 'nullable|integer|exists:tenaga_pendidik,id',
+        ]);
+
+        // Bawaan: tanggal 1 bulan ini s.d. hari ini - rentang periksa gaji.
+        $dari   = Carbon::parse($d['dari'] ?? Carbon::today()->startOfMonth()->toDateString());
+        $sampai = Carbon::parse($d['sampai'] ?? Carbon::today()->toDateString());
+        if ($sampai->lt($dari)) [$dari, $sampai] = [$sampai, $dari];
+
+        $jenjang = $d['jenjang'] ?? 'semua';
+        $program = $d['program'] ?? 'reguler';
+        $guruId  = $d['guru_id'] ?? null;
+
+        $tingkat = match ($jenjang) {
+            'smp'   => ['7', '8', '9'],
+            'sma'   => ['10', '11', '12'],
+            default => null,
+        };
+
+        // 'reguler' = semua mapel non-Qur'an; 'quran' = tahfidz+tahsin;
+        // 'semua'   = keduanya digabung (service dijalankan dua kali).
+        $semua = $program === 'semua';
+        $tipe  = $program === 'quran' ? null : \App\Services\RekapMengajarService::TIPE_REGULER;
+
+        $hasil = $svc->detailKosong($dari, $sampai, $tipe, $guruId, $tingkat, $semua);
+
+        return Inertia::render('Admin/SmartPayroll/Absensi/MengajarKosong', [
+            'filter' => [
+                'dari' => $dari->toDateString(), 'sampai' => $sampai->toDateString(),
+                'jenjang' => $jenjang, 'program' => $program, 'guru_id' => $guruId,
+            ],
+            'ringkasan'  => $hasil['ringkasan'],
+            'kosong'     => $hasil['kosong'],
+            'perGuru'    => $hasil['per_guru'],
+            'guruOpsi'   => TenagaPendidik::aktif()->with('user:id,name')->get()
+                ->map(fn ($g) => ['id' => $g->id, 'nama' => $g->user?->name])
+                ->filter(fn ($g) => $g['nama'])->sortBy('nama')->values(),
+        ]);
+    }
+
     public function mengajar(Request $request)
     {
         $tanggal = $request->tanggal ? Carbon::parse($request->tanggal) : Carbon::today();

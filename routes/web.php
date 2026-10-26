@@ -315,6 +315,9 @@ Route::prefix('admin')
                 Route::post('/harian',        [AbsensiController::class, 'storeHarian'])->name('store-harian');
                 Route::post('/massal',        [AbsensiController::class, 'massal'])->name('massal');
                 Route::get('/mengajar',       [AbsensiController::class, 'mengajar'])->name('mengajar');
+                // Sesi kosong dalam RENTANG tanggal — alat periksa sebelum gajian.
+                // Dipasang sebelum rute ber-parameter apa pun di grup ini.
+                Route::get('/mengajar-kosong', [AbsensiController::class, 'mengajarKosong'])->name('mengajar-kosong');
                 Route::post('/mengajar',      [AbsensiController::class, 'storeMengajar'])->name('store-mengajar');
                 Route::get('/rekap',          [AbsensiController::class, 'rekap'])->name('rekap');
                 Route::get('/export',         [AbsensiController::class, 'export'])->name('export');

@@ -8,8 +8,22 @@
                 <h2 class="text-xl font-semibold text-gray-900">Absensi Mengajar</h2>
                 <p class="text-sm text-gray-400 mt-0.5">{{ hari }}</p>
             </div>
-            <input v-model="fTanggal" type="date" @change="applyFilter"
-                class="px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-indigo-500" />
+            <div class="flex items-center gap-2">
+                <!-- Halaman ini per-HARI. Pemeriksaan sebelum gajian butuh rentang
+                     tanggal, jadi sesi kosong satu periode dikumpulkan di layar
+                     terpisah agar alur input/koreksi harian di sini tidak berubah. -->
+                <Link :href="route('admin.smart-payroll.absensi.mengajar-kosong')"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 transition-colors"
+                    title="Daftar sesi kosong dalam rentang tanggal (untuk periksa sebelum gajian)">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z" />
+                    </svg>
+                    Sesi Kosong (rentang)
+                </Link>
+                <input v-model="fTanggal" type="date" @change="applyFilter"
+                    class="px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-indigo-500" />
+            </div>
         </div>
 
         <!-- Summary -->
@@ -271,7 +285,7 @@
 
 <script setup>
 import { ref, computed, reactive } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
+import { Head, Link, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const props = defineProps({

@@ -605,10 +605,10 @@ class LaporanController extends Controller
     // ══════════════════════════════════════════════════════════════════════
     // REKAP MENGAJAR GURU TAHFIDZ & TAHSIN — harian / mingguan / bulanan
     // ══════════════════════════════════════════════════════════════════════
-    public function mengajarQuran(Request $request, \App\Services\RekapMengajarQuranService $svc)
+    public function mengajarQuran(Request $request, \App\Services\RekapMengajarService $svc)
     {
         [$mode, $mulai, $selesai, $label, $filterPeriode] = $this->periodeRekap($request);
-        $tipe   = in_array($request->tipe, \App\Services\RekapMengajarQuranService::TIPE, true) ? $request->tipe : null;
+        $tipe   = in_array($request->tipe, \App\Services\RekapMengajarService::TIPE, true) ? $request->tipe : null;
         $guruId = $request->guru_id ? (int) $request->guru_id : null;
 
         $rekap  = $svc->rekap($mulai, $selesai, $tipe, $guruId);

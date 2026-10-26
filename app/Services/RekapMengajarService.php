@@ -32,18 +32,34 @@ use Illuminate\Support\Facades\DB;
  * pembelajaran: tahfidz tanpa setoran; tahsin tanpa penilaian materi maupun
  * materi tambahan dari guru itu pada hari itu.
  */
-class RekapMengajarQuranService
+class RekapMengajarService
 {
+    /** Program Qur'an. Dipertahankan namanya karena dirujuk LaporanController. */
     public const TIPE = ['tahfidz', 'tahsin'];
+
+    /**
+     * Kata kunci untuk "semua mapel SELAIN program Qur'an" — dipakai halaman
+     * Sesi Kosong (penggajian) yang memeriksa kelas reguler SMP/SMA.
+     *
+     * Dulu service ini hanya melayani tahfidz/tahsin, sementara kelas reguler
+     * tidak punya laporan rentang tanggal sama sekali: admin harus membuka
+     * halaman Absensi Mengajar hari per hari (22 hari = 22 kali muat) untuk
+     * mencari sesi yang kosong sebelum penggajian. Semua penjaga rumit di
+     * sini (hari libur, libur pembelajaran, jadwal belum dibuat, batas absen,
+     * sesi inval) digeneralisasi daripada ditulis ulang — kalau ditulis ulang,
+     * angka reguler dan angka Qur'an pasti akan berbeda tafsir.
+     */
+    public const TIPE_REGULER = 'reguler';
 
     public function __construct(private SesiMengajarService $sesi) {}
 
     /**
      * @return array{baris: Collection, total: array}
      */
-    public function rekap(Carbon $mulai, Carbon $selesai, ?string $tipe = null, ?int $guruId = null): array
-    {
-        $sesi = $this->sesiPeriode($mulai, $selesai, $tipe);
+    public function rekap(
+        Carbon $mulai, Carbon $selesai, ?string $tipe = null, ?int $guruId = null, ?array $tingkat = null
+    ): array {
+        $sesi = $this->sesiPeriode($mulai, $selesai, $tipe, $tingkat);
 
         $baris = $sesi->filter(fn ($s) => !$guruId || $s['guru_id'] === $guruId)
             ->groupBy(fn ($s) => $s['guru_id'] . '|' . $s['tipe'])
@@ -138,12 +154,90 @@ class RekapMengajarQuranService
     }
 
     /** Daftar sesi satu guru (rincian). */
-    public function detail(int $guruId, Carbon $mulai, Carbon $selesai, ?string $tipe = null): Collection
-    {
-        return $this->sesiPeriode($mulai, $selesai, $tipe)
+    public function detail(
+        int $guruId, Carbon $mulai, Carbon $selesai, ?string $tipe = null, ?array $tingkat = null
+    ): Collection {
+        return $this->sesiPeriode($mulai, $selesai, $tipe, $tingkat)
             ->where('guru_id', $guruId)
             ->sortBy([['tanggal', 'asc'], ['jam', 'asc']])
             ->values();
+    }
+
+    /**
+     * SESI KOSONG dalam rentang — bentuk siap-pakai untuk halaman penggajian.
+     *
+     * "Kosong" = sesi MILIK GURU SENDIRI yang tidak terlaksana atau tidak
+     * pernah dicatat sama sekali. Sesi yang dialihkan (digantikan) TIDAK
+     * dihitung sebagai kosong bagi guru asli — itu netral; kegagalan pengganti
+     * yang tak datang dilaporkan terpisah sebagai `inval_tidak_datang`,
+     * sebab itu tanggung jawab pengganti, bukan pemilik jadwal.
+     *
+     * @param  bool  $gabungSemua  true = reguler + Qur'an sekaligus
+     * @return array{ringkasan:array, kosong:array, per_guru:array}
+     */
+    public function detailKosong(
+        Carbon $mulai,
+        Carbon $selesai,
+        ?string $tipe = self::TIPE_REGULER,
+        ?int $guruId = null,
+        ?array $tingkat = null,
+        bool $gabungSemua = false,
+    ): array {
+        $sesi = $gabungSemua
+            ? $this->sesiPeriode($mulai, $selesai, self::TIPE_REGULER, $tingkat)
+                ->concat($this->sesiPeriode($mulai, $selesai, null, $tingkat))
+            : $this->sesiPeriode($mulai, $selesai, $tipe, $tingkat);
+
+        if ($guruId) {
+            $sesi = $sesi->where('guru_id', $guruId);
+        }
+
+        $milik   = $sesi->where('milik_sendiri', true);
+        $n       = fn (string $k) => $milik->where('kategori', $k)->count();
+        $kosong  = $milik->whereIn('kategori', ['tidak_terlaksana', 'tanpa_catatan'])
+            ->sortBy([['tanggal', 'asc'], ['guru', 'asc'], ['jam', 'asc']])
+            ->map(fn ($x) => [
+                'absensi_id' => $x['absensi_id'] ?? null,
+                'tanggal'    => $x['tanggal'],
+                'guru_id'    => $x['guru_id'],
+                'guru'       => $x['guru'],
+                'kelas'      => $x['kelas'],
+                'tingkat'    => $x['tingkat'] ?? null,
+                'mapel'      => $x['mapel'] ?? '-',
+                'jam'        => $x['jam'],
+                'tipe'       => $x['tipe'],
+                'kategori'   => $x['kategori'],
+                'sebab'      => $x['keterangan'],
+            ])->values();
+
+        $terjadwal = $milik->count();
+        $dasar     = $terjadwal - $n('izin') - $n('digantikan');
+
+        $perGuru = $kosong->groupBy('guru_id')->map(fn ($g) => [
+            'guru_id' => $g->first()['guru_id'],
+            'guru'    => $g->first()['guru'],
+            'jumlah'  => $g->count(),
+            'tanggal' => $g->pluck('tanggal')->unique()->sort()->values()->all(),
+        ])->sortByDesc('jumlah')->values();
+
+        return [
+            'ringkasan' => [
+                'terjadwal'          => $terjadwal,
+                'seharusnya'         => $dasar,
+                'terlaksana'         => $n('mengajar'),
+                'izin'               => $n('izin'),
+                'digantikan'         => $n('digantikan'),
+                'tidak_terlaksana'   => $n('tidak_terlaksana'),
+                'tanpa_catatan'      => $n('tanpa_catatan'),
+                'kosong'             => $n('tidak_terlaksana') + $n('tanpa_catatan'),
+                'inval_tidak_datang' => $sesi->where('milik_sendiri', false)
+                    ->where('kategori', 'tidak_terlaksana')->count(),
+                'guru_terdampak'     => $perGuru->count(),
+                'persen_terlaksana'  => $dasar > 0 ? round($n('mengajar') / $dasar * 100, 1) : null,
+            ],
+            'kosong'   => $kosong->all(),
+            'per_guru' => $perGuru->all(),
+        ];
     }
 
     /**
@@ -151,9 +245,14 @@ class RekapMengajarQuranService
      * Satu sesi yang diinval menghasilkan DUA baris: 'digantikan' untuk guru asli
      * dan 'inval'/'tidak_terlaksana' untuk penggantinya.
      */
-    private function sesiPeriode(Carbon $mulai, Carbon $selesai, ?string $tipe): Collection
-    {
-        $tipeList = $tipe ? [$tipe] : self::TIPE;
+    private function sesiPeriode(
+        Carbon $mulai, Carbon $selesai, ?string $tipe, ?array $tingkat = null
+    ): Collection {
+        // 'reguler' = semua mapel di LUAR program Qur'an; null = Qur'an saja
+        // (perilaku lama, dipakai laporan Mengajar Tahfidz & Tahsin).
+        $reguler  = $tipe === self::TIPE_REGULER;
+        $tipeList = $reguler ? self::TIPE : ($tipe ? [$tipe] : self::TIPE);
+        $tingkat  = $tingkat ? array_map('strval', $tingkat) : null;
         $now      = TimezoneHelper::now();
         $dari     = $mulai->toDateString();
         $sampai   = $selesai->toDateString();
@@ -163,7 +262,9 @@ class RekapMengajarQuranService
             ->join('jadwal_mengajar as j', 'j.id', '=', 'a.jadwal_mengajar_id')
             ->join('mata_pelajaran as m', 'm.id', '=', 'j.mata_pelajaran_id')
             ->leftJoin('kelas as k', 'k.id', '=', 'j.kelas_id')
-            ->whereIn('m.tipe', $tipeList)
+            ->when($reguler, fn ($q) => $q->whereNotIn('m.tipe', $tipeList),
+                             fn ($q) => $q->whereIn('m.tipe', $tipeList))
+            ->when($tingkat, fn ($q) => $q->whereIn('k.tingkat', $tingkat))
             ->whereBetween('a.tanggal', [$dari, $sampai])
             ->get([
                 'a.id', 'a.jadwal_mengajar_id', 'a.tanggal', 'a.status', 'a.tenaga_pendidik_id',
@@ -172,7 +273,8 @@ class RekapMengajarQuranService
                 // sekali, padahal inilah bahan audit: 156/156 sesi tidak terlaksana,
                 // 32/32 izin, dan 38/38 sesi pengganti punya isinya.
                 'a.keterangan as keterangan_tercatat',
-                'j.jam_mulai', 'j.jam_selesai', 'j.jumlah_jp', 'm.tipe', 'k.nama as kelas',
+                'j.jam_mulai', 'j.jam_selesai', 'j.jumlah_jp', 'm.tipe', 'm.nama as mapel',
+                'k.nama as kelas', 'k.tingkat as tingkat',
             ]);
 
         // Aktivitas pembelajaran per sesi.
@@ -235,6 +337,8 @@ class RekapMengajarQuranService
             $dasar = [
                 'absensi_id' => $a->id,
                 'tanggal'    => $tgl,
+                'mapel'      => $a->mapel ?? '-',
+                'tingkat'    => $a->tingkat,
                 'jam'        => substr((string) $a->jam_mulai, 0, 5) . '–' . substr((string) $a->jam_selesai, 0, 5),
                 'tipe'       => $a->tipe,
                 'kelas'      => $a->kelas ?? '—',
@@ -328,10 +432,13 @@ class RekapMengajarQuranService
         }
 
         // ── Terjadwal tetapi tanpa catatan apa pun ──────────────────────────
-        $jadwal = JadwalMengajar::with(['mataPelajaran:id,tipe', 'kelasRel:id,nama'])
+        $jadwal = JadwalMengajar::with(['mataPelajaran:id,nama,tipe', 'kelasRel:id,nama,tingkat'])
             ->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
-            ->whereHas('mataPelajaran', fn ($q) => $q->whereIn('tipe', $tipeList))
+            ->when($reguler,
+                fn ($q) => $q->whereHas('mataPelajaran', fn ($m) => $m->whereNotIn('tipe', $tipeList)),
+                fn ($q) => $q->whereHas('mataPelajaran', fn ($m) => $m->whereIn('tipe', $tipeList)))
+            ->when($tingkat, fn ($q) => $q->whereHas('kelasRel', fn ($k) => $k->whereIn('tingkat', $tingkat)))
             ->whereHas('tenagaPendidik', fn ($q) => $q->where('is_aktif', true))
             ->get();
 
@@ -356,6 +463,8 @@ class RekapMengajarQuranService
 
                 $baris->push([
                     'absensi_id' => null, 'tanggal' => $tgl,
+                    'mapel'      => $j->mataPelajaran?->nama ?? '-',
+                    'tingkat'    => $j->kelasRel?->tingkat,
                     'jam'        => substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5),
                     'tipe'       => $j->mataPelajaran?->tipe, 'kelas' => $j->kelasRel?->nama ?? $j->kelas ?? '—',
                     'santri_hadir' => 0, 'santri_total' => 0,
