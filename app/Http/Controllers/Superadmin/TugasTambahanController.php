@@ -11,6 +11,7 @@ use App\Models\SettingVakasi;
 use App\Models\JabatanGuru;
 use App\Services\TimezoneHelper;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class TugasTambahanController extends Controller
@@ -173,6 +174,8 @@ class TugasTambahanController extends Controller
                                     ->where('disetujui', false)->count(),
             'belum'          => $penugasan->whereIn('status_pengerjaan', ['belum', 'sedang'])->count(),
             'tidak_selesai'  => $penugasan->where('status_pengerjaan', 'tidak_selesai')->count(),
+            // Orthogonal terhadap status: dihitung terpisah, bukan dikurangkan.
+            'dikecualikan'   => $penugasan->where('dikecualikan_penilaian', true)->count(),
             // Vakasi yang benar-benar menempel pada jendela ini, bukan total global.
             'vakasi'         => (float) $beres->sum(
                 fn ($p) => app(\App\Services\VakasiTugasService::class)->untukPenerima($p)['nominal']
@@ -307,6 +310,10 @@ class TugasTambahanController extends Controller
                 'tenggat_perpanjangan'=> $p->tenggat_perpanjangan?->toDateString(),
                 'alasan_perpanjangan' => $p->alasan_perpanjangan,
                 'diputuskan_pada'     => $p->diputuskan_pada?->format('d M Y H:i'),
+                // Pengecualian penilaian harus KELIHATAN, kalau tidak keputusannya
+                // tak terlacak dari layar dan hanya ada di database.
+                'dikecualikan'        => (bool) $p->dikecualikan_penilaian,
+                'alasan_pengecualian' => $p->alasan_pengecualian,
                 'vakasi_override'     => $p->vakasi_override,
                 'setting_vakasi_nama' => $p->settingVakasi?->nama,
                 'setting_vakasi_id'   => $p->setting_vakasi_id,
@@ -450,6 +457,90 @@ class TugasTambahanController extends Controller
         return redirect()
             ->route('admin.smart-payroll.tugas-tambahan.show', $tugasTambahan->id)
             ->with('success', 'Tugas tambahan diperbarui.');
+    }
+
+    /**
+     * SELESAIKAN TUGAS walau pengisiannya belum lengkap.
+     *
+     * Dibutuhkan karena tugas bisa menggantung selamanya: tenggat sudah lewat
+     * sehingga guru tidak bisa mengisi lagi (lihat PenugasanTambahan::bisaDiisi),
+     * sementara tugasnya tetap berstatus 'aktif' dan penerima yang belum mengisi
+     * terus menekan skor kinerja mereka.
+     *
+     * Guru yang belum mengisi tidak selalu bersalah — ada yang lalai, ada yang
+     * kegiatannya memang tidak jalan — jadi perlakuannya DIPILIH superadmin tiap
+     * kali menutup, bukan diputuskan sistem:
+     *   • tidak_dinilai : dikeluarkan dari penilaian (tidak menambah/mengurangi skor)
+     *   • gagal         : ditandai tidak terlaksana, skornya turun
+     * Keduanya wajib beralasan, tercatat pelakunya, dan dikabari ke gurunya.
+     *
+     * Yang sudah 'selesai' TIDAK disentuh: status, persetujuan, dan vakasinya
+     * tetap apa adanya. Penutupan ini juga tidak memberi vakasi kepada yang
+     * belum mengisi — vakasi mandiri menuntut selesai + dilaporkan_pada.
+     */
+    public function selesaikan(TugasTambahan $tugasTambahan, Request $request)
+    {
+        $data = $request->validate([
+            'perlakuan' => 'required|in:tidak_dinilai,gagal',
+            'alasan'    => 'required|string|min:5|max:300',
+        ], [], ['alasan' => 'alasan penutupan']);
+
+        if ($tugasTambahan->status === 'selesai') {
+            return back()->with('error', 'Tugas ini sudah berstatus selesai.');
+        }
+        if ($tugasTambahan->status === 'dibatalkan') {
+            return back()->with('error',
+                'Tugas ini sudah dibatalkan — aktifkan dulu bila memang ingin diselesaikan.');
+        }
+
+        $belum = $tugasTambahan->penugasan()
+            ->with('tenagaPendidik.user')
+            ->where('status_pengerjaan', '!=', 'selesai')
+            ->get();
+
+        DB::transaction(function () use ($tugasTambahan, $belum, $data) {
+            $tugasTambahan->update(['status' => 'selesai']);
+
+            foreach ($belum as $p) {
+                if ($data['perlakuan'] === 'tidak_dinilai') {
+                    $p->update([
+                        'dikecualikan_penilaian' => true,
+                        'alasan_pengecualian'    => $data['alasan'],
+                        'dikecualikan_oleh'      => auth()->id(),
+                        'dikecualikan_pada'      => TimezoneHelper::now(),
+                    ]);
+                } else {
+                    $p->update([
+                        'status_pengerjaan'  => 'tidak_selesai',
+                        'disetujui'          => false,
+                        'catatan_verifikasi' => 'Tidak terlaksana: ' . $data['alasan'],
+                        'diverifikasi_oleh'  => auth()->id(),
+                        'diputuskan_pada'    => TimezoneHelper::now(),
+                    ]);
+                }
+            }
+        });
+
+        // Notifikasi di luar transaksi: kegagalan kirim tidak boleh membatalkan
+        // keputusan yang sudah sah tersimpan.
+        $judul = $tugasTambahan->judul;
+        foreach ($belum as $p) {
+            $data['perlakuan'] === 'tidak_dinilai'
+                ? $this->kabariKeputusan($p, 'Tugas Ditutup Tanpa Penilaian',
+                    "Tugas \"{$judul}\" ditutup dan TIDAK dinilai untuk Anda. Alasan: {$data['alasan']}",
+                    'ditutup-bebas')
+                : $this->kabariKeputusan($p, 'Tugas Ditutup — Ditandai Tidak Terlaksana',
+                    "Tugas \"{$judul}\" ditutup dan ditandai tidak terlaksana untuk Anda. Alasan: {$data['alasan']}",
+                    'ditutup-gagal');
+        }
+
+        $pesan = $belum->isEmpty()
+            ? 'Tugas ditandai selesai. Semua penerima sudah mengisi.'
+            : ($data['perlakuan'] === 'tidak_dinilai'
+                ? "Tugas ditandai selesai. {$belum->count()} penerima yang belum mengisi dikeluarkan dari penilaian kinerja."
+                : "Tugas ditandai selesai. {$belum->count()} penerima yang belum mengisi ditandai tidak terlaksana.");
+
+        return back()->with('success', $pesan);
     }
 
     public function destroy(TugasTambahan $tugasTambahan)

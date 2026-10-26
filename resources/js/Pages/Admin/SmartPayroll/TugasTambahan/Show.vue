@@ -33,6 +33,18 @@
                 Berita Acara
             </a>
 
+            <!-- Tutup tugas walau pengisian belum lengkap. Tanpa ini tugas
+                 menggantung selamanya: tenggat lewat, guru tak bisa mengisi,
+                 tapi skornya terus tertekan. -->
+            <button v-if="tugas.status !== 'selesai' && tugas.status !== 'dibatalkan'"
+                @click="bukaSelesaikan"
+                class="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Selesaikan Tugas
+            </button>
+
             <!-- Tombol untuk tipe absen_kegiatan -->
             <div v-if="tugas.tipe_pengerjaan === 'absen_kegiatan'" class="flex gap-2">
                 <Link :href="route('admin.smart-payroll.absensi-kegiatan.index')"
@@ -436,6 +448,16 @@
                                             <p v-if="p.alasan_perpanjangan" class="text-[10px] text-gray-400 mt-0.5">
                                                 {{ p.alasan_perpanjangan }}
                                             </p>
+                                            <!-- Dikecualikan dari penilaian: keputusan superadmin,
+                                                 harus terbaca di layar beserta alasannya. -->
+                                            <p v-if="p.dikecualikan" class="text-[10px] mt-1">
+                                                <span class="inline-block px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-700 font-semibold">
+                                                    tidak dinilai
+                                                </span>
+                                                <span v-if="p.alasan_pengecualian" class="block text-gray-400 mt-0.5">
+                                                    {{ p.alasan_pengecualian }}
+                                                </span>
+                                            </p>
                                         </div>
                                     </td>
 
@@ -745,6 +767,81 @@
         </Teleport>
 
         <AppConfirm ref="confirm" />
+
+        <!-- Dialog penutupan tugas: perlakuan penerima yang belum mengisi
+             dipilih di sini, karena sebabnya tidak selalu sama. -->
+        <div v-if="tutup.buka" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-gray-900/40" @click="tutup.kirim || (tutup.buka = false)"></div>
+            <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-900">Selesaikan Tugas</h3>
+                <p class="text-sm text-gray-500 mt-1">{{ tugas.judul }}</p>
+
+                <div v-if="belumMengisi.length" class="mt-4 rounded-xl bg-amber-50 border border-amber-100 p-3">
+                    <p class="text-sm font-semibold text-amber-800">
+                        {{ belumMengisi.length }} penerima belum mengisi
+                    </p>
+                    <p class="text-xs text-amber-700 mt-0.5">
+                        {{ belumMengisi.slice(0, 4).map((p) => p.guru_nama).join(', ')
+                        }}{{ belumMengisi.length > 4 ? ', dan ' + (belumMengisi.length - 4) + ' lainnya' : '' }}
+                    </p>
+                </div>
+                <div v-else class="mt-4 rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                    <p class="text-sm text-emerald-700">Semua penerima sudah mengisi. Tugas tinggal ditutup.</p>
+                </div>
+
+                <div v-if="belumMengisi.length" class="mt-4">
+                    <p class="text-xs font-semibold text-gray-600 mb-2">Perlakuan untuk yang belum mengisi</p>
+                    <label class="flex gap-3 items-start p-3 rounded-xl border cursor-pointer"
+                        :class="tutup.perlakuan === 'tidak_dinilai' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200'">
+                        <input type="radio" value="tidak_dinilai" v-model="tutup.perlakuan" class="mt-0.5" />
+                        <span>
+                            <span class="block text-sm font-semibold text-gray-800">Tidak dinilai</span>
+                            <span class="block text-xs text-gray-500 mt-0.5">
+                                Dikeluarkan dari penilaian kinerja — tidak menambah dan tidak mengurangi skor.
+                                Pakai ini bila kegiatannya memang tidak jalan.
+                            </span>
+                        </span>
+                    </label>
+                    <label class="flex gap-3 items-start p-3 rounded-xl border cursor-pointer mt-2"
+                        :class="tutup.perlakuan === 'gagal' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200'">
+                        <input type="radio" value="gagal" v-model="tutup.perlakuan" class="mt-0.5" />
+                        <span>
+                            <span class="block text-sm font-semibold text-gray-800">Ditandai tidak terlaksana</span>
+                            <span class="block text-xs text-gray-500 mt-0.5">
+                                Dihitung gagal dan skor kinerjanya turun. Pakai ini bila kegiatannya jalan
+                                tapi gurunya tidak mengerjakan.
+                            </span>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="mt-4">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+                        Alasan penutupan <span class="text-red-500">*</span>
+                    </label>
+                    <textarea v-model="tutup.alasan" rows="2" maxlength="300"
+                        placeholder="Mis. kegiatan dibatalkan lembaga, tenggat sudah lewat"
+                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                    <p class="text-[11px] text-gray-400 mt-1">
+                        Tercatat permanen, terkirim ke guru yang terkena, dan jadi dasar audit.
+                    </p>
+                </div>
+
+                <p v-if="tutup.galat" class="mt-3 text-sm text-red-600">{{ tutup.galat }}</p>
+
+                <div class="flex justify-end gap-2 mt-5">
+                    <button @click="tutup.buka = false" :disabled="tutup.kirim"
+                        class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-xl">Batal</button>
+                    <button @click="kirimSelesaikan" :disabled="tutup.kirim || tutup.alasan.trim().length < 5"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl"
+                        :class="!tutup.kirim && tutup.alasan.trim().length >= 5
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
+                        {{ tutup.kirim ? 'Menyimpan…' : 'Selesaikan' }}
+                    </button>
+                </div>
+            </div>
+        </div>
         <!-- KEPUTUSAN TENGGAT -->
         <div v-if="keputusan.penugasan" class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
             <div class="bg-white rounded-2xl w-full max-w-lg p-5">
@@ -902,6 +999,33 @@ const props = defineProps({
     vakasi: { type: Array, default: () => [] },
     riwayatVakasi: { type: Array, default: () => [] },
 })
+
+// ─── Tutup tugas walau pengisian belum lengkap ───────────────────────────
+// Perlakuan penerima yang belum mengisi dipilih superadmin: sebabnya bisa
+// kelalaian guru, bisa juga kegiatan yang tidak jalan — dua hal yang di
+// database terlihat sama.
+const tutup = reactive({ buka: false, perlakuan: 'tidak_dinilai', alasan: '', galat: '', kirim: false })
+
+const belumMengisi = computed(() =>
+    (props.penugasan ?? []).filter((p) => p.status_pengerjaan !== 'selesai'))
+
+function bukaSelesaikan() {
+    Object.assign(tutup, { buka: true, perlakuan: 'tidak_dinilai', alasan: '', galat: '', kirim: false })
+}
+
+function kirimSelesaikan() {
+    if (tutup.alasan.trim().length < 5) return
+    tutup.kirim = true; tutup.galat = ''
+    router.post(route('admin.smart-payroll.tugas-tambahan.selesaikan', props.tugas.id),
+        { perlakuan: tutup.perlakuan, alasan: tutup.alasan.trim() },
+        {
+            preserveScroll: true,
+            onSuccess: () => { tutup.buka = false },
+            // Inertia membalas 303 + errors; tanpa onError galatnya hilang diam-diam.
+            onError: (e) => { tutup.galat = Object.values(e)[0] ?? 'Gagal menyelesaikan tugas.' },
+            onFinish: () => { tutup.kirim = false },
+        })
+}
 
 // ─── Vakasi: penetapan + penjagaan ────────────────────────────────────────────
 // Nominal vakasi dulu bisa berubah tanpa alasan, tanpa jejak, dan tanpa

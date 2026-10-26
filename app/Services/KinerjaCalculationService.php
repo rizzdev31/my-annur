@@ -434,7 +434,11 @@ class KinerjaCalculationService
         ?Carbon $batas = null
     ): array {
         // ── Sub 2a: Penugasan Tambahan ──────────────────────────────────────
-        $penugasan = PenugasanTambahan::where('tenaga_pendidik_id', $guru->id)
+        // Relasi dimuat UTUH (tanpa pilih kolom): status dibaca di bawah, dan
+        // batasPengisian() membaca tanggal_selesai dari relasi yang sama — satu
+        // kolom yang luput bikin tenggat terbaca null dan penilaian melempem.
+        $penugasan = PenugasanTambahan::with('tugasTambahan')
+            ->where('tenaga_pendidik_id', $guru->id)
             ->whereHas('tugasTambahan', fn($q) =>
                 $q->where('tanggal_mulai', '<=', $selesai)
                   ->where(fn($q2) => $q2->whereNull('tanggal_selesai')
@@ -451,7 +455,25 @@ class KinerjaCalculationService
         // di depan (bahkan hari ini) belum dihukum.
         $acuanTenggat = ($batas && $batas->lt($selesai) ? $batas : $selesai)->toDateString();
 
-        $dinilai = $penugasan->filter(function ($p) use ($acuanTenggat) {
+        // Tugas yang DIBATALKAN lembaga tidak boleh menghukum: agendanya memang
+        // tidak jalan, jadi guru tak mungkin menyelesaikannya. Terukur 26 Okt 2026:
+        // satu tugas "rapat evaluasi" yang dibatalkan membebani 47 guru, menekan
+        // skor penugasan September dari 89,83 menjadi 50,00 — dua guru bahkan
+        // mendapat 0 karena itu satu-satunya tugas mereka bulan itu.
+        //
+        // Yang sudah SELESAI sebelum pembatalan tetap dinilai sebagai keberhasilan.
+        // Mengeluarkan semua tugas dibatalkan tanpa pandang status akan mencabut
+        // kerja yang sudah dilakukan dari pembilang, sehingga ada guru yang skornya
+        // justru TURUN karena rajin. Karena itu pengecualian ini bersyarat.
+        // Dua jalan keluar dari penilaian, keduanya bersyarat "belum selesai":
+        //   a. tugasnya dibatalkan lembaga (agendanya tidak jalan), dan
+        //   b. superadmin menutup tugas lalu memutuskan penerima ini tidak dinilai
+        //      (kolom dikecualikan_penilaian, beralasan & berjejak).
+        $dibatalkan = $penugasan->filter(fn ($p) => $p->status_pengerjaan !== 'selesai'
+            && ($p->tugasTambahan?->status === 'dibatalkan' || $p->dikecualikan_penilaian));
+
+        $dinilai = $penugasan->filter(function ($p) use ($acuanTenggat, $dibatalkan) {
+            if ($dibatalkan->contains('id', $p->id)) return false;
             if ($p->status_pengerjaan === 'selesai') return true;
             if ($p->tidakTerlaksana()) return true;
             return $p->lewatTenggat($acuanTenggat);
@@ -528,7 +550,9 @@ class KinerjaCalculationService
             'penugasan_total'    => $penugasanTotal,
             'penugasan_selesai'  => $penugasanSelesai,
             // Belum jatuh tempo → tidak dinilai (netral), hanya keterangan.
-            'penugasan_ditunda'  => $penugasan->count() - $penugasanTotal,
+            // Tugas dibatalkan dipisah supaya tidak terbaca "belum jatuh tempo".
+            'penugasan_ditunda'  => $penugasan->count() - $penugasanTotal - $dibatalkan->count(),
+            'penugasan_dibatalkan' => $dibatalkan->count(),
             'jabatan_total'      => $realisasiTotal,
             'jabatan_disetujui'  => $realisasiDisetujui,
             // untuk penjelasan penyebab ke guru
@@ -878,7 +902,10 @@ class KinerjaCalculationService
                     : 'belum ada tugas tambahan yang tercatat',
                 'angka'    => "selesai {$k2['penugasan_selesai']} dari {$k2['penugasan_total']} tugas yang sudah jatuh tempo"
                     . (($k2['penugasan_ditunda'] ?? 0) > 0
-                        ? " ({$k2['penugasan_ditunda']} tugas belum jatuh tempo, belum dihitung)" : ''),
+                        ? " ({$k2['penugasan_ditunda']} tugas belum jatuh tempo, belum dihitung)" : '')
+                    // Guru berhak tahu tugas yang dibatalkan TIDAK dipakai menilainya.
+                    . (($k2['penugasan_dibatalkan'] ?? 0) > 0
+                        ? " ({$k2['penugasan_dibatalkan']} tugas dibatalkan, tidak dinilai)" : ''),
                 'saran'    => 'Selesaikan tugas lalu laporkan agar bisa disetujui admin.',
                 'dampak'   => $d,
             ];

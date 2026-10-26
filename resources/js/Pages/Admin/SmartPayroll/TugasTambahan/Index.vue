@@ -77,6 +77,7 @@
                     <span v-if="rentang.menunggu" class="text-amber-700 font-semibold">{{ rentang.menunggu }} menunggu persetujuan</span>
                     <span v-if="rentang.belum" class="text-red-600 font-semibold">{{ rentang.belum }} belum dikerjakan</span>
                     <span v-if="rentang.tidak_selesai" class="text-gray-500">{{ rentang.tidak_selesai }} tidak terlaksana</span>
+                    <span v-if="rentang.dikecualikan" class="text-sky-700 font-semibold">{{ rentang.dikecualikan }} tidak dinilai</span>
                     <span class="text-indigo-700 font-semibold">Vakasi {{ formatRp(rentang.vakasi) }}</span>
                 </div>
             </div>

@@ -394,6 +394,10 @@ Route::prefix('admin')
             // ada penerima yang slipnya sudah terbit.
             Route::post('tugas-tambahan/{tugasTambahan}/vakasi',
                 [TugasTambahanController::class, 'updateVakasiTugas'])->name('tugas-tambahan.vakasi');
+            // Tutup tugas walau pengisian belum lengkap; perlakuan penerima yang
+            // belum mengisi dipilih superadmin (tidak dinilai / ditandai gagal).
+            Route::post('tugas-tambahan/{tugasTambahan}/selesaikan',
+                [TugasTambahanController::class, 'selesaikan'])->name('tugas-tambahan.selesaikan');
             Route::post('tugas-tambahan/{tugasTambahan}/batalkan',
                 [TugasTambahanController::class, 'destroy'])->name('tugas-tambahan.hapus');
             Route::resource('tugas-tambahan', TugasTambahanController::class);

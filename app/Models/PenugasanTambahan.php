@@ -35,6 +35,11 @@ class PenugasanTambahan extends Model
         'disetujui',
         'diverifikasi_oleh',
         'catatan_verifikasi',
+        // Dikeluarkan dari penilaian kinerja (keputusan superadmin saat menutup tugas)
+        'dikecualikan_penilaian',
+        'alasan_pengecualian',
+        'dikecualikan_oleh',
+        'dikecualikan_pada',
     ];
 
     protected function casts(): array
@@ -48,6 +53,8 @@ class PenugasanTambahan extends Model
             'vakasi_override' => 'float',
             'vakasi_dikunci'  => 'boolean',
             'vakasi_ditetapkan_pada' => 'datetime',
+            'dikecualikan_penilaian' => 'boolean',
+            'dikecualikan_pada'      => 'datetime',
         ];
     }
 
