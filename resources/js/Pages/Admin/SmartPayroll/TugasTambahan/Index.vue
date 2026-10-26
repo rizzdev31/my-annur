@@ -23,6 +23,65 @@
             placeholder="Cari judul tugas…"
             @update:status="setStatus" @update:search="onSearch" />
 
+        <!-- Saringan periode: tugas merentang tanggal, jadi "periode" ditentukan
+             dari persinggungan rentang — aturan yang sama dengan penilaian kinerja. -->
+        <div class="bg-white rounded-2xl border border-gray-200 p-4 mb-4">
+            <div class="flex flex-wrap items-end gap-3">
+                <div class="min-w-[200px]">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">Periode Gaji</label>
+                    <select :value="periode" @change="pilihPeriode($event.target.value)"
+                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">Semua periode</option>
+                        <option v-for="o in periodeOpsi" :key="o.id" :value="o.id">
+                            {{ o.label }} · {{ o.dari }}–{{ o.sampai }}
+                        </option>
+                    </select>
+                </div>
+
+                <div class="flex items-end gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Atau dari</label>
+                        <input v-model="dari" type="date"
+                            class="px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">sampai</label>
+                        <input v-model="sampai" type="date"
+                            class="px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                    <button @click="pakaiTanggal" :disabled="!dari || !sampai"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl transition-colors"
+                        :class="dari && sampai
+                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
+                        Terapkan
+                    </button>
+                </div>
+
+                <button v-if="rentang" @click="hapusRentang"
+                    class="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors">
+                    Hapus saringan
+                </button>
+            </div>
+
+            <!-- Ringkasan DALAM rentang — angka kartu di atas tetap global. -->
+            <div v-if="rentang" class="mt-4 pt-4 border-t border-gray-100">
+                <p class="text-xs text-gray-500">
+                    <span v-if="rentang.label" class="font-semibold text-gray-700">{{ rentang.label }}</span>
+                    <span v-if="rentang.label"> · </span>{{ rentang.dari }} – {{ rentang.sampai }}
+                    <span class="text-gray-400"> · tugas yang rentangnya bersinggungan dengan jendela ini</span>
+                </p>
+                <div class="flex flex-wrap gap-x-5 gap-y-1.5 mt-2 text-sm">
+                    <span class="text-gray-600">{{ rentang.tugas }} tugas · {{ rentang.penugasan }} penugasan</span>
+                    <span class="text-emerald-700 font-semibold">{{ rentang.beres }} selesai &amp; disetujui</span>
+                    <span v-if="rentang.menunggu" class="text-amber-700 font-semibold">{{ rentang.menunggu }} menunggu persetujuan</span>
+                    <span v-if="rentang.belum" class="text-red-600 font-semibold">{{ rentang.belum }} belum dikerjakan</span>
+                    <span v-if="rentang.tidak_selesai" class="text-gray-500">{{ rentang.tidak_selesai }} tidak terlaksana</span>
+                    <span class="text-indigo-700 font-semibold">Vakasi {{ formatRp(rentang.vakasi) }}</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Tabel -->
         <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <table class="w-full">
@@ -116,11 +175,16 @@ const confirm = ref(null)
 const props = defineProps({
     tugas:   { type: Object, default: () => ({ data: [], links: [] }) },
     summary: { type: Object, default: () => ({}) },
-    filters: { type: Object, default: () => ({ status: '', q: '' }) },
+    filters: { type: Object, default: () => ({ status: '', q: '', periode: null, dari: null, sampai: null }) },
+    periodeOpsi: { type: Array, default: () => [] },
+    rentang: { type: Object, default: null },
 })
 
 const filterStatus = ref(props.filters.status ?? '')
 const search = ref(props.filters.q ?? '')
+const periode = ref(props.filters.periode ?? '')
+const dari = ref(props.filters.dari ?? '')
+const sampai = ref(props.filters.sampai ?? '')
 
 const cards = computed(() => [
     { label: 'Total Tugas', value: props.summary.total ?? 0, icon: 'clipboard', tone: 'gray', filter: '', active: filterStatus.value === '' },
@@ -138,10 +202,33 @@ const tabs = computed(() => [
 
 function reload() {
     router.get(route('admin.smart-payroll.tugas-tambahan.index'),
-        { status: filterStatus.value || undefined, q: search.value || undefined },
+        {
+            status: filterStatus.value || undefined,
+            q: search.value || undefined,
+            // Periode menang atas tanggal manual — sama seperti di server.
+            periode: periode.value || undefined,
+            dari: periode.value ? undefined : (dari.value || undefined),
+            sampai: periode.value ? undefined : (sampai.value || undefined),
+        },
         { preserveState: true, preserveScroll: true, replace: true })
 }
 function setStatus(val) { filterStatus.value = val; reload() }
+
+function pilihPeriode(val) {
+    periode.value = val
+    if (val) { dari.value = ''; sampai.value = '' }
+    reload()
+}
+function pakaiTanggal() {
+    // Separuh rentang diabaikan server; jangan kirim sampai keduanya terisi.
+    if (!dari.value || !sampai.value) return
+    periode.value = ''
+    reload()
+}
+function hapusRentang() {
+    periode.value = ''; dari.value = ''; sampai.value = ''
+    reload()
+}
 
 let timer = null
 function onSearch(val) {

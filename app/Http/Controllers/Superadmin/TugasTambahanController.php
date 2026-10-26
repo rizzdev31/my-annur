@@ -20,6 +20,16 @@ class TugasTambahanController extends Controller
         $status = (string) $request->input('status', '');
         $q      = trim((string) $request->input('q', ''));
 
+        // ── Saringan PERIODE / rentang tanggal ──────────────────────────────
+        // Tugas tambahan merentang tanggal, jadi "milik periode mana" tidak bisa
+        // dijawab dengan satu tanggal. Aturan yang dipakai di sini SAMA dengan
+        // yang dipakai penilaian kinerja (KinerjaCalculationService::komponenTugas):
+        // sebuah tugas masuk periode bila rentangnya BERSINGGUNGAN dengan jendela
+        // periode — mulai <= akhir jendela DAN (tanpa akhir ATAU akhir >= awal
+        // jendela). Dengan begitu daftar di layar ini persis tugas yang menentukan
+        // skor kinerja periode itu, bukan daftar yang mirip-mirip.
+        [$dari, $sampai, $periodeDipakai] = $this->rentangFilter($request);
+
         $tugas = TugasTambahan::with(['dibuatOleh', 'settingVakasi'])
             ->withCount([
                 'penugasan',
@@ -33,6 +43,9 @@ class TugasTambahanController extends Controller
             ->when($status === 'perlu_verifikasi',
                 fn($qq) => $qq->whereHas('penugasan', fn($p) => $p->menungguVerifikasi()))
             ->when($q !== '', fn($qq) => $qq->where('judul', 'like', "%{$q}%"))
+            ->when($dari && $sampai, fn($qq) => $qq->where('tanggal_mulai', '<=', $sampai)
+                ->where(fn($w) => $w->whereNull('tanggal_selesai')
+                    ->orWhere('tanggal_selesai', '>=', $dari)))
             ->orderByDesc('created_at')
             ->paginate(15)
             ->withQueryString()
@@ -62,7 +75,17 @@ class TugasTambahanController extends Controller
 
         return Inertia::render('Admin/SmartPayroll/TugasTambahan/Index', [
             'tugas'   => $tugas,
-            'filters' => ['status' => $status, 'q' => $q],
+            'filters' => [
+                'status'  => $status,
+                'q'       => $q,
+                'periode' => $periodeDipakai?->id,
+                'dari'    => $dari,
+                'sampai'  => $sampai,
+            ],
+            'periodeOpsi' => $this->opsiPeriode(),
+            'rentang'     => $dari && $sampai
+                ? $this->ringkasanRentang($dari, $sampai, $periodeDipakai)
+                : null,
             'summary' => [
                 'total'    => TugasTambahan::count(),
                 'aktif'    => TugasTambahan::where('status', 'aktif')->count(),
@@ -71,6 +94,90 @@ class TugasTambahanController extends Controller
                 'vakasi'   => $vakasiTotal,
             ],
         ]);
+    }
+
+    /**
+     * Tentukan jendela tanggal dari permintaan: pilihan periode gaji menang atas
+     * tanggal manual, supaya satu klik "Okt 2026" selalu berarti 26 Sep–25 Okt
+     * dan tidak pernah tertukar dengan 1–31 Oktober.
+     *
+     * @return array{0: ?string, 1: ?string, 2: ?\App\Models\PeriodePenggajian}
+     */
+    private function rentangFilter(Request $request): array
+    {
+        $periode = $request->filled('periode')
+            ? \App\Models\PeriodePenggajian::find($request->input('periode'))
+            : null;
+
+        if ($periode?->tanggal_mulai && $periode->tanggal_selesai) {
+            return [
+                $periode->tanggal_mulai->toDateString(),
+                $periode->tanggal_selesai->toDateString(),
+                $periode,
+            ];
+        }
+
+        $dari   = $request->input('dari');
+        $sampai = $request->input('sampai');
+
+        // Separuh rentang tidak berguna — keduanya harus ada, kalau tidak diabaikan.
+        if (!$dari || !$sampai) return [null, null, null];
+
+        try {
+            return [
+                \Carbon\Carbon::parse($dari)->toDateString(),
+                \Carbon\Carbon::parse($sampai)->toDateString(),
+                null,
+            ];
+        } catch (\Throwable) {
+            return [null, null, null];
+        }
+    }
+
+    /** Periode gaji terakhir sebagai pilihan cepat (terbaru di atas). */
+    private function opsiPeriode(): array
+    {
+        return \App\Models\PeriodePenggajian::orderByDesc('tahun')->orderByDesc('bulan')
+            ->limit(12)->get()
+            ->filter(fn ($p) => $p->tanggal_mulai && $p->tanggal_selesai)
+            ->map(fn ($p) => [
+                'id'     => $p->id,
+                'label'  => $p->nama_bulan,
+                'dari'   => $p->tanggal_mulai->format('d M Y'),
+                'sampai' => $p->tanggal_selesai->format('d M Y'),
+            ])->values()->all();
+    }
+
+    /**
+     * Ringkasan penugasan DI DALAM jendela — ini yang menjawab "siapa yang
+     * belum beres di periode ini", bukan angka global di kartu atas.
+     */
+    private function ringkasanRentang(string $dari, string $sampai, $periode): array
+    {
+        $penugasan = PenugasanTambahan::with('tugasTambahan.settingVakasi')
+            ->whereHas('tugasTambahan', fn ($q) => $q->where('tanggal_mulai', '<=', $sampai)
+                ->where(fn ($w) => $w->whereNull('tanggal_selesai')
+                    ->orWhere('tanggal_selesai', '>=', $dari)))
+            ->get();
+
+        $beres = $penugasan->where('status_pengerjaan', 'selesai')->where('disetujui', true);
+
+        return [
+            'label'          => $periode?->nama_bulan,
+            'dari'           => \Carbon\Carbon::parse($dari)->format('d M Y'),
+            'sampai'         => \Carbon\Carbon::parse($sampai)->format('d M Y'),
+            'tugas'          => $penugasan->pluck('tugas_tambahan_id')->unique()->count(),
+            'penugasan'      => $penugasan->count(),
+            'beres'          => $beres->count(),
+            'menunggu'       => $penugasan->where('status_pengerjaan', 'selesai')
+                                    ->where('disetujui', false)->count(),
+            'belum'          => $penugasan->whereIn('status_pengerjaan', ['belum', 'sedang'])->count(),
+            'tidak_selesai'  => $penugasan->where('status_pengerjaan', 'tidak_selesai')->count(),
+            // Vakasi yang benar-benar menempel pada jendela ini, bukan total global.
+            'vakasi'         => (float) $beres->sum(
+                fn ($p) => app(\App\Services\VakasiTugasService::class)->untukPenerima($p)['nominal']
+            ),
+        ];
     }
 
     public function create()

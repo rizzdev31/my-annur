@@ -175,8 +175,10 @@ class KinerjaApiController extends Controller
 
     // ══════════════════════════════════════════════════════════════════════════
     // GET /kinerja/riwayat
-    // Riwayat rekap kinerja 6 bulan terakhir (dari tabel tersimpan).
-    // Jika bulan saat ini belum dihitung → pakai preview real-time.
+    // Riwayat rekap kinerja 12 periode terakhir (hanya yang SUDAH tersimpan).
+    // Label & jendelanya mengikuti PERIODE GAJI (26→25), bukan bulan kalender,
+    // sama seperti /kinerja/bulan-ini — tanpa itu guru membaca "Okt 2026"
+    // sebagai 1–31 Oktober padahal yang dinilai 26 Sep–25 Okt.
     // ══════════════════════════════════════════════════════════════════════════
 
     public function riwayat(Request $request): JsonResponse
@@ -193,11 +195,24 @@ class KinerjaApiController extends Controller
             ->limit(12)
             ->get();
 
+        // Satu query untuk semua label periode, lalu dicocokkan per rekap.
+        $periode = \App\Models\PeriodePenggajian::whereIn('tahun', $rekaps->pluck('tahun')->unique()->all())
+            ->get()->keyBy(fn ($p) => $p->tahun . '-' . (int) $p->bulan);
+        $berjalan = \App\Models\PeriodePenggajian::untukTanggal($today->toDateString());
+
         $data = $rekaps->map(fn($r) => [
             'bulan'      => $r->bulan,
             'tahun'      => $r->tahun,
-            'nama_bulan' => Carbon::create($r->tahun, $r->bulan, 1)
-                ->locale('id')->isoFormat('MMM YYYY'),
+            'nama_bulan' => $periode->get($r->tahun . '-' . (int) $r->bulan)?->nama_bulan
+                ?? Carbon::create($r->tahun, $r->bulan, 1)->locale('id')->isoFormat('MMM YYYY'),
+            // Jendela yang dinilai — periode gaji 26→25 ≠ bulan kalender.
+            'dinilai_dari'   => $periode->get($r->tahun . '-' . (int) $r->bulan)?->tanggal_mulai?->format('d M Y'),
+            'dinilai_sampai' => $periode->get($r->tahun . '-' . (int) $r->bulan)?->tanggal_selesai?->format('d M Y'),
+            // Periode yang masih berjalan: angkanya belum final, jangan disamakan
+            // dengan periode lampau di layar guru.
+            'is_berjalan' => $berjalan
+                && (int) $berjalan->bulan === (int) $r->bulan
+                && (int) $berjalan->tahun === (int) $r->tahun,
             'skor_total'        => (float) $r->skor_total,
             'skor_absensi'      => (float) $r->skor_absensi,
             'skor_tugas'        => (float) $r->skor_tugas,

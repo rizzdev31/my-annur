@@ -4,6 +4,7 @@ import api from '../api'
 import PageHeader from '../components/PageHeader.vue'
 
 const d = ref(null)
+const riwayat = ref([])
 const loading = ref(true)
 const error = ref('')
 
@@ -16,7 +17,18 @@ async function load() {
         error.value = e.response?.data?.message || 'Gagal memuat kinerja.'
     } finally { loading.value = false }
 }
-onMounted(load)
+
+// Riwayat dimuat terpisah: kalau gagal, kartu skor periode berjalan tetap tampil.
+async function loadRiwayat() {
+    try {
+        const res = await api.get('/kinerja/riwayat')
+        const data = res.data.data ?? res.data
+        // Periode berjalan sudah tampil besar di atas — di sini hanya yang LAMPAU.
+        riwayat.value = (data.riwayat ?? []).filter((r) => !r.is_berjalan)
+    } catch { riwayat.value = [] }
+}
+
+onMounted(() => { load(); loadRiwayat() })
 
 const komponen = computed(() => {
     if (!d.value) return []
@@ -49,10 +61,47 @@ const gradeColor = (g) => ({
             <!-- Skor -->
             <div class="rounded-3xl bg-white border border-gray-100 p-6 text-center">
                 <p class="text-xs text-gray-400">{{ d.nama_bulan }}</p>
+                <!-- Jendela penilaian ditulis terang-terangan: periode 26→25 bukan bulan kalender. -->
+                <p v-if="d.dinilai_dari" class="text-[10px] text-gray-400">{{ d.dinilai_dari }} – {{ d.dinilai_sampai }}</p>
                 <p class="mt-2 text-5xl font-extrabold" :class="gradeColor(d.grade)">{{ Math.round(d.skor_total ?? 0) }}</p>
                 <p class="text-sm font-bold mt-1" :class="gradeColor(d.grade)">Grade {{ d.grade }} · {{ d.label_grade }}</p>
                 <span v-if="d.is_preview" class="inline-block mt-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Preview berjalan</span>
                 <span v-else-if="d.sudah_dikunci" class="inline-block mt-2 text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Terkunci</span>
+            </div>
+
+            <!-- Periode sebelumnya: skor saja, biar guru tahu hasil yang sudah lewat.
+                 Angkanya ikut periode penilaiannya sendiri, jadi akan berubah bila
+                 tugas periode itu dibereskan lalu rekapnya dihitung ulang admin. -->
+            <div v-if="riwayat.length" class="rounded-2xl bg-white border border-gray-100 p-4 mt-4">
+                <h2 class="text-sm font-bold text-gray-800">Periode Sebelumnya</h2>
+                <p class="text-[10px] text-gray-400 mt-0.5 mb-3">
+                    Skor akhir tiap periode penilaian. Yang belum terkunci masih bisa berubah
+                    bila tugas periode itu dibereskan.
+                </p>
+                <div class="divide-y divide-gray-50">
+                    <div v-for="r in riwayat" :key="r.tahun + '-' + r.bulan"
+                        class="flex items-center justify-between gap-3 py-2.5">
+                        <div class="min-w-0">
+                            <p class="text-[13px] font-semibold text-gray-800">{{ r.nama_bulan }}</p>
+                            <p v-if="r.dinilai_dari" class="text-[10px] text-gray-400 mt-0.5">
+                                {{ r.dinilai_dari }} – {{ r.dinilai_sampai }}
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <span v-if="!r.sudah_dikunci"
+                                class="text-[9px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                                belum final
+                            </span>
+                            <div class="text-right">
+                                <p class="text-xl font-extrabold tabular-nums leading-none"
+                                    :class="gradeColor(r.grade)">{{ Math.round(r.skor_total ?? 0) }}</p>
+                                <p class="text-[10px] font-bold mt-0.5" :class="gradeColor(r.grade)">
+                                    {{ r.grade }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Penyebab skor belum 100 — pertanyaan pertama guru: "kenapa turun?" -->
