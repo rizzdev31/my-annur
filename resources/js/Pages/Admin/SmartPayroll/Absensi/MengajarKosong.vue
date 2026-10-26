@@ -37,11 +37,12 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Program</label>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Pembelajaran</label>
                     <select v-model="f.program" :class="inputCls">
-                        <option value="reguler">Reguler (non-Qur'an)</option>
+                        <option value="reguler">Reguler</option>
+                        <option value="pesantren">Pesantren (jam 20.00)</option>
                         <option value="quran">Tahfidz &amp; Tahsin</option>
-                        <option value="semua">Semua program</option>
+                        <option value="semua">Semua pembelajaran</option>
                     </select>
                 </div>
                 <div>
@@ -151,6 +152,7 @@
                                 <th class="px-3 py-2.5">Guru</th>
                                 <th class="px-3 py-2.5">Kelas</th>
                                 <th class="px-3 py-2.5 hidden md:table-cell">Mapel</th>
+                                <th class="px-3 py-2.5">Sifat</th>
                                 <th class="px-3 py-2.5">Jam</th>
                                 <th class="px-3 py-2.5">Sebab</th>
                             </tr>
@@ -169,6 +171,10 @@
                                     <span v-if="s.tingkat" class="text-[10px] text-gray-400">({{ s.tingkat }})</span>
                                 </td>
                                 <td class="px-3 py-2 hidden md:table-cell text-xs text-gray-600">{{ s.mapel }}</td>
+                                <td class="px-3 py-2">
+                                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded capitalize"
+                                        :class="kelasSifat(s.sifat)">{{ s.sifat }}</span>
+                                </td>
                                 <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">{{ s.jam }}</td>
                                 <td class="px-3 py-2 text-xs">
                                     <span class="px-1.5 py-0.5 rounded font-semibold"
@@ -246,6 +252,14 @@ const persenCls = computed(() => {
     if (p === null || p === undefined) return 'text-gray-400'
     return p >= 90 ? 'text-emerald-600' : p >= 75 ? 'text-amber-600' : 'text-red-600'
 })
+
+// Empat nama pembelajaran dengan warna masing-masing, supaya terbaca sekilas
+// tanpa harus menyaring satu-satu.
+const kelasSifat = (s) => ({
+    pesantren: 'bg-amber-50 text-amber-700',
+    tahfidz: 'bg-emerald-50 text-emerald-700',
+    tahsin: 'bg-violet-50 text-violet-700',
+}[s] ?? 'bg-gray-100 text-gray-600')
 
 const tglSingkat = (t) => new Date(t + 'T00:00:00')
     .toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })

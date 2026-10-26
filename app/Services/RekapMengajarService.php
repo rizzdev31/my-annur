@@ -51,6 +51,18 @@ class RekapMengajarService
      */
     public const TIPE_REGULER = 'reguler';
 
+    /**
+     * Pembelajaran PESANTREN — nama keempat (keputusan 26 Okt 2026:
+     * pembelajaran jam 20.00 bukan reguler). Disimpan di
+     * `jadwal_mengajar.sifat`, BUKAN di `mata_pelajaran.tipe`, karena ada
+     * mapel yang diajar di kedua waktu: Bahasa Arab 18 jadwal jam 20.00 vs 13
+     * jadwal jam lain, Hadits 7 vs 9. Satu label per mapel pasti salah di
+     * salah satu sisi.
+     *
+     * Penggajian & kinerja TIDAK membedakannya — ini murni penamaan.
+     */
+    public const TIPE_PESANTREN = 'pesantren';
+
     public function __construct(private SesiMengajarService $sesi) {}
 
     /**
@@ -172,7 +184,7 @@ class RekapMengajarService
      * yang tak datang dilaporkan terpisah sebagai `inval_tidak_datang`,
      * sebab itu tanggung jawab pengganti, bukan pemilik jadwal.
      *
-     * @param  bool  $gabungSemua  true = reguler + Qur'an sekaligus
+     * @param  bool  $gabungSemua  true = reguler + pesantren + Qur'an sekaligus
      * @return array{ringkasan:array, kosong:array, per_guru:array}
      */
     public function detailKosong(
@@ -183,8 +195,12 @@ class RekapMengajarService
         ?array $tingkat = null,
         bool $gabungSemua = false,
     ): array {
+        // TIGA panggilan untuk 'semua': reguler, pesantren, Qur'an. Dulu dua —
+        // begitu sifat pesantren lahir, "semua" akan kehilangan 35 jadwal jam
+        // 20.00 bila panggilannya tidak ditambah.
         $sesi = $gabungSemua
             ? $this->sesiPeriode($mulai, $selesai, self::TIPE_REGULER, $tingkat)
+                ->concat($this->sesiPeriode($mulai, $selesai, self::TIPE_PESANTREN, $tingkat))
                 ->concat($this->sesiPeriode($mulai, $selesai, null, $tingkat))
             : $this->sesiPeriode($mulai, $selesai, $tipe, $tingkat);
 
@@ -206,6 +222,7 @@ class RekapMengajarService
                 'mapel'      => $x['mapel'] ?? '-',
                 'jam'        => $x['jam'],
                 'tipe'       => $x['tipe'],
+                'sifat'      => $x['sifat'] ?? 'reguler',
                 'kategori'   => $x['kategori'],
                 'sebab'      => $x['keterangan'],
             ])->values();
@@ -248,11 +265,16 @@ class RekapMengajarService
     private function sesiPeriode(
         Carbon $mulai, Carbon $selesai, ?string $tipe, ?array $tingkat = null
     ): Collection {
-        // 'reguler' = semua mapel di LUAR program Qur'an; null = Qur'an saja
-        // (perilaku lama, dipakai laporan Mengajar Tahfidz & Tahsin).
-        $reguler  = $tipe === self::TIPE_REGULER;
-        $tipeList = $reguler ? self::TIPE : ($tipe ? [$tipe] : self::TIPE);
-        $tingkat  = $tingkat ? array_map('strval', $tingkat) : null;
+        // Tiga mode saringan:
+        //  - 'reguler'   : mapel non-Qur'an DAN jadwal bersifat reguler
+        //  - 'pesantren' : mapel non-Qur'an DAN jadwal bersifat pesantren (jam 20)
+        //  - null/tipe   : program Qur'an (perilaku lama laporan Tahfidz & Tahsin)
+        $pesantren = $tipe === self::TIPE_PESANTREN;
+        $reguler   = $tipe === self::TIPE_REGULER;
+        $nonQuran  = $reguler || $pesantren;
+        $tipeList  = $nonQuran ? self::TIPE : ($tipe ? [$tipe] : self::TIPE);
+        $sifat     = $pesantren ? self::TIPE_PESANTREN : ($reguler ? self::TIPE_REGULER : null);
+        $tingkat   = $tingkat ? array_map('strval', $tingkat) : null;
         $now      = TimezoneHelper::now();
         $dari     = $mulai->toDateString();
         $sampai   = $selesai->toDateString();
@@ -262,8 +284,13 @@ class RekapMengajarService
             ->join('jadwal_mengajar as j', 'j.id', '=', 'a.jadwal_mengajar_id')
             ->join('mata_pelajaran as m', 'm.id', '=', 'j.mata_pelajaran_id')
             ->leftJoin('kelas as k', 'k.id', '=', 'j.kelas_id')
-            ->when($reguler, fn ($q) => $q->whereNotIn('m.tipe', $tipeList),
-                             fn ($q) => $q->whereIn('m.tipe', $tipeList))
+            ->when($nonQuran, fn ($q) => $q->whereNotIn('m.tipe', $tipeList),
+                              fn ($q) => $q->whereIn('m.tipe', $tipeList))
+            // Jadwal lama sebelum kolom `sifat` ada bernilai default 'reguler',
+            // jadi NULL pun diperlakukan reguler agar tidak ada sesi hilang.
+            ->when($sifat === self::TIPE_REGULER,
+                fn ($q) => $q->where(fn ($w) => $w->where('j.sifat', 'reguler')->orWhereNull('j.sifat')))
+            ->when($sifat === self::TIPE_PESANTREN, fn ($q) => $q->where('j.sifat', 'pesantren'))
             ->when($tingkat, fn ($q) => $q->whereIn('k.tingkat', $tingkat))
             ->whereBetween('a.tanggal', [$dari, $sampai])
             ->get([
@@ -273,7 +300,7 @@ class RekapMengajarService
                 // sekali, padahal inilah bahan audit: 156/156 sesi tidak terlaksana,
                 // 32/32 izin, dan 38/38 sesi pengganti punya isinya.
                 'a.keterangan as keterangan_tercatat',
-                'j.jam_mulai', 'j.jam_selesai', 'j.jumlah_jp', 'm.tipe', 'm.nama as mapel',
+                'j.jam_mulai', 'j.jam_selesai', 'j.jumlah_jp', 'j.sifat', 'm.tipe', 'm.nama as mapel',
                 'k.nama as kelas', 'k.tingkat as tingkat',
             ]);
 
@@ -339,6 +366,10 @@ class RekapMengajarService
                 'tanggal'    => $tgl,
                 'mapel'      => $a->mapel ?? '-',
                 'tingkat'    => $a->tingkat,
+                // Empat nama pembelajaran dalam satu medan: Qur'an dari tipe
+                // mapel, pesantren/reguler dari sifat jadwal.
+                'sifat'      => in_array($a->tipe, self::TIPE, true)
+                    ? $a->tipe : ($a->sifat ?? 'reguler'),
                 'jam'        => substr((string) $a->jam_mulai, 0, 5) . '–' . substr((string) $a->jam_selesai, 0, 5),
                 'tipe'       => $a->tipe,
                 'kelas'      => $a->kelas ?? '—',
@@ -435,9 +466,12 @@ class RekapMengajarService
         $jadwal = JadwalMengajar::with(['mataPelajaran:id,nama,tipe', 'kelasRel:id,nama,tingkat'])
             ->where('is_aktif', true)
             ->whereHas('tahunAjaran', fn ($q) => $q->where('is_aktif', true))
-            ->when($reguler,
+            ->when($nonQuran,
                 fn ($q) => $q->whereHas('mataPelajaran', fn ($m) => $m->whereNotIn('tipe', $tipeList)),
                 fn ($q) => $q->whereHas('mataPelajaran', fn ($m) => $m->whereIn('tipe', $tipeList)))
+            ->when($sifat === self::TIPE_REGULER,
+                fn ($q) => $q->where(fn ($w) => $w->where('sifat', 'reguler')->orWhereNull('sifat')))
+            ->when($sifat === self::TIPE_PESANTREN, fn ($q) => $q->where('sifat', 'pesantren'))
             ->when($tingkat, fn ($q) => $q->whereHas('kelasRel', fn ($k) => $k->whereIn('tingkat', $tingkat)))
             ->whereHas('tenagaPendidik', fn ($q) => $q->where('is_aktif', true))
             ->get();
@@ -465,6 +499,7 @@ class RekapMengajarService
                     'absensi_id' => null, 'tanggal' => $tgl,
                     'mapel'      => $j->mataPelajaran?->nama ?? '-',
                     'tingkat'    => $j->kelasRel?->tingkat,
+                    'sifat'      => $j->sifat_pembelajaran,
                     'jam'        => substr((string) $j->jam_mulai, 0, 5) . '–' . substr((string) $j->jam_selesai, 0, 5),
                     'tipe'       => $j->mataPelajaran?->tipe, 'kelas' => $j->kelasRel?->nama ?? $j->kelas ?? '—',
                     'santri_hadir' => 0, 'santri_total' => 0,

@@ -254,7 +254,7 @@ class AbsensiController extends Controller
             'dari'    => 'nullable|date_format:Y-m-d',
             'sampai'  => 'nullable|date_format:Y-m-d',
             'jenjang' => 'nullable|in:semua,smp,sma',
-            'program' => 'nullable|in:reguler,quran,semua',
+            'program' => 'nullable|in:reguler,pesantren,quran,semua',
             'guru_id' => 'nullable|integer|exists:tenaga_pendidik,id',
         ]);
 
@@ -267,16 +267,25 @@ class AbsensiController extends Controller
         $program = $d['program'] ?? 'reguler';
         $guruId  = $d['guru_id'] ?? null;
 
+        // Kelas pesantren bertingkat 'SMA' (teks, bukan angka), jadi dulu ia
+        // tidak masuk saringan SMP (7-9) MAUPUN SMA/MA (10-12) dan hanya
+        // terlihat saat jenjang 'semua'. Muhadoroh SMA memang jenjang SMA,
+        // jadi nilai teksnya diikutkan di sana.
         $tingkat = match ($jenjang) {
             'smp'   => ['7', '8', '9'],
-            'sma'   => ['10', '11', '12'],
+            'sma'   => ['10', '11', '12', 'SMA'],
             default => null,
         };
 
-        // 'reguler' = semua mapel non-Qur'an; 'quran' = tahfidz+tahsin;
-        // 'semua'   = keduanya digabung (service dijalankan dua kali).
+        // Empat nama pembelajaran: reguler, pesantren (jam 20.00), tahfidz,
+        // tahsin. Dua yang pertama dibedakan oleh `jadwal.sifat`, dua yang
+        // terakhir oleh `mata_pelajaran.tipe` — service yang menyatukannya.
         $semua = $program === 'semua';
-        $tipe  = $program === 'quran' ? null : \App\Services\RekapMengajarService::TIPE_REGULER;
+        $tipe  = match ($program) {
+            'quran'     => null,
+            'pesantren' => \App\Services\RekapMengajarService::TIPE_PESANTREN,
+            default     => \App\Services\RekapMengajarService::TIPE_REGULER,
+        };
 
         $hasil = $svc->detailKosong($dari, $sampai, $tipe, $guruId, $tingkat, $semua);
 

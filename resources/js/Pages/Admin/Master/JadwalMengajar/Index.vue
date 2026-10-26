@@ -188,6 +188,15 @@
                                 <td class="px-5 py-3">
                                     <span class="text-gray-800">{{ j.mapel_nama }}</span>
                                     <span v-if="j.mapel_kode" class="ml-1 text-[11px] text-gray-400">({{ j.mapel_kode }})</span>
+                                    <!-- Sifat pembelajaran. Reguler tidak diberi lencana
+                                         supaya yang menonjol hanya yang bukan reguler. -->
+                                    <span v-if="j.sifat_label && j.sifat_label !== 'Reguler'"
+                                        class="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                        :class="{
+                                            'bg-amber-50 text-amber-700': j.sifat_label === 'Pesantren',
+                                            'bg-emerald-50 text-emerald-700': j.sifat_label === 'Tahfidz',
+                                            'bg-violet-50 text-violet-700': j.sifat_label === 'Tahsin',
+                                        }">{{ j.sifat_label }}</span>
                                 </td>
                             </tr>
                         </tbody>

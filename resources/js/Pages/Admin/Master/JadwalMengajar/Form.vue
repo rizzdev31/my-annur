@@ -140,6 +140,30 @@
                         <input v-model="form.ruangan" type="text" placeholder="cth: Lab IPA, Aula"
                             :class="inputCls()" />
                     </div>
+
+                    <!-- SIFAT PEMBELAJARAN. Form ini hanya menawarkan mapel
+                         reguler (tahfidz/tahsin dijadwalkan lewat generator
+                         Smart Tahfidz/Tahsin), jadi pilihannya selalu relevan. -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1.5">Sifat Pembelajaran</label>
+                        <select v-model="form.sifat" :class="inputCls(form.errors.sifat)">
+                            <option value="">Otomatis dari jam</option>
+                            <option value="reguler">Reguler</option>
+                            <option value="pesantren">Pesantren</option>
+                        </select>
+                        <p class="text-[11px] text-gray-400 mt-1">
+                            <template v-if="!form.sifat">
+                                Dibiarkan otomatis: jam <b>20.00</b> dicatat sebagai
+                                <b>pesantren</b>, selain itu reguler
+                                <span v-if="sifatOtomatis"> — jam {{ form.jam_mulai }} → <b>{{ sifatOtomatis }}</b></span>.
+                            </template>
+                            <template v-else>
+                                Ditetapkan manual sebagai <b>{{ form.sifat }}</b>, mengabaikan jamnya.
+                            </template>
+                            Tidak berpengaruh ke penggajian maupun kinerja — hanya penamaan.
+                        </p>
+                        <ErrMsg :e="form.errors.sifat" />
+                    </div>
                 </div>
 
                 <!-- Tombol -->
@@ -188,7 +212,14 @@ const form = useForm({
     jumlah_jp: props.jadwal?.jumlah_jp ?? 2,
     kelas: props.jadwal?.kelas ?? '',
     ruangan: props.jadwal?.ruangan ?? '',
+    // Kosong = biarkan server menurunkannya dari jam (20.00 -> pesantren).
+    sifat: props.jadwal?.sifat_terkunci ? '' : (props.jadwal?.sifat ?? ''),
 })
+
+// Cermin JadwalMengajarController::sifatOtomatis() — kalau salah satu berubah,
+// yang lain harus ikut, kalau tidak layar menjanjikan hal yang tidak terjadi.
+const sifatOtomatis = computed(() =>
+    parseInt(String(form.jam_mulai).slice(0, 2), 10) === 20 ? 'pesantren' : 'reguler')
 
 const hariAll = [
     { value: 'senin', label: 'Senin' },

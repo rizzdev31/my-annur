@@ -23,7 +23,45 @@ class JadwalMengajar extends Model
         'berlaku_mulai',    // masa berlaku; dipakai jadwal sekali-pakai (sesi ujian)
         'berlaku_selesai',
         'ujian_sesi_id',    // terisi = jadwal ini sesi UJIAN, bukan pembelajaran reguler
+        // Sifat pembelajaran: 'reguler' | 'pesantren' (keputusan 26 Okt 2026:
+        // pembelajaran jam 20.00 = pesantren). Qur'an TIDAK memakai kolom ini —
+        // tahfidz/tahsin tetap dibaca dari mata_pelajaran.tipe.
+        'sifat',
     ];
+
+    /** Sifat pembelajaran yang sah untuk kolom `sifat`. */
+    public const SIFAT = ['reguler', 'pesantren'];
+
+    /**
+     * Empat nama pembelajaran seperti yang dilihat admin. Tiga di antaranya
+     * hidup di `mata_pelajaran.tipe`, satu (pesantren) di `jadwal.sifat` —
+     * pembagian internal itu tidak boleh terlihat di layar.
+     */
+    public function getSifatPembelajaranAttribute(): string
+    {
+        $tipe = $this->mataPelajaran?->tipe;
+        if (in_array($tipe, ['tahfidz', 'tahsin'], true)) {
+            return $tipe;
+        }
+
+        return $this->sifat ?? 'reguler';
+    }
+
+    public function getSifatLabelAttribute(): string
+    {
+        return match ($this->sifat_pembelajaran) {
+            'tahfidz'   => 'Tahfidz',
+            'tahsin'    => 'Tahsin',
+            'pesantren' => 'Pesantren',
+            default     => 'Reguler',
+        };
+    }
+
+    /** Jadwal bersifat pesantren (non-Qur'an, jam malam). */
+    public function scopePesantren($query)
+    {
+        return $query->where('sifat', 'pesantren');
+    }
 
     protected function casts(): array
     {

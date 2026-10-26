@@ -67,6 +67,12 @@ class JadwalMengajarController extends Controller
                 'kelas_id'        => $j->kelas_id,
                 'ruangan'         => $j->ruangan,
                 'tahun_ajaran_id' => $j->tahun_ajaran_id,
+                // Sifat pembelajaran: 'reguler'|'pesantren' tersimpan di jadwal,
+                // sedangkan tahfidz/tahsin dibaca dari tipe mapel. `sifat_label`
+                // menyatukan keempatnya supaya layar tidak perlu tahu bedanya.
+                'sifat'           => $j->sifat ?? 'reguler',
+                'sifat_label'     => $j->sifat_label,
+                'sifat_terkunci'  => in_array($j->mataPelajaran?->tipe, ['tahfidz', 'tahsin'], true),
             ]);
 
         // Statistik JP per guru per bulan (estimasi dari jumlah_jp × 4 minggu)
@@ -109,6 +115,32 @@ class JadwalMengajarController extends Controller
     /**
      * Store slot jadwal baru — bisa multi-slot sehari.
      */
+    /**
+     * Tetapkan sifat pembelajaran bila admin tidak memilihnya sendiri.
+     *
+     * Aturan pesantren: pembelajaran **jam 20.00** bersifat pesantren. Tanpa
+     * turunan otomatis ini, backfill 26 Okt hanya jadi potret sekali waktu —
+     * setiap jadwal malam yang dibuat sesudahnya akan lahir berlabel 'reguler'
+     * dan klasifikasinya membusuk tanpa ada yang sadar.
+     *
+     * Mapel Qur'an tidak memakai kolom ini: tahfidz/tahsin dikenali dari
+     * `mata_pelajaran.tipe`, jadi sifatnya dibiarkan 'reguler' dan tidak
+     * pernah dibaca.
+     */
+    private function sifatOtomatis(array $data): string
+    {
+        if (!empty($data['sifat'])) {
+            return $data['sifat'];                     // pilihan admin menang
+        }
+
+        $tipe = \App\Models\MataPelajaran::find($data['mata_pelajaran_id'])?->tipe;
+        if (in_array($tipe, ['tahfidz', 'tahsin'], true)) {
+            return 'reguler';
+        }
+
+        return (int) substr((string) $data['jam_mulai'], 0, 2) === 20 ? 'pesantren' : 'reguler';
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([
@@ -121,6 +153,10 @@ class JadwalMengajarController extends Controller
             'jumlah_jp'          => 'required|integer|min:1|max:20',
             'kelas_id'           => 'required|exists:kelas,id',
             'ruangan'            => 'nullable|string|max:50',
+            // Pembelajaran jam 20.00 = pesantren (keputusan 26 Okt 2026).
+            // Hanya berlaku untuk mapel non-Qur'an; tahfidz/tahsin tetap
+            // dikenali dari tipe mapelnya sendiri.
+            'sifat'              => 'nullable|in:reguler,pesantren',
         ]);
 
         if ($err = $this->tolakProgramKhusus($data['mata_pelajaran_id'], $data['kelas_id'])) {
@@ -134,6 +170,7 @@ class JadwalMengajarController extends Controller
         // kelas_id (master Smart Education) = sumber kebenaran. String `kelas`
         // disinkronkan dari nama master untuk tampilan & kompatibilitas lama.
         $data['kelas'] = Kelas::find($data['kelas_id'])?->nama ?? '';
+        $data['sifat'] = $this->sifatOtomatis($data);
 
         JadwalMengajar::create(array_merge($data, ['is_aktif' => true]));
 
@@ -155,6 +192,10 @@ class JadwalMengajarController extends Controller
             'jumlah_jp'          => 'required|integer|min:1|max:20',
             'kelas_id'           => 'required|exists:kelas,id',
             'ruangan'            => 'nullable|string|max:50',
+            // Pembelajaran jam 20.00 = pesantren (keputusan 26 Okt 2026).
+            // Hanya berlaku untuk mapel non-Qur'an; tahfidz/tahsin tetap
+            // dikenali dari tipe mapelnya sendiri.
+            'sifat'              => 'nullable|in:reguler,pesantren',
         ]);
 
         if ($err = $this->tolakProgramKhusus($data['mata_pelajaran_id'], $data['kelas_id'])) {
@@ -170,6 +211,7 @@ class JadwalMengajarController extends Controller
 
         // kelas_id = sumber kebenaran; sinkronkan string kelas untuk tampilan.
         $data['kelas'] = Kelas::find($data['kelas_id'])?->nama ?? $jadwalMengajar->kelas;
+        $data['sifat'] = $this->sifatOtomatis($data);
 
         $jadwalMengajar->update($data);
 
