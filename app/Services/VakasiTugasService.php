@@ -339,6 +339,14 @@ class VakasiTugasService
      * periodenya tidak boleh terkunci. Begitu satu slip saja sudah final atau
      * dibayar, metode ini menolak seluruhnya — tidak ada perubahan separuh.
      *
+     * DUA LINGKUP, karena "vakasi periode ini" punya dua arti yang keduanya benar:
+     *   A. tugas yang rentangnya bersinggungan dengan jendela periode (yang
+     *      terlihat di daftar Tugas Tambahan saat disaring per periode), dan
+     *   B. penugasan yang UANGNYA dibebankan ke periode ini walau tugasnya di
+     *      luar jendela - payroll membebankan `mandiri` menurut dilaporkan_pada
+     *      dan `absen_kegiatan` menurut tanggal_kegiatan. Tanpa lingkup B,
+     *      Rp 160.000 tetap terbayar di Oktober 2026 (terukur 26 Okt).
+     *
      * Dinolkan di DUA tingkat karena urutan sumbernya penerima-menang-atas-tugas:
      * tanpa menolkan di tingkat penerima, override atau setting milik penerima
      * akan tetap menang atas nol di tingkat tugas.
@@ -380,7 +388,7 @@ class VakasiTugasService
         $dari   = $periode->tanggal_mulai->toDateString();
         $sampai = $periode->tanggal_selesai->toDateString();
 
-        // Lingkup = tugas yang rentangnya bersinggungan dengan jendela periode,
+        // ── Lingkup A: tugas yang rentangnya bersinggungan dengan jendela,
         // aturan yang sama dengan saringan periode di layar Tugas Tambahan dan
         // dengan penilaian kinerja, supaya yang dinolkan persis yang terlihat.
         $tugas = TugasTambahan::with([
@@ -476,6 +484,82 @@ class VakasiTugasService
                         ]);
                     });
                 }
+            }
+        }
+
+        // ── Lingkup B: penugasan yang UANGNYA dibebankan ke periode ini ──────
+        // Tugasnya boleh di luar jendela: payroll membebankan vakasi `mandiri`
+        // menurut `dilaporkan_pada`, dan `absen_kegiatan` menurut
+        // `tanggal_kegiatan` — bukan menurut rentang tugasnya. Terukur 26 Okt
+        // 2026: 6 penugasan dari 3 tugas yang berjalan awal September dilaporkan
+        // 26–27 Sep, sehingga Rp 160.000 tetap terbayar di periode Oktober
+        // walaupun seluruh tugas dalam jendela sudah dinolkan.
+        //
+        // Di sini HANYA tingkat penerima yang dinolkan, tidak tingkat tugas:
+        // tugas itu milik periode lain dan boleh punya penerima lain yang
+        // uangnya jatuh di periode lain pula.
+        $sudah = collect();
+        foreach ($tugas as $t) {
+            $sudah = $sudah->merge($t->penugasan->pluck('id'));
+        }
+
+        $mandiri = PenugasanTambahan::with(['tugasTambahan.settingVakasi', 'settingVakasi', 'tenagaPendidik.user'])
+            ->whereNotNull('dilaporkan_pada')
+            ->whereDate('dilaporkan_pada', '>=', $dari)
+            ->whereDate('dilaporkan_pada', '<=', $sampai)
+            ->whereNotIn('id', $sudah->all())
+            ->get();
+
+        $kegiatanIds = \App\Models\AbsensiKegiatan::where('status', 'selesai')
+            ->whereDate('tanggal_kegiatan', '>=', $dari)
+            ->whereDate('tanggal_kegiatan', '<=', $sampai)
+            ->pluck('penugasan_id')->filter()->unique();
+
+        $kegiatan = $kegiatanIds->isEmpty()
+            ? collect()
+            : PenugasanTambahan::with(['tugasTambahan.settingVakasi', 'settingVakasi', 'tenagaPendidik.user'])
+                ->whereIn('id', $kegiatanIds->all())
+                ->whereNotIn('id', $sudah->merge($mandiri->pluck('id'))->all())
+                ->get();
+
+        foreach ($mandiri->merge($kegiatan) as $pg) {
+            $v = $this->untukPenerima($pg);
+            if ((float) $v['nominal'] <= 0) continue;
+
+            $baris[] = [
+                'tingkat'      => 'penerima (luar jendela tugas)',
+                'tugas'        => $pg->tugasTambahan?->judul ?? '-',
+                'nama'         => $pg->tenagaPendidik?->user?->name ?? ('penugasan #' . $pg->id),
+                'nominal'      => (float) $v['nominal'],
+                'sumber'       => $v['sumber'],
+                'dilaporkan'   => $pg->dilaporkan_pada?->toDateString(),
+                'periode_uang' => $periode->nama_bulan,
+            ];
+            $dicabut += (float) $v['nominal'];
+            $nPenugasan++;
+
+            if (!$simulasi) {
+                $sebelum = $v;
+                DB::transaction(function () use ($pg, $alasan, $userId, $sebelum) {
+                    $pg->update([
+                        'vakasi_override'        => 0,
+                        'vakasi_dikunci'         => true,
+                        'vakasi_ditetapkan_oleh' => $userId,
+                        'vakasi_ditetapkan_pada' => now(),
+                    ]);
+                    $sesudah = $this->untukPenerima($pg->fresh('tugasTambahan'));
+                    RiwayatVakasiTugas::create([
+                        'tugas_tambahan_id' => $pg->tugas_tambahan_id,
+                        'penugasan_id'      => $pg->id,
+                        'nominal_lama'      => $sebelum['nominal'],
+                        'nominal_baru'      => $sesudah['nominal'],
+                        'sumber_lama'       => $sebelum['sumber'],
+                        'sumber_baru'       => $sesudah['sumber'],
+                        'dikunci'           => true,
+                        'alasan'            => $alasan,
+                        'diubah_oleh'       => $userId,
+                    ]);
+                });
             }
         }
 
