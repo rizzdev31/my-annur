@@ -820,14 +820,12 @@ class PayrollCalculationService
             $tipe = $p->tugasTambahan?->tipe_pengerjaan ?? 'mandiri';
             $judul = $p->tugasTambahan->judul ?? 'Tugas tambahan';
 
-            // Prioritas nominal: override per penerima → setting per penerima → override tugas → setting tugas
-            $nominal = (float) (
-                $p->vakasi_override
-                ?? $p->settingVakasi?->nominal
-                ?? $p->tugasTambahan?->vakasi_override
-                ?? $p->tugasTambahan?->settingVakasi?->nominal
-                ?? 0
-            );
+            // Nominal dari VakasiTugasService — satu pintu yang sama dengan layar
+            // superadmin. Rantai `??` di sini dulu menjadi aturan KETIGA yang
+            // berbeda dari dua model, dan ia membaca setting tanpa memeriksa
+            // `is_aktif`: 11 tugas dibayar Rp 620.000 dari setting yang sudah
+            // dinonaktifkan admin (terukur 26 Okt 2026).
+            $nominal = app(VakasiTugasService::class)->untukPenerima($p)['nominal'];
 
             if ($tipe === 'absen_kegiatan') {
                 // Vakasi = JUMLAH kegiatan yang guru ini SELESAIKAN dalam periode × nominal.

@@ -17,6 +17,9 @@ class TugasTambahan extends Model
         'tipe_pengerjaan',   // mandiri | absen_kegiatan
         'setting_vakasi_id',
         'vakasi_override',
+        'vakasi_dikunci',
+        'vakasi_ditetapkan_oleh',
+        'vakasi_ditetapkan_pada',
         'wajib_laporan',
         'status',
         'dibuat_oleh',
@@ -28,6 +31,8 @@ class TugasTambahan extends Model
             'tanggal_mulai'   => 'date',
             'tanggal_selesai' => 'date',
             'vakasi_override' => 'float',
+            'vakasi_dikunci'  => 'boolean',
+            'vakasi_ditetapkan_pada' => 'datetime',
             'wajib_laporan'   => 'boolean',
         ];
     }
@@ -37,6 +42,8 @@ class TugasTambahan extends Model
     public function settingVakasi()   { return $this->belongsTo(SettingVakasi::class); }
     public function dibuatOleh()      { return $this->belongsTo(User::class, 'dibuat_oleh'); }
     public function penugasan()       { return $this->hasMany(PenugasanTambahan::class); }
+    public function riwayatVakasi()   { return $this->hasMany(RiwayatVakasiTugas::class)->latest(); }
+    public function vakasiDitetapkanOleh() { return $this->belongsTo(User::class, 'vakasi_ditetapkan_oleh'); }
     public function kegiatanAbsensi() {
         return $this->hasMany(AbsensiKegiatan::class, 'sumber_id')
             ->where('sumber_tipe', 'tugas_tambahan');
@@ -51,10 +58,15 @@ class TugasTambahan extends Model
 
     // ─── Helper ──────────────────────────────────────────────────────────────
 
+    /**
+     * Nominal vakasi tugas ini. Jawabannya datang dari VakasiTugasService —
+     * satu pintu yang sama dengan payroll dan layar superadmin. Dulu metode ini
+     * membaca relasi setting apa adanya, sehingga setting NONAKTIF tetap
+     * membayar dan urutan sumbernya bisa berbeda dari payroll.
+     */
     public function getNominalVakasi(): float
     {
-        if ($this->vakasi_override !== null) return (float) $this->vakasi_override;
-        return (float) ($this->settingVakasi?->nominal ?? 0);
+        return app(\App\Services\VakasiTugasService::class)->untukTugas($this)['nominal'];
     }
 
     public function getIsMandiriAttribute(): bool

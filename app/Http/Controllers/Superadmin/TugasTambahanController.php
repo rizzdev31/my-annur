@@ -161,7 +161,7 @@ class TugasTambahanController extends Controller
             ->with('success', "Tugas dibuat dan dikirim ke {$guruIds->count()} orang.");
     }
 
-    public function show(TugasTambahan $tugasTambahan)
+    public function show(TugasTambahan $tugasTambahan, \App\Services\VakasiTugasService $vakasiSvc)
     {
         $penugasan = $tugasTambahan->penugasan()
             ->with([
@@ -185,7 +185,12 @@ class TugasTambahanController extends Controller
                 'laporan'             => $p->laporan,
                 'dikerjakan_pada'     => $p->dikerjakan_pada?->format('d M Y H:i'),
                 'catatan_verifikasi'  => $p->catatan_verifikasi,
-                // Vakasi per penerima
+                // Vakasi per penerima — nominal, ASAL-USULNYA, dan apakah masih
+                // bisa bergeser sendiri. Dulu hanya angka: admin tidak bisa tahu
+                // apakah Rp 0 itu keputusan atau lubang fallback, dan tidak tahu
+                // kalau nominalnya masih mengikuti setting yang bisa diedit.
+                'vakasi'              => $vakasiSvc->untukPenerima($p),
+                'vakasi_terkunci_slip' => $vakasiSvc->alasanTidakBolehUbah($p),
                 'nominal_vakasi'      => $p->getNominalVakasi(),
                 'sumber_vakasi'       => $p->sumber_vakasi,
                 // Status tenggat: dasar keputusan admin (tidak terlaksana / perpanjang)
@@ -230,6 +235,16 @@ class TugasTambahanController extends Controller
                 'tanggal_mulai'    => $tugasTambahan->tanggal_mulai?->format('d M Y'),
                 'tanggal_selesai'  => $tugasTambahan->tanggal_selesai?->format('d M Y'),
                 'nominal_vakasi'        => $tugasTambahan->getNominalVakasi(),
+                // Vakasi tingkat tugas: nominal + asal-usul + apakah terkunci.
+                'vakasi'                => $vakasiSvc->untukTugas($tugasTambahan),
+                'setting_vakasi_nama'   => $tugasTambahan->settingVakasi?->nama,
+                'setting_vakasi_aktif'  => $tugasTambahan->settingVakasi
+                    ? (bool) $tugasTambahan->settingVakasi->is_aktif : null,
+                'vakasi_ditetapkan_oleh'=> $tugasTambahan->vakasiDitetapkanOleh?->name,
+                'vakasi_ditetapkan_pada'=> $tugasTambahan->vakasi_ditetapkan_pada?->format('d M Y H:i'),
+                // Penerima yang nominalnya sudah terkunci slip -> tugas tak bisa
+                // diubah massal, hanya per penerima yang belum berslip.
+                'penerima_terkunci'     => $vakasiSvc->penerimaTerkunci($tugasTambahan),
                 'wajib_laporan'         => $tugasTambahan->wajib_laporan,
                 'dibuat_oleh'           => $tugasTambahan->dibuatOleh?->name,
                 // Skema vakasi: untuk absen_kegiatan, peserta juga dapat vakasi yg sama
@@ -238,6 +253,24 @@ class TugasTambahanController extends Controller
                     : null,
             ],
             'penugasan'  => $penugasan,
+            // Riwayat perubahan vakasi: jawaban atas "kenapa vakasi ini berubah".
+            'riwayatVakasi' => \App\Models\RiwayatVakasiTugas::with('diubahOleh:id,name')
+                ->where('tugas_tambahan_id', $tugasTambahan->id)
+                ->orderByDesc('id')->limit(50)->get()
+                ->map(fn ($r) => [
+                    'id'           => $r->id,
+                    'penugasan_id' => $r->penugasan_id,
+                    'penerima'     => $r->penugasan_id
+                        ? ($penugasan->firstWhere('id', $r->penugasan_id)['guru_nama'] ?? '—') : null,
+                    'nominal_lama' => $r->nominal_lama,
+                    'nominal_baru' => $r->nominal_baru,
+                    'sumber_lama'  => $r->sumber_lama,
+                    'sumber_baru'  => $r->sumber_baru,
+                    'dikunci'      => $r->dikunci,
+                    'alasan'       => $r->alasan,
+                    'oleh'         => $r->diubahOleh?->name ?? 'sistem',
+                    'pada'         => $r->created_at?->format('d M Y H:i'),
+                ])->values(),
             'guru'       => $this->getGuruList(),
             'vakasi'     => $this->getVakasiList(),
         ]);
@@ -367,18 +400,74 @@ class TugasTambahanController extends Controller
     /**
      * Update vakasi untuk penugasan tertentu (per penerima).
      */
-    public function updateVakasiPenerima(PenugasanTambahan $penugasan, Request $request)
-    {
+    /**
+     * Tetapkan vakasi SATU PENERIMA — lewat VakasiTugasService.
+     *
+     * Dulu metode ini langsung `update()` tanpa alasan, tanpa jejak, dan tanpa
+     * memeriksa apakah slipnya sudah terbit. Itu sebabnya nominal bisa
+     * "direvisi" tanpa ada yang bisa menjelaskannya.
+     */
+    public function updateVakasiPenerima(
+        PenugasanTambahan $penugasan, Request $request, \App\Services\VakasiTugasService $svc
+    ) {
         $data = $request->validate([
-            'setting_vakasi_id' => 'nullable|exists:setting_vakasi,id',
-            'vakasi_override'   => 'nullable|numeric|min:0',
+            'vakasi_override' => 'nullable|numeric|min:0|max:100000000',
+            'alasan'          => 'required|string|min:5|max:300',
+            'kunci'           => 'boolean',
+        ], [
+            'alasan.required' => 'Alasan perubahan vakasi wajib diisi.',
+            'alasan.min'      => 'Alasan terlalu singkat (minimal 5 huruf).',
         ]);
 
-        $penugasan->update($data);
+        try {
+            $svc->tetapkanPenerima(
+                $penugasan,
+                $request->filled('vakasi_override') ? (float) $data['vakasi_override'] : null,
+                $data['alasan'],
+                $request->user()->id,
+                (bool) ($data['kunci'] ?? true),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
-        return redirect()
-            ->route('admin.smart-payroll.tugas-tambahan.show', $penugasan->tugas_tambahan_id)
-            ->with('success', 'Vakasi penerima diperbarui.');
+        $hasil = $svc->untukPenerima($penugasan->fresh('tugasTambahan'));
+
+        return back()->with('success', 'Vakasi penerima ditetapkan: Rp '
+            . number_format($hasil['nominal'], 0, ',', '.')
+            . ($hasil['dikunci'] ? ' (dikunci, tidak lagi mengikuti setting).' : '.'));
+    }
+
+    /** Tetapkan vakasi TINGKAT TUGAS (berlaku bagi penerima tanpa nominal sendiri). */
+    public function updateVakasiTugas(
+        TugasTambahan $tugasTambahan, Request $request, \App\Services\VakasiTugasService $svc
+    ) {
+        $data = $request->validate([
+            'vakasi_override' => 'nullable|numeric|min:0|max:100000000',
+            'alasan'          => 'required|string|min:5|max:300',
+            'kunci'           => 'boolean',
+        ], [
+            'alasan.required' => 'Alasan perubahan vakasi wajib diisi.',
+            'alasan.min'      => 'Alasan terlalu singkat (minimal 5 huruf).',
+        ]);
+
+        try {
+            $svc->tetapkanTugas(
+                $tugasTambahan,
+                $request->filled('vakasi_override') ? (float) $data['vakasi_override'] : null,
+                $data['alasan'],
+                $request->user()->id,
+                (bool) ($data['kunci'] ?? true),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        $hasil = $svc->untukTugas($tugasTambahan->fresh());
+
+        return back()->with('success', 'Vakasi tugas ditetapkan: Rp '
+            . number_format($hasil['nominal'], 0, ',', '.')
+            . ($hasil['dikunci'] ? ' (dikunci, tidak lagi mengikuti setting).' : '.'));
     }
 
     /**

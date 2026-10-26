@@ -89,11 +89,48 @@
                             <span class="text-gray-400">Batas Selesai</span>
                             <span class="font-medium">{{ tugas.tanggal_selesai ?? 'Tidak ada' }}</span>
                         </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-400">Vakasi Default</span>
-                            <span class="font-bold text-indigo-700">
-                                {{ tugas.nominal_vakasi > 0 ? formatRp(tugas.nominal_vakasi) : 'Tanpa Vakasi' }}
-                            </span>
+                        <!-- VAKASI: nominal + asal-usulnya + apakah masih bisa bergeser.
+                             Dulu hanya angka, sehingga "Rp 0" tidak bisa dibedakan antara
+                             keputusan dan lubang fallback, dan tidak terlihat bahwa
+                             nominalnya masih mengikuti setting yang bisa diedit. -->
+                        <div class="pt-1">
+                            <div class="flex justify-between items-start">
+                                <span class="text-gray-400">Vakasi Default</span>
+                                <div class="text-right">
+                                    <span class="font-bold" :class="tugas.vakasi?.nominal > 0 ? 'text-indigo-700' : 'text-gray-500'">
+                                        {{ tugas.vakasi?.nominal > 0 ? formatRp(tugas.vakasi.nominal) : 'Rp 0' }}
+                                    </span>
+                                    <span v-if="tugas.vakasi?.dikunci"
+                                        class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold">
+                                        terkunci
+                                    </span>
+                                </div>
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-0.5 text-right">
+                                {{ tugas.vakasi?.sumber_label }}
+                                <span v-if="tugas.setting_vakasi_nama">
+                                    · {{ tugas.setting_vakasi_nama
+                                        }}<span v-if="tugas.setting_vakasi_aktif === false" class="text-red-600 font-semibold"> (nonaktif)</span>
+                                </span>
+                            </p>
+                            <p v-if="tugas.vakasi?.peringatan"
+                                class="mt-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-snug">
+                                ⚠ {{ tugas.vakasi.peringatan }}
+                            </p>
+                            <p v-if="tugas.vakasi_ditetapkan_oleh" class="text-[11px] text-gray-400 mt-1 text-right">
+                                ditetapkan {{ tugas.vakasi_ditetapkan_oleh }} · {{ tugas.vakasi_ditetapkan_pada }}
+                            </p>
+                            <p v-if="tugas.penerima_terkunci?.length"
+                                class="mt-1.5 text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 leading-snug">
+                                {{ tugas.penerima_terkunci.length }} penerima slipnya sudah terbit
+                                ({{ tugas.penerima_terkunci.slice(0, 2).join(', ')
+                                }}<span v-if="tugas.penerima_terkunci.length > 2"> +{{ tugas.penerima_terkunci.length - 2 }}</span>),
+                                jadi vakasi tingkat tugas terkunci. Ubah per penerima yang belum berslip.
+                            </p>
+                            <button @click="bukaVakasiTugas"
+                                class="mt-2 w-full py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-semibold hover:bg-indigo-100">
+                                Tetapkan vakasi tugas
+                            </button>
                         </div>
                         <div class="flex justify-between">
                             <span class="text-gray-400">Wajib Laporan</span>
@@ -367,12 +404,23 @@
                                         <span v-else class="text-gray-300 text-sm">—</span>
                                     </td>
 
-                                    <!-- Vakasi -->
+                                    <!-- Vakasi: nominal + asal-usul + tombol tetapkan.
+                                         "Rp 0" dan "belum ditetapkan" dibedakan: yang
+                                         kedua akan berubah sendiri bila setting dipasang. -->
                                     <td class="px-4 py-3 text-xs">
-                                        <span v-if="p.nominal_vakasi > 0" class="font-semibold text-indigo-700">
-                                            {{ formatRp(p.nominal_vakasi) }}
-                                        </span>
-                                        <span v-else class="text-gray-300">—</span>
+                                        <button @click="bukaVakasiPenerima(p)" class="text-left group">
+                                            <span class="font-semibold"
+                                                :class="p.vakasi?.nominal > 0 ? 'text-indigo-700' : 'text-gray-500'">
+                                                {{ formatRp(p.vakasi?.nominal ?? 0) }}
+                                            </span>
+                                            <span v-if="p.vakasi?.dikunci" class="ml-1 text-[9px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold">kunci</span>
+                                            <span v-if="p.vakasi_terkunci_slip" class="ml-1 text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-500 font-bold" title="Slip sudah terbit">slip</span>
+                                            <span class="block text-[10px] text-gray-400 group-hover:text-indigo-500">
+                                                {{ p.vakasi?.sumber === 'belum_ditetapkan' ? 'belum ditetapkan' : p.vakasi?.sumber_label }}
+                                            </span>
+                                            <span v-if="p.vakasi?.bisa_bergeser"
+                                                class="block text-[10px] text-amber-600">bisa bergeser</span>
+                                        </button>
                                     </td>
 
                                     <!-- Tenggat pengisian -->
@@ -754,6 +802,86 @@
             </div>
         </div>
 
+
+        <!-- ── Modal: tetapkan vakasi (tugas / penerima) ─────────────────── -->
+        <div v-if="vakasiForm.buka" class="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style="background: rgba(0,0,0,.45)">
+            <div class="w-full max-w-md bg-white rounded-2xl p-5 max-h-[92vh] overflow-y-auto">
+                <h3 class="text-base font-semibold text-gray-900">
+                    {{ vakasiForm.penugasanId ? 'Vakasi Penerima' : 'Vakasi Tugas' }}
+                </h3>
+                <p class="text-xs text-gray-400 mt-0.5 mb-3">
+                    {{ vakasiForm.penugasanId ? vakasiForm.namaPenerima : tugas.judul }}
+                </p>
+
+                <div class="rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 mb-3 text-xs">
+                    <p class="text-gray-600">
+                        Sekarang: <b>{{ formatRp(vakasiForm.nominalSekarang) }}</b>
+                        <span class="text-gray-400">· {{ vakasiForm.sumberSekarang }}</span>
+                    </p>
+                    <p v-if="vakasiForm.peringatan" class="text-amber-800 mt-1 leading-snug">⚠ {{ vakasiForm.peringatan }}</p>
+                </div>
+
+                <label class="block text-xs font-medium text-gray-600 mb-1">Nominal (Rp)</label>
+                <input v-model="vakasiForm.nominal" type="number" min="0" step="1000" inputmode="numeric"
+                    placeholder="Kosongkan = ikuti setting vakasi"
+                    class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+                <p class="text-[11px] text-gray-400 mt-1">
+                    Isi <b>0</b> bila memang tanpa vakasi — itu keputusan yang tercatat.
+                    Dikosongkan berarti kembali mengikuti setting, dan nominalnya bisa bergeser lagi.
+                </p>
+
+                <label class="mt-3 flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" v-model="vakasiForm.kunci"
+                        class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                    <span class="text-[11px] text-gray-600">
+                        <b>Kunci nominal ini</b> — berhenti mengikuti setting vakasi, sehingga mengedit
+                        setting tidak lagi mengubah angka ini.
+                    </span>
+                </label>
+
+                <label class="block text-xs font-medium text-gray-600 mt-3 mb-1">
+                    Alasan perubahan <span class="text-red-500">*</span>
+                </label>
+                <textarea v-model="vakasiForm.alasan" rows="2" maxlength="300"
+                    placeholder="mis. Disepakati rapat 26 Okt: vakasi sosialisasi Rp 20.000/orang"
+                    class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500"></textarea>
+                <p v-if="vakasiForm.galat" class="text-xs text-red-600 mt-1">{{ vakasiForm.galat }}</p>
+
+                <div class="flex gap-2 mt-4">
+                    <button @click="vakasiForm.buka = false"
+                        class="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">Batal</button>
+                    <button @click="simpanVakasi" :disabled="vakasiForm.kirim"
+                        class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50">
+                        {{ vakasiForm.kirim ? 'Menyimpan…' : 'Simpan' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Riwayat perubahan vakasi ──────────────────────────────────── -->
+        <div v-if="riwayatVakasi.length" class="mt-6 bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100">
+                <h3 class="text-sm font-semibold text-gray-800">Riwayat Perubahan Vakasi</h3>
+                <p class="text-xs text-gray-400">{{ riwayatVakasi.length }} perubahan tercatat — ini yang menjawab "kenapa vakasinya berubah"</p>
+            </div>
+            <ul class="divide-y divide-gray-50">
+                <li v-for="r in riwayatVakasi" :key="r.id" class="px-4 py-2.5 text-xs">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-semibold text-gray-800">
+                            {{ formatRp(r.nominal_lama) }} → {{ formatRp(r.nominal_baru) }}
+                        </span>
+                        <span v-if="r.penerima" class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">{{ r.penerima }}</span>
+                        <span v-else class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">tingkat tugas</span>
+                        <span v-if="r.dikunci" class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold">terkunci</span>
+                        <span class="text-gray-400">{{ r.sumber_lama }} → {{ r.sumber_baru }}</span>
+                    </div>
+                    <p class="text-gray-600 mt-0.5">{{ r.alasan }}</p>
+                    <p class="text-gray-400 mt-0.5">{{ r.oleh }} · {{ r.pada }}</p>
+                </li>
+            </ul>
+        </div>
+
     </AdminLayout>
 </template>
 
@@ -772,7 +900,73 @@ const props = defineProps({
     penugasan: { type: Array, default: () => [] },
     guru: { type: Array, default: () => [] },
     vakasi: { type: Array, default: () => [] },
+    riwayatVakasi: { type: Array, default: () => [] },
 })
+
+// ─── Vakasi: penetapan + penjagaan ────────────────────────────────────────────
+// Nominal vakasi dulu bisa berubah tanpa alasan, tanpa jejak, dan tanpa
+// memeriksa apakah slipnya sudah terbit. Semua penetapan sekarang lewat satu
+// formulir: alasan WAJIB, bisa dikunci agar berhenti mengikuti setting, dan
+// server menolak bila penerimanya sudah berslip.
+const vakasiForm = reactive({
+    buka: false, penugasanId: null, namaPenerima: '',
+    nominal: '', kunci: true, alasan: '',
+    nominalSekarang: 0, sumberSekarang: '', peringatan: null,
+    galat: '', kirim: false,
+})
+
+function bukaVakasiTugas() {
+    const v = props.tugas.vakasi ?? {}
+    Object.assign(vakasiForm, {
+        buka: true, penugasanId: null, namaPenerima: '',
+        // Dikosongkan, BUKAN diisi nominal sekarang: kotak terisi membuat admin
+        // merasa sudah menetapkan padahal hanya membiarkan nilai lama.
+        nominal: '', kunci: true, alasan: '',
+        nominalSekarang: v.nominal ?? 0,
+        sumberSekarang: v.sumber_label ?? '-',
+        peringatan: v.peringatan ?? null,
+        galat: '', kirim: false,
+    })
+}
+
+function bukaVakasiPenerima(p) {
+    const v = p.vakasi ?? {}
+    Object.assign(vakasiForm, {
+        buka: true, penugasanId: p.id, namaPenerima: p.guru_nama,
+        nominal: '', kunci: true, alasan: '',
+        nominalSekarang: v.nominal ?? 0,
+        sumberSekarang: v.sumber_label ?? '-',
+        peringatan: p.vakasi_terkunci_slip ?? v.peringatan ?? null,
+        galat: '', kirim: false,
+    })
+}
+
+function simpanVakasi() {
+    if (vakasiForm.alasan.trim().length < 5) {
+        vakasiForm.galat = 'Alasan perubahan wajib diisi (minimal 5 huruf).'
+        return
+    }
+    vakasiForm.kirim = true
+    vakasiForm.galat = ''
+    const payload = {
+        // '' dikirim sebagai null -> kembali mengikuti setting; '0' tetap 0.
+        vakasi_override: vakasiForm.nominal === '' || vakasiForm.nominal === null
+            ? null : Number(vakasiForm.nominal),
+        alasan: vakasiForm.alasan.trim(),
+        kunci: vakasiForm.kunci,
+    }
+    const opts = {
+        preserveScroll: true,
+        onSuccess: () => { vakasiForm.buka = false },
+        onError: (e) => { vakasiForm.galat = Object.values(e).join(' · ') },
+        onFinish: () => { vakasiForm.kirim = false },
+    }
+    if (vakasiForm.penugasanId) {
+        router.patch(route('admin.smart-payroll.penugasan.vakasi', vakasiForm.penugasanId), payload, opts)
+    } else {
+        router.post(route('admin.smart-payroll.tugas-tambahan.vakasi', props.tugas.id), payload, opts)
+    }
+}
 
 // ─── Filter ───────────────────────────────────────────────────────────────────
 const workflowSteps = [

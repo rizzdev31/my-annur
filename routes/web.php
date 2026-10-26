@@ -390,6 +390,10 @@ Route::prefix('admin')
                 [TugasTambahanController::class, 'keputusanTenggat'])->name('penugasan.keputusan-tenggat');
             Route::patch('penugasan/{penugasan}/vakasi',
                 [TugasTambahanController::class, 'updateVakasiPenerima'])->name('penugasan.vakasi');
+            // Vakasi tingkat TUGAS — alasan wajib, tercatat, dan ditolak bila
+            // ada penerima yang slipnya sudah terbit.
+            Route::post('tugas-tambahan/{tugasTambahan}/vakasi',
+                [TugasTambahanController::class, 'updateVakasiTugas'])->name('tugas-tambahan.vakasi');
             Route::post('tugas-tambahan/{tugasTambahan}/batalkan',
                 [TugasTambahanController::class, 'destroy'])->name('tugas-tambahan.hapus');
             Route::resource('tugas-tambahan', TugasTambahanController::class);

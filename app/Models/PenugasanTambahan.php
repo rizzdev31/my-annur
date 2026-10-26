@@ -20,6 +20,9 @@ class PenugasanTambahan extends Model
         // Vakasi per penerima
         'setting_vakasi_id',
         'vakasi_override',
+        'vakasi_dikunci',
+        'vakasi_ditetapkan_oleh',
+        'vakasi_ditetapkan_pada',
         // Pengerjaan & pelaporan
         'laporan',
         'file_laporan',
@@ -43,6 +46,8 @@ class PenugasanTambahan extends Model
             'dilaporkan_pada' => 'datetime',
             'disetujui'       => 'boolean',
             'vakasi_override' => 'float',
+            'vakasi_dikunci'  => 'boolean',
+            'vakasi_ditetapkan_pada' => 'datetime',
         ];
     }
 
@@ -103,6 +108,11 @@ class PenugasanTambahan extends Model
     public function settingVakasi()
     {
         return $this->belongsTo(SettingVakasi::class);
+    }
+
+    public function riwayatVakasi()
+    {
+        return $this->hasMany(RiwayatVakasiTugas::class, 'penugasan_id')->latest();
     }
 
     public function diverifikasiOleh()
@@ -178,25 +188,23 @@ class PenugasanTambahan extends Model
      */
     public function getNominalVakasi(): float
     {
-        if ($this->vakasi_override !== null) {
-            return (float) $this->vakasi_override;
-        }
-        if ($this->settingVakasi) {
-            return (float) $this->settingVakasi->nominal;
-        }
-        return (float) ($this->tugasTambahan?->getNominalVakasi() ?? 0);
+        return app(\App\Services\VakasiTugasService::class)->untukPenerima($this)['nominal'];
     }
 
     /**
      * Label sumber vakasi untuk UI audit trail.
      */
+    /**
+     * Sumber nominal — dari service yang sama, bukan tebakan sendiri.
+     *
+     * Versi lama memeriksa `setting_tugas` SEBELUM `override_tugas`, padahal
+     * nominalnya dihitung dengan urutan sebaliknya: sebuah tugas yang punya
+     * override DAN setting akan dibayar dari override tetapi dilabeli
+     * "setting_tugas". Label yang berdusta lebih buruk daripada tanpa label.
+     */
     public function getSumberVakasiAttribute(): string
     {
-        if ($this->vakasi_override !== null)                     return 'override_individu';
-        if ($this->setting_vakasi_id)                            return 'setting_penerima';
-        if ($this->tugasTambahan?->setting_vakasi_id)            return 'setting_tugas';
-        if ($this->tugasTambahan?->vakasi_override !== null)     return 'override_tugas';
-        return 'tidak_ada';
+        return app(\App\Services\VakasiTugasService::class)->untukPenerima($this)['sumber'];
     }
 
     // ─── Scope ───────────────────────────────────────────────────────────────
