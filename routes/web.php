@@ -396,6 +396,10 @@ Route::prefix('admin')
                 [TugasTambahanController::class, 'updateVakasiTugas'])->name('tugas-tambahan.vakasi');
             // Tutup tugas walau pengisian belum lengkap; perlakuan penerima yang
             // belum mengisi dipilih superadmin (tidak dinilai / ditandai gagal).
+            // Keputusan tingkat PERIODE: seluruh tugas tambahan periode itu jadi
+            // tanpa vakasi. Ditolak bila ada slip periode itu yang sudah final.
+            Route::post('tugas-tambahan/vakasi-periode/nolkan',
+                [TugasTambahanController::class, 'nolkanVakasiPeriode'])->name('tugas-tambahan.vakasi-periode');
             Route::post('tugas-tambahan/{tugasTambahan}/selesaikan',
                 [TugasTambahanController::class, 'selesaikan'])->name('tugas-tambahan.selesaikan');
             Route::post('tugas-tambahan/{tugasTambahan}/batalkan',

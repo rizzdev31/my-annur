@@ -183,6 +183,64 @@ class TugasTambahanController extends Controller
         ];
     }
 
+    /**
+     * Jadikan SELURUH tugas tambahan satu periode gaji TANPA VAKASI.
+     *
+     * Keputusan tingkat periode, bukan per tugas: dipakai saat lembaga
+     * memutuskan periode itu tidak memberi vakasi tugas tambahan. Penjagaannya
+     * ada di VakasiTugasService::nolkanPeriode — menolak bila ada slip periode
+     * itu yang sudah difinalisasi atau dibayar, dan menolak periode terkunci.
+     *
+     * `simulasi=1` hanya melaporkan apa yang akan berubah, tanpa menulis.
+     */
+    public function nolkanVakasiPeriode(Request $request, \App\Services\VakasiTugasService $svc)
+    {
+        $data = $request->validate([
+            'periode'  => 'required|integer|exists:periode_penggajian,id',
+            'alasan'   => 'required|string|min:5|max:300',
+            'simulasi' => 'nullable|boolean',
+        ], [], ['alasan' => 'alasan penetapan']);
+
+        $periode = \App\Models\PeriodePenggajian::findOrFail($data['periode']);
+
+        try {
+            $hasil = $svc->nolkanPeriode(
+                $periode,
+                $data['alasan'],
+                $request->user()?->id,
+                (bool) ($data['simulasi'] ?? false),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        if (!empty($data['simulasi'])) {
+            return back()->with('success', sprintf(
+                'Simulasi: %d tugas & %d penerima akan jadi tanpa vakasi (Rp %s dicabut). Belum ada yang diubah.',
+                $hasil['tugas'], $hasil['penugasan'],
+                number_format($hasil['nominal_dicabut'], 0, ',', '.')
+            ));
+        }
+
+        if ($hasil['tugas'] === 0 && $hasil['penugasan'] === 0) {
+            return back()->with('success',
+                'Tidak ada yang perlu diubah: seluruh tugas periode ' . $periode->nama_bulan
+                . ' sudah tanpa vakasi.');
+        }
+
+        $pesan = sprintf(
+            'Periode %s jadi tanpa vakasi: %d tugas & %d penerima dinolkan (Rp %s dicabut).',
+            $periode->nama_bulan, $hasil['tugas'], $hasil['penugasan'],
+            number_format($hasil['nominal_dicabut'], 0, ',', '.')
+        );
+        if ($hasil['perlu_generate_ulang']) {
+            $pesan .= ' Slip periode ini sudah ada dan angkanya SNAPSHOT — generate ulang '
+                . 'penggajian periode itu agar slipnya ikut berubah.';
+        }
+
+        return back()->with('success', $pesan);
+    }
+
     public function create()
     {
         return Inertia::render('Admin/SmartPayroll/TugasTambahan/Form', [

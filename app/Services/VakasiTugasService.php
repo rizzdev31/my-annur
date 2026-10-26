@@ -320,6 +320,175 @@ class VakasiTugasService
 
     // ══════════════════════════════════════════════════════════════════════
 
+    /**
+     * SATU PERIODE JADI TANPA VAKASI — keputusan menyeluruh superadmin.
+     *
+     * Dipakai saat lembaga memutuskan tugas tambahan pada satu periode gaji
+     * tidak diberi vakasi, padahal sebagian sudah bernominal.
+     *
+     * ══ MENGAPA TIDAK LEWAT alasanTidakBolehUbah() ══
+     * Penjaga itu menolak perubahan bila penerimanya sudah melaporkan pada
+     * periode yang `penggajian`-nya ADA — tanpa membedakan slip yang masih
+     * DRAFT dari slip yang sudah difinalisasi atau dibayar. Untuk keputusan
+     * tingkat periode itu terlalu kasar: selama slipnya masih draft, belum
+     * difinalisasi, dan belum dibayar, tidak ada uang yang sudah keluar,
+     * sehingga tidak ada yang berubah di belakang siapa pun.
+     *
+     * Karena itu di sini penjaganya DIGANTI, bukan dilonggarkan: SELURUH slip
+     * periode itu wajib draft + belum difinalisasi + belum dibayar, dan
+     * periodenya tidak boleh terkunci. Begitu satu slip saja sudah final atau
+     * dibayar, metode ini menolak seluruhnya — tidak ada perubahan separuh.
+     *
+     * Dinolkan di DUA tingkat karena urutan sumbernya penerima-menang-atas-tugas:
+     * tanpa menolkan di tingkat penerima, override atau setting milik penerima
+     * akan tetap menang atas nol di tingkat tugas.
+     *
+     * CATATAN: ini TIDAK mengubah slip yang sudah tercetak — baris slip adalah
+     * snapshot. Slip periode itu harus di-generate ulang agar angkanya ikut.
+     *
+     * @param  bool  $simulasi  true = hanya laporkan, jangan tulis apa pun
+     * @return array{tugas:int, penugasan:int, nominal_dicabut:float, baris:array, perlu_generate_ulang:bool}
+     */
+    public function nolkanPeriode(
+        \App\Models\PeriodePenggajian $periode,
+        string $alasan,
+        ?int $userId,
+        bool $simulasi = false
+    ): array {
+        $this->pastikanAlasan($alasan);
+
+        if (!$periode->tanggal_mulai || !$periode->tanggal_selesai) {
+            throw new \DomainException('Periode ini tidak punya rentang tanggal yang jelas.');
+        }
+        if ($periode->dikunci_pada !== null) {
+            throw new \DomainException('Periode ' . $periode->nama_bulan . ' sudah dikunci, '
+                . 'vakasinya tidak bisa diubah lagi.');
+        }
+
+        // Penjaga pengganti: tidak boleh ada slip yang sudah final / dibayar.
+        $slip = \App\Models\Penggajian::where('periode_penggajian_id', $periode->id)->get();
+        $matang = $slip->filter(fn ($g) => $g->status === 'dibayar'
+            || $g->dibayar_pada !== null || $g->difinalisasi_oleh !== null);
+        if ($matang->isNotEmpty()) {
+            throw new \DomainException(
+                'Tidak bisa dinolkan: ' . $matang->count() . ' dari ' . $slip->count()
+                . ' slip periode ' . $periode->nama_bulan . ' sudah difinalisasi atau dibayar. '
+                . 'Uang yang sudah keluar tidak boleh berubah dari sini, tempuh koreksi penggajian.'
+            );
+        }
+
+        $dari   = $periode->tanggal_mulai->toDateString();
+        $sampai = $periode->tanggal_selesai->toDateString();
+
+        // Lingkup = tugas yang rentangnya bersinggungan dengan jendela periode,
+        // aturan yang sama dengan saringan periode di layar Tugas Tambahan dan
+        // dengan penilaian kinerja, supaya yang dinolkan persis yang terlihat.
+        $tugas = TugasTambahan::with([
+                'penugasan.tenagaPendidik.user', 'penugasan.settingVakasi', 'settingVakasi',
+            ])
+            ->where('tanggal_mulai', '<=', $sampai)
+            ->where(fn ($w) => $w->whereNull('tanggal_selesai')->orWhere('tanggal_selesai', '>=', $dari))
+            ->get();
+
+        $baris = [];
+        $nTugas = 0; $nPenugasan = 0; $dicabut = 0.0;
+
+        foreach ($tugas as $t) {
+            $vTugas = $this->untukTugas($t);
+
+            // a. Tingkat penerima — wajib, karena penerima menang atas tugas.
+            foreach ($t->penugasan as $pg) {
+                $v = $this->untukPenerima($pg);
+                if ((float) $v['nominal'] <= 0) continue;
+
+                $baris[] = [
+                    'tingkat'      => 'penerima',
+                    'tugas'        => $t->judul,
+                    'nama'         => $pg->tenagaPendidik?->user?->name ?? ('penugasan #' . $pg->id),
+                    'nominal'      => (float) $v['nominal'],
+                    'sumber'       => $v['sumber'],
+                    'dilaporkan'   => $pg->dilaporkan_pada?->toDateString(),
+                    'periode_uang' => $pg->dilaporkan_pada
+                        ? (\App\Models\PeriodePenggajian::untukTanggal(
+                            $pg->dilaporkan_pada->toDateString())?->nama_bulan ?? '(tanpa periode)')
+                        : '(belum dilaporkan)',
+                ];
+                $dicabut += (float) $v['nominal'];
+                $nPenugasan++;
+
+                if (!$simulasi) {
+                    $sebelum = $v;
+                    DB::transaction(function () use ($pg, $alasan, $userId, $sebelum, $t) {
+                        $pg->update([
+                            'vakasi_override'        => 0,
+                            'vakasi_dikunci'         => true,
+                            'vakasi_ditetapkan_oleh' => $userId,
+                            'vakasi_ditetapkan_pada' => now(),
+                        ]);
+                        $sesudah = $this->untukPenerima($pg->fresh('tugasTambahan'));
+                        RiwayatVakasiTugas::create([
+                            'tugas_tambahan_id' => $t->id,
+                            'penugasan_id'      => $pg->id,
+                            'nominal_lama'      => $sebelum['nominal'],
+                            'nominal_baru'      => $sesudah['nominal'],
+                            'sumber_lama'       => $sebelum['sumber'],
+                            'sumber_baru'       => $sesudah['sumber'],
+                            'dikunci'           => true,
+                            'alasan'            => $alasan,
+                            'diubah_oleh'       => $userId,
+                        ]);
+                    });
+                }
+            }
+
+            // b. Tingkat tugas — agar penerima yang ditambahkan KELAK juga nol.
+            if ((float) $vTugas['nominal'] > 0) {
+                $baris[] = [
+                    'tingkat'      => 'tugas',
+                    'tugas'        => $t->judul,
+                    'nama'         => '(seluruh penerima berikutnya)',
+                    'nominal'      => (float) $vTugas['nominal'],
+                    'sumber'       => $vTugas['sumber'],
+                    'dilaporkan'   => null,
+                    'periode_uang' => '-',
+                ];
+                $nTugas++;
+
+                if (!$simulasi) {
+                    $sebelum = $vTugas;
+                    DB::transaction(function () use ($t, $alasan, $userId, $sebelum) {
+                        $t->update([
+                            'vakasi_override'        => 0,
+                            'vakasi_dikunci'         => true,
+                            'vakasi_ditetapkan_oleh' => $userId,
+                            'vakasi_ditetapkan_pada' => now(),
+                        ]);
+                        $sesudah = $this->untukTugas($t->fresh());
+                        RiwayatVakasiTugas::create([
+                            'tugas_tambahan_id' => $t->id,
+                            'nominal_lama'      => $sebelum['nominal'],
+                            'nominal_baru'      => $sesudah['nominal'],
+                            'sumber_lama'       => $sebelum['sumber'],
+                            'sumber_baru'       => $sesudah['sumber'],
+                            'dikunci'           => true,
+                            'alasan'            => $alasan,
+                            'diubah_oleh'       => $userId,
+                        ]);
+                    });
+                }
+            }
+        }
+
+        return [
+            'tugas'           => $nTugas,
+            'penugasan'       => $nPenugasan,
+            'nominal_dicabut' => $dicabut,
+            'baris'           => $baris,
+            // Slip adalah snapshot: tanpa generate ulang, angka di slip tetap lama.
+            'perlu_generate_ulang' => $slip->isNotEmpty(),
+        ];
+    }
+
     private function pastikanAlasan(string $alasan): void
     {
         if (mb_strlen(trim($alasan)) < 5) {

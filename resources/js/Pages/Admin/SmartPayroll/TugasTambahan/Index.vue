@@ -58,6 +58,11 @@
                     </button>
                 </div>
 
+                <button v-if="filters.periode" @click="nolkan.buka = true"
+                    class="px-4 py-2 text-sm font-semibold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-colors">
+                    Jadikan Tanpa Vakasi
+                </button>
+
                 <button v-if="rentang" @click="hapusRentang"
                     class="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors">
                     Hapus saringan
@@ -79,6 +84,56 @@
                     <span v-if="rentang.tidak_selesai" class="text-gray-500">{{ rentang.tidak_selesai }} tidak terlaksana</span>
                     <span v-if="rentang.dikecualikan" class="text-sky-700 font-semibold">{{ rentang.dikecualikan }} tidak dinilai</span>
                     <span class="text-indigo-700 font-semibold">Vakasi {{ formatRp(rentang.vakasi) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Jadikan seluruh tugas periode terpilih TANPA VAKASI. Keputusan
+             tingkat periode, jadi alasannya wajib dan dampaknya ditegaskan. -->
+        <div v-if="nolkan.buka" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-gray-900/40" @click="nolkan.kirim || (nolkan.buka = false)"></div>
+            <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-900">Jadikan Tanpa Vakasi</h3>
+                <p class="text-sm text-gray-500 mt-1">
+                    Periode <b>{{ rentang?.label }}</b> &middot; {{ rentang?.dari }} &ndash; {{ rentang?.sampai }}
+                </p>
+
+                <div class="mt-4 rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800 space-y-1">
+                    <p>Seluruh tugas tambahan yang rentangnya menyentuh periode ini disetel
+                        <b>Rp 0 dan dikunci</b>, di tingkat tugas maupun tiap penerimanya.</p>
+                    <p>Dikunci berarti nominalnya berhenti mengikuti Setting Vakasi, jadi tidak
+                        bisa naik lagi dengan sendirinya.</p>
+                    <p>Ditolak bila ada slip periode ini yang sudah difinalisasi atau dibayar.</p>
+                    <p>Slip yang sudah tercetak tidak berubah sendiri &mdash; generate ulang
+                        penggajian periode ini supaya angkanya ikut.</p>
+                </div>
+
+                <div class="mt-4">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+                        Alasan <span class="text-red-500">*</span>
+                    </label>
+                    <textarea v-model="nolkan.alasan" rows="2" maxlength="300"
+                        placeholder="Mis. keputusan lembaga: periode ini tanpa vakasi tugas tambahan"
+                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                    <p class="text-[11px] text-gray-400 mt-1">Tercatat di riwayat vakasi tiap tugas.</p>
+                </div>
+
+                <p v-if="nolkan.galat" class="mt-3 text-sm text-red-600">{{ nolkan.galat }}</p>
+
+                <div class="flex justify-end gap-2 mt-5">
+                    <button @click="nolkan.buka = false" :disabled="nolkan.kirim"
+                        class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-xl">Batal</button>
+                    <button @click="kirimNolkan(true)" :disabled="nolkan.kirim || nolkan.alasan.trim().length < 5"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:text-gray-300">
+                        Simulasikan
+                    </button>
+                    <button @click="kirimNolkan(false)" :disabled="nolkan.kirim || nolkan.alasan.trim().length < 5"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl"
+                        :class="!nolkan.kirim && nolkan.alasan.trim().length >= 5
+                            ? 'bg-amber-600 text-white hover:bg-amber-700'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
+                        {{ nolkan.kirim ? 'Menyimpan&hellip;' : 'Terapkan' }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -162,7 +217,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 import AppConfirm from '@/Components/AppConfirm.vue'
@@ -200,6 +255,23 @@ const tabs = computed(() => [
     { val: 'selesai', label: 'Selesai', count: props.summary.selesai ?? 0 },
     { val: 'perlu_verifikasi', label: 'Perlu Verifikasi', count: props.summary.menunggu ?? 0 },
 ])
+
+const nolkan = reactive({ buka: false, alasan: '', galat: '', kirim: false })
+
+function kirimNolkan(simulasi) {
+    if (nolkan.alasan.trim().length < 5) return
+    nolkan.kirim = true; nolkan.galat = ''
+    router.post(route('admin.smart-payroll.tugas-tambahan.vakasi-periode'),
+        { periode: props.filters.periode, alasan: nolkan.alasan.trim(), simulasi },
+        {
+            preserveScroll: true,
+            // Simulasi dibiarkan terbuka supaya bisa langsung diterapkan;
+            // penerapan menutup dialognya.
+            onSuccess: () => { if (!simulasi) nolkan.buka = false },
+            onError: (e) => { nolkan.galat = Object.values(e)[0] ?? 'Gagal menetapkan.' },
+            onFinish: () => { nolkan.kirim = false },
+        })
+}
 
 function reload() {
     router.get(route('admin.smart-payroll.tugas-tambahan.index'),
