@@ -134,7 +134,13 @@
                     </div>
                 </div>
 
-                <button v-if="guruId || sebab || arah" @click="hapusSaringan"
+                <label class="flex items-center gap-2 text-xs font-medium text-gray-600 cursor-pointer select-none px-3 py-2 rounded-xl border"
+                    :class="hanyaManusia ? 'border-indigo-500 bg-indigo-50/50 text-indigo-700' : 'border-gray-200'">
+                    <input type="checkbox" v-model="hanyaManusia" @change="reload()" class="rounded border-gray-300" />
+                    Hanya keputusan orang
+                </label>
+
+                <button v-if="guruId || sebab || arah || hanyaManusia" @click="hapusSaringan"
                     class="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors">
                     Hapus saringan
                 </button>
@@ -213,6 +219,8 @@ const props = defineProps({
 const guruId = ref(props.filters.guru_id ?? null)
 const sebab = ref(props.filters.sebab ?? '')
 const arah = ref(props.filters.arah ?? '')
+// Tanpa ini, 383 baris penghitungan terjadwal menenggelamkan keputusan orang.
+const hanyaManusia = ref(Boolean(props.filters.hanya_manusia))
 const autoSegar = ref(false)
 const jamMuat = ref('')
 
@@ -232,6 +240,7 @@ function kueri() {
         guru_id: guruId.value || undefined,
         sebab: sebab.value || undefined,
         arah: arah.value || undefined,
+        hanya_manusia: hanyaManusia.value ? 1 : undefined,
     }
 }
 
@@ -246,7 +255,7 @@ function pilihPeriode(val) {
 }
 function pilihArah(val) { arah.value = val; reload() }
 function hapusSaringan() {
-    guruId.value = null; sebab.value = ''; arah.value = ''
+    guruId.value = null; sebab.value = ''; arah.value = ''; hanyaManusia.value = false
     reload()
 }
 
@@ -256,6 +265,7 @@ const urlPdf = computed(() => {
     q.set('tahun', props.periode.tahun)
     if (guruId.value) q.set('guru_id', guruId.value)
     if (sebab.value) q.set('sebab', sebab.value)
+    if (hanyaManusia.value) q.set('hanya_manusia', '1')
     return route('admin.smart-payroll.kinerja.log-aktivitas.pdf') + '?' + q.toString()
 })
 

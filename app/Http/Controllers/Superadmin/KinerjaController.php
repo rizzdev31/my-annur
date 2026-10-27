@@ -107,11 +107,17 @@ class KinerjaController extends Controller
         $guruId = $request->guru_id;
         $sebab  = (string) $request->input('sebab', '');
         $arah   = (string) $request->input('arah', '');
+        // Penghitungan terjadwal menulis satu baris tiap hari tiap guru, jadi
+        // keputusan manusia mudah tenggelam: terukur 383 pergerakan September
+        // untuk 52 guru, mayoritas 'hitung_ulang'. Sakelar ini menyisakan yang
+        // memang diputuskan orang (reset, override, finalisasi, catatan).
+        $hanyaManusia = $request->boolean('hanya_manusia');
 
         $q = \App\Models\RiwayatRekapKinerja::with(['tenagaPendidik.user', 'pengubah'])
             ->where('bulan', $bulan)->where('tahun', $tahun)
             ->when($guruId, fn ($x) => $x->where('tenaga_pendidik_id', $guruId))
             ->when($sebab !== '', fn ($x) => $x->where('sebab', $sebab))
+            ->when($hanyaManusia, fn ($x) => $x->whereNotIn('sebab', ['hitung_ulang', 'awal']))
             ->orderByDesc('created_at')->orderByDesc('id');
 
         $semua = $q->get()->map(function ($r) {
@@ -180,6 +186,7 @@ class KinerjaController extends Controller
                 'bulan' => $bulan, 'tahun' => $tahun,
                 'guru_id' => $guruId ? (int) $guruId : null,
                 'sebab' => $sebab, 'arah' => $arah,
+                'hanya_manusia' => $hanyaManusia,
             ],
         ]);
     }
@@ -195,6 +202,8 @@ class KinerjaController extends Controller
             ->where('bulan', $bulan)->where('tahun', $tahun)
             ->when($request->guru_id, fn ($x) => $x->where('tenaga_pendidik_id', $request->guru_id))
             ->when($request->input('sebab'), fn ($x) => $x->where('sebab', $request->input('sebab')))
+            ->when($request->boolean('hanya_manusia'),
+                fn ($x) => $x->whereNotIn('sebab', ['hitung_ulang', 'awal']))
             ->orderBy('created_at')->orderBy('id')->get();
 
         [$mulai, $selesai, $ikutGaji] = $this->kinerjaService->rentangPenilaian($bulan, $tahun);
