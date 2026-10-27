@@ -77,6 +77,112 @@
             </div>
         </div>
 
+        <!-- Kunci skor periode: kewenangan superadmin, dikerjakan dari sini.
+             Rutenya tetap dijaga role:super_admin, jadi menyembunyikan tombol
+             bukan satu-satunya pengamanan. -->
+        <div v-if="bolehMengunci && periode?.kunci" class="bg-white rounded-2xl border border-gray-200 p-4 mb-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h3 class="text-sm font-bold text-gray-800">Kunci Skor Periode</h3>
+                        <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                            :class="semuaTerkunci ? 'bg-emerald-50 text-emerald-700'
+                                : (periode.kunci.terkunci > 0 ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600')">
+                            {{ periode.kunci.terkunci }} dari {{ periode.kunci.total }} terkunci
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Skor yang terkunci berhenti berubah mengikuti data yang masuk belakangan.
+                        <span v-if="periode.kunci.periode_penggajian_terkunci" class="text-amber-700 font-medium">
+                            Periode penggajiannya sudah dikunci bendahara, jadi skornya beku dari atas.
+                        </span>
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button v-if="!semuaTerkunci" @click="bukaDialogKunci('kunci')"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl bg-[#2E3160] text-white hover:bg-[#252850] transition">
+                        Kunci Periode Ini
+                    </button>
+                    <button v-if="periode.kunci.terkunci > 0" @click="bukaDialogKunci('buka')"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition">
+                        Buka Kunci
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dialog kunci / buka kunci -->
+        <div v-if="kunciDialog.buka" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-gray-900/40" @click="kunciDialog.kirim || (kunciDialog.buka = false)"></div>
+            <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-900">
+                    {{ kunciDialog.mode === 'kunci' ? 'Kunci Skor Periode' : 'Buka Kunci Skor Periode' }}
+                </h3>
+                <p class="text-sm text-gray-500 mt-1">
+                    <b>{{ periode?.label }}</b> &middot; dinilai {{ periode?.dari }} &ndash; {{ periode?.sampai }}
+                </p>
+
+                <div class="mt-4 rounded-xl p-3 text-xs space-y-1"
+                    :class="kunciDialog.mode === 'kunci'
+                        ? 'bg-gray-50 border border-gray-100 text-gray-600'
+                        : 'bg-amber-50 border border-amber-100 text-amber-800'">
+                    <template v-if="kunciDialog.mode === 'kunci'">
+                        <p>Skor {{ periode.kunci.total - periode.kunci.terkunci }} guru akan dibekukan apa adanya.</p>
+                        <p>Penghitungan terjadwal berhenti menyentuhnya, dan skor lama tetap tersimpan di riwayat.</p>
+                        <p>Masih bisa dibuka lagi dari sini selama periode penggajiannya belum dikunci bendahara.</p>
+                    </template>
+                    <template v-else>
+                        <p>Kunci {{ periode.kunci.terkunci }} skor akan dibuka. Angkanya TIDAK diubah.</p>
+                        <p>Sesudah terbuka, skornya bisa bergeser lagi bila ada yang menghitung ulang.</p>
+                    </template>
+                </div>
+
+                <label v-if="kunciDialog.mode === 'kunci'"
+                    class="flex gap-3 items-start mt-3 p-3 rounded-xl border cursor-pointer"
+                    :class="kunciDialog.hitungDulu ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200'">
+                    <input type="checkbox" v-model="kunciDialog.hitungDulu" class="mt-0.5 rounded border-gray-300" />
+                    <span>
+                        <span class="block text-sm font-semibold text-gray-800">Hitung ulang dulu sebelum dikunci</span>
+                        <span class="block text-xs text-gray-500 mt-0.5">
+                            Angkanya jadi paling mutakhir, tapi bisa berbeda dari yang terlihat sekarang
+                            bila ada data yang berubah. Biarkan mati untuk membekukan apa adanya.
+                        </span>
+                    </span>
+                </label>
+
+                <div class="mt-4">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+                        Alasan <span class="text-red-500">*</span>
+                    </label>
+                    <textarea v-model="kunciDialog.alasan" rows="2" maxlength="500"
+                        :placeholder="kunciDialog.mode === 'kunci'
+                            ? 'Mis. skor periode ini sudah final, penggajian selesai'
+                            : 'Mis. ada tugas yang baru dibereskan, perlu dihitung ulang'"
+                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                    <p class="text-[11px] text-gray-400 mt-1">
+                        Tercatat di riwayat skor tiap guru dan terlihat guru di PWA.
+                    </p>
+                </div>
+
+                <p v-if="kunciDialog.galat" class="mt-3 text-sm text-red-600">{{ kunciDialog.galat }}</p>
+
+                <div class="flex justify-end gap-2 mt-5">
+                    <button @click="kunciDialog.buka = false" :disabled="kunciDialog.kirim"
+                        class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-xl">Batal</button>
+                    <button @click="kirimKunci" :disabled="kunciDialog.kirim || kunciDialog.alasan.trim().length < 5"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl"
+                        :class="!kunciDialog.kirim && kunciDialog.alasan.trim().length >= 5
+                            ? (kunciDialog.mode === 'kunci'
+                                ? 'bg-[#2E3160] text-white hover:bg-[#252850]'
+                                : 'bg-amber-600 text-white hover:bg-amber-700')
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
+                        {{ kunciDialog.kirim ? 'Menyimpan…'
+                            : (kunciDialog.mode === 'kunci' ? 'Kunci' : 'Buka Kunci') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 xl:grid-cols-5 gap-5">
 
             <!-- ── Kolom Kiri: Log Pending Verifikasi ─────────────────────── -->
@@ -314,8 +420,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { Head, Link, router } from '@inertiajs/vue3'
+import { ref, reactive, computed } from 'vue'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const props = defineProps({
@@ -362,6 +468,45 @@ function hitungRekap() {
         tahun: filterTahun.value,
     }, {
         onFinish: () => menghitung.value = false,
+    })
+}
+
+// ── Kunci skor periode (superadmin) ──────────────────────────────────────────
+// Dulu hanya bisa lewat perintah di server, sehingga kewenangan superadmin
+// bergantung pada orang lain yang punya akses konsol.
+const bolehMengunci = computed(() => usePage().props.auth?.user?.role === 'super_admin')
+const semuaTerkunci = computed(() =>
+    !!props.periode?.kunci && props.periode.kunci.total > 0
+    && props.periode.kunci.terkunci === props.periode.kunci.total)
+
+const kunciDialog = reactive({
+    buka: false, mode: 'kunci', alasan: '', hitungDulu: false, galat: '', kirim: false,
+})
+
+function bukaDialogKunci(mode) {
+    Object.assign(kunciDialog,
+        { buka: true, mode, alasan: '', hitungDulu: false, galat: '', kirim: false })
+}
+
+function kirimKunci() {
+    if (kunciDialog.alasan.trim().length < 5) return
+    kunciDialog.kirim = true; kunciDialog.galat = ''
+    const rute = kunciDialog.mode === 'kunci'
+        ? 'admin.smart-payroll.kinerja.kunci-periode'
+        : 'admin.smart-payroll.kinerja.buka-kunci-periode'
+    const muatan = {
+        bulan: filterBulan.value,
+        tahun: filterTahun.value,
+        alasan: kunciDialog.alasan.trim(),
+    }
+    if (kunciDialog.mode === 'kunci') muatan.hitung_ulang_dulu = kunciDialog.hitungDulu
+
+    router.post(route(rute), muatan, {
+        preserveScroll: true,
+        onSuccess: () => { kunciDialog.buka = false },
+        // Inertia membalas 303 + errors; tanpa onError galatnya hilang diam-diam.
+        onError: (e) => { kunciDialog.galat = Object.values(e)[0] ?? 'Gagal memproses.' },
+        onFinish: () => { kunciDialog.kirim = false },
     })
 }
 

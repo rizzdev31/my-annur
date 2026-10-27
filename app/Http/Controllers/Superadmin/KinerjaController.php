@@ -12,6 +12,7 @@ use App\Models\TenagaPendidik;
 use App\Services\KinerjaCalculationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
 class KinerjaController extends Controller
@@ -79,6 +80,8 @@ class KinerjaController extends Controller
                     'sampai'    => $s->format('d M Y'),
                     'ikut_gaji' => $ikut,
                     'berjalan'  => $bulan === $bBerjalan && $tahun === $tBerjalan,
+                    // Keadaan kunci: tombolnya harus tahu apa yang sedang berlaku.
+                    'kunci'     => $this->kinerjaService->statusKunci($bulan, $tahun),
                 ];
             })(),
             'periodeOpsi' => $this->opsiPeriodeKinerja(),
@@ -651,6 +654,72 @@ class KinerjaController extends Controller
 
         return back()->with('success',
             "Kinerja {$total} guru direset & dihitung ulang. Semua skor lama tersimpan di riwayat.");
+    }
+
+    /**
+     * Kunci skor kinerja satu periode — SUPERADMIN, dari layar.
+     *
+     * Sebelumnya membekukan periode hanya bisa lewat perintah di server, jadi
+     * kewenangan yang jelas milik superadmin bergantung pada orang lain yang
+     * punya akses konsol. Rutenya dijaga `role:super_admin`, bukan hanya
+     * disembunyikan tombolnya.
+     */
+    public function kunciPeriode(Request $request)
+    {
+        $data = $request->validate([
+            'bulan'             => 'required|integer|between:1,12',
+            'tahun'             => 'required|integer|min:2020',
+            'alasan'            => 'required|string|min:5|max:500',
+            'hitung_ulang_dulu' => 'nullable|boolean',
+        ], [], ['alasan' => 'alasan penguncian']);
+
+        try {
+            $hasil = $this->kinerjaService->kunciRekapPeriode(
+                (int) $data['bulan'], (int) $data['tahun'], $data['alasan'],
+                Auth::id(), (bool) ($data['hitung_ulang_dulu'] ?? false),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        if ($hasil['dikunci'] === 0) {
+            return back()->with('success',
+                "Tidak ada yang perlu dikunci — {$hasil['sudah']} dari {$hasil['total']} baris sudah terkunci.");
+        }
+
+        $pesan = "Skor kinerja {$hasil['dikunci']} guru dikunci";
+        if ($hasil['dihitung'] > 0) $pesan .= " (dihitung ulang dulu: {$hasil['dihitung']})";
+        if ($hasil['sudah'] > 0)    $pesan .= ", {$hasil['sudah']} sudah terkunci sebelumnya";
+        $pesan .= '. Skornya berhenti berubah mengikuti data yang masuk belakangan.';
+
+        return back()->with('success', $pesan);
+    }
+
+    /** Buka kunci skor satu periode — SUPERADMIN. Tidak menghitung ulang. */
+    public function bukaKunciPeriode(Request $request)
+    {
+        $data = $request->validate([
+            'bulan'  => 'required|integer|between:1,12',
+            'tahun'  => 'required|integer|min:2020',
+            'alasan' => 'required|string|min:5|max:500',
+        ], [], ['alasan' => 'alasan pembukaan kunci']);
+
+        try {
+            $hasil = $this->kinerjaService->bukaKunciRekapPeriode(
+                (int) $data['bulan'], (int) $data['tahun'], $data['alasan'], Auth::id(),
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        if ($hasil['dibuka'] === 0) {
+            return back()->with('success',
+                "Tidak ada yang terkunci pada periode itu ({$hasil['total']} baris).");
+        }
+
+        return back()->with('success',
+            "Kunci skor {$hasil['dibuka']} guru dibuka. Angkanya TIDAK diubah — "
+            . 'jalankan Hitung Rekap bila ingin angka termutakhir.');
     }
 
     /** Pesan penolakan bila periode gaji bulan itu sudah dikunci (null = boleh). */

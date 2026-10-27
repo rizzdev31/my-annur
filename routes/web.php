@@ -357,6 +357,12 @@ Route::prefix('admin')
                 Route::post('/guru/{guru}/override',          [KinerjaController::class, 'overrideSkor'])->name('override');
                 Route::post('/guru/{guru}/reset',             [KinerjaController::class, 'resetRekap'])->name('reset');
                 Route::post('/reset-semua',                   [KinerjaController::class, 'resetSemua'])->name('reset-semua');
+                // Mengunci/membuka skor satu periode adalah kewenangan SUPERADMIN.
+                // Dijaga di rute, bukan hanya disembunyikan tombolnya di layar.
+                Route::post('/kunci-periode',                 [KinerjaController::class, 'kunciPeriode'])
+                    ->middleware('role:super_admin')->name('kunci-periode');
+                Route::post('/buka-kunci-periode',            [KinerjaController::class, 'bukaKunciPeriode'])
+                    ->middleware('role:super_admin')->name('buka-kunci-periode');
                 Route::post('/guru/{guru}/punishment',        [KinerjaController::class, 'punishmentStore'])->name('punishment.store');
                 Route::delete('/punishment/{punishment}',     [KinerjaController::class, 'punishmentDestroy'])->name('punishment.destroy');
             });

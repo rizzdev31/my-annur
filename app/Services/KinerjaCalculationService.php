@@ -309,6 +309,123 @@ class KinerjaCalculationService
         return $n;
     }
 
+    /**
+     * KUNCI skor kinerja satu periode — dipakai superadmin dari layar, bukan
+     * lewat perintah di server.
+     *
+     * Bedanya dengan finalisasiPeriode(): di sini menghitung ulang bersifat
+     * PILIHAN. Tombol bernama "kunci" yang diam-diam mengubah angka adalah
+     * kejutan yang tidak perlu — bawaannya membekukan apa yang sedang terlihat.
+     * Kalau superadmin memang ingin angka termutakhir, ia menyalakan
+     * $hitungUlangDulu secara sadar.
+     *
+     * Baris yang sudah terkunci dilewati, bukan ditulis ulang, supaya jejak
+     * riwayatnya tidak dipenuhi perubahan kosong.
+     *
+     * @return array{dikunci:int, sudah:int, dihitung:int, total:int}
+     */
+    public function kunciRekapPeriode(
+        int $bulan, int $tahun, string $alasan, ?int $aktor, bool $hitungUlangDulu = false
+    ): array {
+        $this->pastikanAlasanKinerja($alasan);
+
+        $rekap = RekapKinerjaBulanan::with('tenagaPendidik')
+            ->where('bulan', $bulan)->where('tahun', $tahun)->get();
+
+        if ($rekap->isEmpty()) {
+            throw new \DomainException(
+                'Belum ada rekap kinerja pada periode itu, jadi tidak ada yang bisa dikunci. '
+                . 'Hitung rekapnya dulu.'
+            );
+        }
+
+        $dikunci = 0; $sudah = 0; $dihitung = 0;
+
+        foreach ($rekap as $r) {
+            if ($r->sudah_dikunci) { $sudah++; continue; }
+
+            if ($hitungUlangDulu && $r->tenagaPendidik) {
+                RekapKinerjaBulanan::tandaiPerubahan('hitung_ulang',
+                    'Dihitung ulang sebelum dikunci: ' . $alasan, $aktor);
+                $this->hitungRekap($r->tenagaPendidik, $bulan, $tahun);
+                $r->refresh();
+                $dihitung++;
+            }
+
+            RekapKinerjaBulanan::tandaiPerubahan('finalisasi', $alasan, $aktor);
+            $r->update(['sudah_dikunci' => true]);
+            $dikunci++;
+        }
+
+        return ['dikunci' => $dikunci, 'sudah' => $sudah, 'dihitung' => $dihitung,
+                'total' => $rekap->count()];
+    }
+
+    /**
+     * BUKA KUNCI skor satu periode — TANPA menghitung ulang.
+     *
+     * Sengaja dipisahkan dari reset massal: reset membuka kunci LALU menghitung
+     * ulang, sehingga angkanya bisa bergeser. Yang dibutuhkan saat seseorang
+     * berkata "buka kuncinya" biasanya hanya izin mengubah, bukan perhitungan
+     * baru. Angkanya tetap apa adanya sampai ada yang sengaja menghitung ulang.
+     *
+     * @return array{dibuka:int, sudah_terbuka:int, total:int}
+     */
+    public function bukaKunciRekapPeriode(
+        int $bulan, int $tahun, string $alasan, ?int $aktor
+    ): array {
+        $this->pastikanAlasanKinerja($alasan);
+
+        if (self::periodeTerkunci($bulan, $tahun)) {
+            throw new \DomainException(
+                'Periode penggajian bulan itu sudah dikunci bendahara, jadi skor kinerjanya '
+                . 'ikut beku dan membuka kunci baris rekap tidak akan berpengaruh. '
+                . 'Buka kunci periode penggajiannya lebih dulu bila memang perlu.'
+            );
+        }
+
+        $rekap = RekapKinerjaBulanan::where('bulan', $bulan)->where('tahun', $tahun)->get();
+
+        if ($rekap->isEmpty()) {
+            throw new \DomainException('Belum ada rekap kinerja pada periode itu.');
+        }
+
+        $dibuka = 0; $terbuka = 0;
+
+        foreach ($rekap as $r) {
+            if (!$r->sudah_dikunci) { $terbuka++; continue; }
+
+            RekapKinerjaBulanan::tandaiPerubahan('reset', 'Kunci dibuka: ' . $alasan, $aktor);
+            $r->update(['sudah_dikunci' => false]);
+            $dibuka++;
+        }
+
+        return ['dibuka' => $dibuka, 'sudah_terbuka' => $terbuka, 'total' => $rekap->count()];
+    }
+
+    /** Berapa baris rekap periode itu yang terkunci, dari berapa. */
+    public function statusKunci(int $bulan, int $tahun): array
+    {
+        $total    = RekapKinerjaBulanan::where('bulan', $bulan)->where('tahun', $tahun)->count();
+        $terkunci = RekapKinerjaBulanan::where('bulan', $bulan)->where('tahun', $tahun)
+            ->where('sudah_dikunci', true)->count();
+
+        return [
+            'total'      => $total,
+            'terkunci'   => $terkunci,
+            // Periode penggajian yang dikunci bendahara = pagar KERAS di atasnya.
+            'periode_penggajian_terkunci' => self::periodeTerkunci($bulan, $tahun),
+        ];
+    }
+
+    private function pastikanAlasanKinerja(string $alasan): void
+    {
+        if (mb_strlen(trim($alasan)) < 5) {
+            throw new \DomainException('Alasan wajib diisi (minimal 5 huruf) — inilah yang '
+                . 'menjawab "kenapa skor periode ini dikunci/dibuka" di kemudian hari.');
+        }
+    }
+
     /** True bila periode penggajian bulan/tahun itu sudah dikunci bendahara. */
     public static function periodeTerkunci(int $bulan, int $tahun): bool
     {
