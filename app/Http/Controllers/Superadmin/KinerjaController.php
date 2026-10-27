@@ -26,8 +26,15 @@ class KinerjaController extends Controller
 
     public function index(Request $request)
     {
-        $bulan   = (int) ($request->bulan ?? now()->month);
-        $tahun   = (int) ($request->tahun ?? now()->year);
+        // Default = periode kinerja yang BERJALAN (jendela gaji 26 ke 25), bukan
+        // bulan kalender. Dengan now()->month, pada tanggal 26-31 halaman ini
+        // membuka periode yang sudah berakhir sementara sistem sudah menilai
+        // periode berikutnya - itulah sumber kerancuan "reset tanggal 26 atau
+        // awal bulan". Terukur 27 Okt 2026: untukTanggal(hari ini) = November
+        // 2026 sedangkan now()->month = Oktober.
+        [$bBerjalan, $tBerjalan] = KinerjaCalculationService::periodeBerjalan();
+        $bulan   = (int) ($request->bulan ?? $bBerjalan);
+        $tahun   = (int) ($request->tahun ?? $tBerjalan);
         $setting = SettingKinerja::getDefault();
 
         $logPending = LogKerjaHarian::with([
@@ -61,8 +68,186 @@ class KinerjaController extends Controller
             ],
             'bulan'   => $bulan,
             'tahun'   => $tahun,
+            // Jendela penilaian ditulis terang-terangan: periode 26 ke 25 bukan
+            // bulan kalender, dan tanpa ini angkanya mudah disalahpahami.
+            'periode' => (function () use ($bulan, $tahun, $bBerjalan, $tBerjalan) {
+                [$m, $s, $ikut] = $this->kinerjaService->rentangPenilaian($bulan, $tahun);
+                return [
+                    'label'     => \App\Models\PeriodePenggajian::untukLabel($bulan, $tahun)?->nama_bulan
+                        ?? \Carbon\Carbon::create($tahun, $bulan, 1)->locale('id')->isoFormat('MMMM YYYY'),
+                    'dari'      => $m->format('d M Y'),
+                    'sampai'    => $s->format('d M Y'),
+                    'ikut_gaji' => $ikut,
+                    'berjalan'  => $bulan === $bBerjalan && $tahun === $tBerjalan,
+                ];
+            })(),
+            'periodeOpsi' => $this->opsiPeriodeKinerja(),
             'filters' => $request->only(['bulan', 'tahun']),
         ]);
+    }
+
+    /**
+     * LOG AKTIVITAS KINERJA — setiap kenaikan & penurunan skor, siapa pelakunya,
+     * dan apa alasannya.
+     *
+     * Sumbernya `riwayat_rekap_kinerja`, yang ditulis observer pada SETIAP
+     * perubahan baris rekap, jadi tidak ada jalur perubahan yang lolos tanpa
+     * jejak. Yang ditampilkan di sini bukan skor akhir, melainkan PERGERAKANnya:
+     * dari berapa ke berapa, oleh siapa, kapan, dan karena apa.
+     *
+     * Penyaring periodenya memakai periode KINERJA (jendela gaji 26 ke 25),
+     * bukan bulan kalender — sama dengan yang dipakai penilaian.
+     */
+    public function logAktivitas(Request $request)
+    {
+        [$bBerjalan, $tBerjalan] = KinerjaCalculationService::periodeBerjalan();
+
+        $bulan  = (int) ($request->bulan ?? $bBerjalan);
+        $tahun  = (int) ($request->tahun ?? $tBerjalan);
+        $guruId = $request->guru_id;
+        $sebab  = (string) $request->input('sebab', '');
+        $arah   = (string) $request->input('arah', '');
+
+        $q = \App\Models\RiwayatRekapKinerja::with(['tenagaPendidik.user', 'pengubah'])
+            ->where('bulan', $bulan)->where('tahun', $tahun)
+            ->when($guruId, fn ($x) => $x->where('tenaga_pendidik_id', $guruId))
+            ->when($sebab !== '', fn ($x) => $x->where('sebab', $sebab))
+            ->orderByDesc('created_at')->orderByDesc('id');
+
+        $semua = $q->get()->map(function ($r) {
+            $sel = $r->selisih;
+
+            return [
+                'id'         => $r->id,
+                'waktu'      => $r->created_at?->format('d M Y H:i'),
+                'waktu_iso'  => $r->created_at?->toIso8601String(),
+                'guru'       => $r->tenagaPendidik?->user?->name ?? '—',
+                'guru_id'    => $r->tenaga_pendidik_id,
+                'sebab'      => $r->sebab,
+                'label_sebab' => $r->label_sebab,
+                'alasan'     => $r->alasan,
+                'oleh'       => $r->pengubah?->name ?? 'Sistem (terjadwal)',
+                // Baris penciptaan tidak punya skor lama: tampilkan sebagai nilai awal.
+                'skor_lama'  => $r->skor_total !== null ? round((float) $r->skor_total, 2) : null,
+                'skor_baru'  => $r->skor_total_baru !== null ? round((float) $r->skor_total_baru, 2) : null,
+                'selisih'    => $sel,
+                'arah'       => $sel === null ? 'awal' : ($sel > 0 ? 'naik' : ($sel < 0 ? 'turun' : 'tetap')),
+            ];
+        });
+
+        // Saringan arah dilakukan sesudah pemetaan karena selisih dihitung di model.
+        $baris = $arah !== ''
+            ? $semua->where('arah', $arah)->values()
+            : $semua;
+
+        $naik  = $semua->where('arah', 'naik');
+        $turun = $semua->where('arah', 'turun');
+
+        [$mulai, $selesai, $ikutGaji] = $this->kinerjaService->rentangPenilaian($bulan, $tahun);
+
+        return Inertia::render('Admin/SmartPayroll/Kinerja/LogAktivitas', [
+            'baris'     => $baris,
+            'ringkasan' => [
+                'total'          => $semua->count(),
+                'naik'           => $naik->count(),
+                'turun'          => $turun->count(),
+                'tetap'          => $semua->where('arah', 'tetap')->count(),
+                'awal'           => $semua->where('arah', 'awal')->count(),
+                'guru_terdampak' => $semua->pluck('guru_id')->unique()->count(),
+                'rata_naik'      => $naik->count() ? round($naik->avg('selisih'), 2) : 0,
+                'rata_turun'     => $turun->count() ? round($turun->avg('selisih'), 2) : 0,
+                'naik_terbesar'  => $naik->sortByDesc('selisih')->first(),
+                'turun_terbesar' => $turun->sortBy('selisih')->first(),
+            ],
+            'periode' => [
+                'bulan'     => $bulan,
+                'tahun'     => $tahun,
+                'label'     => \App\Models\PeriodePenggajian::untukLabel($bulan, $tahun)?->nama_bulan
+                    ?? \Carbon\Carbon::create($tahun, $bulan, 1)->locale('id')->isoFormat('MMMM YYYY'),
+                'dari'      => $mulai->format('d M Y'),
+                'sampai'    => $selesai->format('d M Y'),
+                'ikut_gaji' => $ikutGaji,
+                'berjalan'  => $bulan === $bBerjalan && $tahun === $tBerjalan,
+            ],
+            'periodeOpsi' => $this->opsiPeriodeKinerja(),
+            'sebabOpsi'   => collect(\App\Models\RiwayatRekapKinerja::LABEL_SEBAB)
+                ->map(fn ($label, $kunci) => ['nilai' => $kunci, 'label' => $label])
+                ->values()->all(),
+            'guruOpsi' => TenagaPendidik::aktif()->with('user')->get()
+                ->map(fn ($g) => ['id' => $g->id, 'nama' => $g->user->name])
+                ->sortBy('nama')->values()->all(),
+            'filters' => [
+                'bulan' => $bulan, 'tahun' => $tahun,
+                'guru_id' => $guruId ? (int) $guruId : null,
+                'sebab' => $sebab, 'arah' => $arah,
+            ],
+        ]);
+    }
+
+    /** Unduh rekap log aktivitas kinerja satu periode sebagai PDF. */
+    public function logAktivitasPdf(Request $request)
+    {
+        [$bBerjalan, $tBerjalan] = KinerjaCalculationService::periodeBerjalan();
+        $bulan = (int) ($request->bulan ?? $bBerjalan);
+        $tahun = (int) ($request->tahun ?? $tBerjalan);
+
+        $riwayat = \App\Models\RiwayatRekapKinerja::with(['tenagaPendidik.user', 'pengubah'])
+            ->where('bulan', $bulan)->where('tahun', $tahun)
+            ->when($request->guru_id, fn ($x) => $x->where('tenaga_pendidik_id', $request->guru_id))
+            ->when($request->input('sebab'), fn ($x) => $x->where('sebab', $request->input('sebab')))
+            ->orderBy('created_at')->orderBy('id')->get();
+
+        [$mulai, $selesai, $ikutGaji] = $this->kinerjaService->rentangPenilaian($bulan, $tahun);
+        $label = \App\Models\PeriodePenggajian::untukLabel($bulan, $tahun)?->nama_bulan
+            ?? \Carbon\Carbon::create($tahun, $bulan, 1)->locale('id')->isoFormat('MMMM YYYY');
+
+        // Rekap per guru: dari skor awal periode ke skor terakhir, berikut
+        // berapa kali skornya bergerak. Inilah yang dicari saat mengaudit.
+        $perGuru = $riwayat->groupBy('tenaga_pendidik_id')->map(function ($g) {
+            $awal   = $g->first();
+            $akhir  = $g->last();
+            $mulaiSkor = $awal->skor_total ?? $awal->skor_total_baru;
+            $akhirSkor = $akhir->skor_total_baru;
+
+            return [
+                'nama'     => $akhir->tenagaPendidik?->user?->name ?? '—',
+                'dari'     => $mulaiSkor !== null ? round((float) $mulaiSkor, 2) : null,
+                'ke'       => $akhirSkor !== null ? round((float) $akhirSkor, 2) : null,
+                'selisih'  => ($mulaiSkor !== null && $akhirSkor !== null)
+                    ? round((float) $akhirSkor - (float) $mulaiSkor, 2) : null,
+                'perubahan' => $g->count(),
+            ];
+        })->sortBy('nama')->values();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.log-kinerja', [
+            'label'    => $label,
+            'dari'     => $mulai->format('d M Y'),
+            'sampai'   => $selesai->format('d M Y'),
+            'ikutGaji' => $ikutGaji,
+            'riwayat'  => $riwayat,
+            'perGuru'  => $perGuru,
+            'pencetak' => $request->user()?->name ?? 'Administrator',
+            'dicetak'  => \App\Services\TimezoneHelper::now()->format('d M Y H:i'),
+            'naik'     => $riwayat->filter(fn ($r) => $r->selisih !== null && $r->selisih > 0)->count(),
+            'turun'    => $riwayat->filter(fn ($r) => $r->selisih !== null && $r->selisih < 0)->count(),
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download('log-kinerja-' . $tahun . '-' . str_pad((string) $bulan, 2, '0', STR_PAD_LEFT) . '.pdf');
+    }
+
+    /** Pilihan periode kinerja: label + jendela penilaiannya, terbaru di atas. */
+    private function opsiPeriodeKinerja(): array
+    {
+        return \App\Models\PeriodePenggajian::orderByDesc('tahun')->orderByDesc('bulan')
+            ->limit(12)->get()
+            ->filter(fn ($p) => $p->tanggal_mulai && $p->tanggal_selesai)
+            ->map(fn ($p) => [
+                'bulan'  => (int) $p->bulan,
+                'tahun'  => (int) $p->tahun,
+                'label'  => $p->nama_bulan,
+                'dari'   => $p->tanggal_mulai->format('d M Y'),
+                'sampai' => $p->tanggal_selesai->format('d M Y'),
+            ])->values()->all();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -71,8 +256,9 @@ class KinerjaController extends Controller
 
     public function logKerja(Request $request)
     {
-        $bulan  = (int) ($request->bulan ?? now()->month);
-        $tahun  = (int) ($request->tahun ?? now()->year);
+        [$bBerjalan, $tBerjalan] = KinerjaCalculationService::periodeBerjalan();
+        $bulan  = (int) ($request->bulan ?? $bBerjalan);
+        $tahun  = (int) ($request->tahun ?? $tBerjalan);
         $guruId = $request->guru_id;
         $status = $request->status;
 

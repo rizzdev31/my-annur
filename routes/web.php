@@ -343,6 +343,9 @@ Route::prefix('admin')
             Route::prefix('kinerja')->name('kinerja.')->group(function () {
                 Route::get('/',                               [KinerjaController::class, 'index'])->name('index');
                 Route::get('/log-kerja',                      [KinerjaController::class, 'logKerja'])->name('log-kerja');
+                // Log aktivitas: kenaikan & penurunan skor, siapa & kenapa.
+                Route::get('/log-aktivitas',                  [KinerjaController::class, 'logAktivitas'])->name('log-aktivitas');
+                Route::get('/log-aktivitas/pdf',              [KinerjaController::class, 'logAktivitasPdf'])->name('log-aktivitas.pdf');
                 Route::post('/verifikasi-bulk',               [KinerjaController::class, 'verifikasiBulk'])->name('verifikasi-bulk');
                 Route::post('/hitung-rekap',                  [KinerjaController::class, 'hitungRekap'])->name('hitung-rekap');
                 Route::post('/log/{log}/verifikasi',          [KinerjaController::class, 'verifikasi'])->name('log.verifikasi');

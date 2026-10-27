@@ -6,8 +6,22 @@
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h2 class="text-xl font-semibold text-gray-900">Monitoring Kinerja</h2>
-                <p class="text-sm text-gray-400 mt-0.5">Log kerja harian & skor efisiensi tenaga pendidik</p>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h2 class="text-xl font-semibold text-gray-900">Monitoring Kinerja</h2>
+                    <span v-if="periode?.berjalan"
+                        class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">
+                        periode berjalan
+                    </span>
+                </div>
+                <!-- Jendela penilaian WAJIB terlihat: label "Oktober" di sini berarti
+                     26 Sep-25 Okt, bukan 1-31 Oktober. Tanpa baris ini, tanggal 26-31
+                     terbaca seolah periode lama masih berjalan. -->
+                <p v-if="periode" class="text-sm text-gray-500 mt-0.5">
+                    <b class="text-gray-700">{{ periode.label }}</b> ·
+                    dinilai {{ periode.dari }} &ndash; {{ periode.sampai }}
+                    <span v-if="!periode.ikut_gaji" class="text-amber-600">(bulan kalender)</span>
+                </p>
+                <p v-else class="text-sm text-gray-400 mt-0.5">Log kerja harian & skor efisiensi tenaga pendidik</p>
             </div>
             <div class="flex items-center gap-2">
                 <!-- Filter bulan/tahun -->
@@ -128,10 +142,16 @@
                     </div>
                 </div>
 
-                <div class="px-5 py-3 border-t border-gray-100">
+                <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3">
                     <Link :href="route('admin.smart-payroll.kinerja.log-kerja')"
                         class="text-xs font-medium text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
                         Lihat semua log kerja →
+                    </Link>
+                    <!-- Jejak pergerakan skor: siapa naik, siapa turun, kenapa. -->
+                    <Link :href="route('admin.smart-payroll.kinerja.log-aktivitas',
+                            { bulan: filterBulan, tahun: filterTahun })"
+                        class="text-xs font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1">
+                        Log aktivitas skor →
                     </Link>
                 </div>
             </div>
@@ -302,6 +322,8 @@ const props = defineProps({
     logPending: { type: Array, default: () => [] },
     rekapList: { type: Array, default: () => [] },
     ringkasan: { type: Object, default: () => ({}) },
+    periode: { type: Object, default: null },
+    periodeOpsi: { type: Array, default: () => [] },
     bulan: { type: Number, default: () => new Date().getMonth() + 1 },
     tahun: { type: Number, default: () => new Date().getFullYear() },
     filters: { type: Object, default: () => ({}) },

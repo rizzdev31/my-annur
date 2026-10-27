@@ -20,6 +20,36 @@ class RekapKinerjaBulananObserver
         'sudah_dikunci', 'catatan_superadmin',
     ];
 
+    /**
+     * Baris rekap yang BARU LAHIR juga dicatat, dengan sebab 'awal'.
+     *
+     * Observer ini dulu hanya memasang diri di `updating`, sehingga kemunculan
+     * PERTAMA sebuah skor tidak pernah masuk riwayat. Terukur 27 Okt 2026:
+     * 25 baris rekap tidak punya satu pun jejak, dan di layar log aktivitas
+     * skor itu seolah muncul dari ketiadaan. Skor lamanya dibiarkan null —
+     * itulah yang membedakan "nilai awal" dari "naik/turun".
+     */
+    public function created(RekapKinerjaBulanan $rekap): void
+    {
+        $konteks = RekapKinerjaBulanan::$konteksPerubahan;
+        RekapKinerjaBulanan::$konteksPerubahan = [];   // sekali pakai
+
+        RiwayatRekapKinerja::create([
+            'rekap_kinerja_bulanan_id' => $rekap->id,
+            'tenaga_pendidik_id'       => $rekap->tenaga_pendidik_id,
+            'bulan'                    => $rekap->bulan,
+            'tahun'                    => $rekap->tahun,
+            // null = belum pernah ada skor sebelumnya.
+            'skor_total'               => null,
+            'skor_total_baru'          => $rekap->skor_total,
+            'sudah_dikunci_lama'       => false,
+            'sebab'                    => 'awal',
+            'alasan'                   => $konteks['alasan'] ?? null,
+            'diubah_oleh'              => $konteks['aktor'] ?? auth()->id(),
+            'setting_kinerja_id'       => $rekap->setting_kinerja_id,
+        ]);
+    }
+
     public function updating(RekapKinerjaBulanan $rekap): void
     {
         $berubah = collect(self::PENTING)->contains(function ($kolom) use ($rekap) {

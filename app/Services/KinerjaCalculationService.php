@@ -119,6 +119,30 @@ class KinerjaCalculationService
      *
      * @return array{0: Carbon, 1: Carbon, 2: bool} [mulai, selesai, ikutPeriode]
      */
+    /**
+     * PERIODE KINERJA YANG SEDANG BERJALAN, sebagai [bulan, tahun].
+     *
+     * Satu-satunya jawaban yang benar atas "bulan kinerja apa sekarang".
+     * Penilaian memakai jendela periode gaji (26 ke 25), jadi pada tanggal
+     * 26-31 periode berjalan sudah BULAN BERIKUTNYA. Halaman admin yang
+     * memakai now()->month menampilkan periode yang sudah berakhir - inilah
+     * sumber kerancuan "reset tanggal 26 atau awal bulan".
+     *
+     * @return array{0:int, 1:int}
+     */
+    public static function periodeBerjalan(?string $tanggal = null): array
+    {
+        $tgl = $tanggal ?? \App\Services\TimezoneHelper::today()->toDateString();
+        $periode = \App\Models\PeriodePenggajian::untukTanggal($tgl);
+
+        if ($periode) {
+            return [(int) $periode->bulan, (int) $periode->tahun];
+        }
+
+        $c = \Carbon\Carbon::parse($tgl);
+        return [(int) $c->month, (int) $c->year];
+    }
+
     public function rentangPenilaian(int $bulan, int $tahun): array
     {
         $periode = \App\Models\PeriodePenggajian::untukLabel($bulan, $tahun);
