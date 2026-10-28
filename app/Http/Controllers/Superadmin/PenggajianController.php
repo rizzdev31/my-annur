@@ -44,6 +44,17 @@ class PenggajianController extends Controller
             ]);
 
         return Inertia::render('Admin/SmartPayroll/Penggajian/Index', [
+            // Penanda tangan slip: ditampilkan & bisa diubah dari halaman ini.
+            'ttd' => (function () {
+                $t = \App\Models\SettingSlipGaji::ambil();
+                return [
+                    'nama_tersimpan' => $t->nama_bendahara,
+                    'nama_tercetak'  => $t->namaTercetak(),
+                    'jabatan'        => $t->jabatan_penanda_tangan,
+                    'gambar'         => $t->ttdUrl(),
+                    'otomatis'       => blank($t->nama_bendahara),
+                ];
+            })(),
             'periodes' => $periodes,
         ]);
     }
@@ -102,6 +113,71 @@ class PenggajianController extends Controller
     // ══════════════════════════════════════════════════════════════════════════
     // GENERATE — kalkulasi gaji semua guru
     // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Penanda tangan slip gaji: nama dan gambar tanda tangannya.
+     *
+     * Nama boleh DIBIARKAN KOSONG — bila kosong, slip memakai pemegang jabatan
+     * penanda tangan yang sedang aktif, sehingga pergantian bendahara di data
+     * kepegawaian otomatis tercermin tanpa ada yang perlu ingat menyunting
+     * halaman ini. Diisi hanya bila memang ingin menimpa.
+     */
+    public function simpanTtd(Request $request)
+    {
+        $data = $request->validate([
+            'nama_bendahara'         => 'nullable|string|max:150',
+            'jabatan_penanda_tangan' => 'nullable|string|max:100',
+            // PNG saja: tanda tangan perlu latar transparan agar menyatu dengan
+            // slip; JPG akan mencetak kotak putih di atas garisnya.
+            'ttd'                    => 'nullable|file|mimes:png|max:2048',
+            'hapus_ttd'              => 'nullable|boolean',
+        ], [
+            'ttd.mimes' => 'Berkas tanda tangan harus PNG (agar latarnya transparan).',
+            'ttd.max'   => 'Berkas tanda tangan maksimal 2 MB.',
+        ], ['nama_bendahara' => 'nama penanda tangan']);
+
+        $setting = \App\Models\SettingSlipGaji::ambil();
+        $lama    = $setting->ttd_path;
+
+        $isi = [
+            'nama_bendahara'         => filled($data['nama_bendahara'] ?? null)
+                ? trim($data['nama_bendahara']) : null,
+            'jabatan_penanda_tangan' => filled($data['jabatan_penanda_tangan'] ?? null)
+                ? trim($data['jabatan_penanda_tangan']) : 'Bendahara',
+            'ditetapkan_oleh'        => Auth::id(),
+        ];
+
+        if ($request->boolean('hapus_ttd')) {
+            $isi['ttd_path'] = null;
+        } elseif ($request->hasFile('ttd')) {
+            // Nama berkas dibubuhi waktu agar peramban tidak menyajikan
+            // gambar lama dari singgahannya setelah diganti.
+            $nama = 'ttd-bendahara-' . now()->format('YmdHis') . '.png';
+            $isi['ttd_path'] = $request->file('ttd')->storeAs('ttd', $nama, 'public');
+        }
+
+        $setting->update($isi);
+
+        // Berkas lama dibuang HANYA setelah yang baru tersimpan, supaya tidak
+        // pernah ada keadaan slip menunjuk berkas yang sudah hilang.
+        if (array_key_exists('ttd_path', $isi) && $lama && $lama !== $setting->ttd_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($lama);
+        }
+
+        $nama = $setting->fresh()->namaTercetak();
+        $pesan = 'Penanda tangan slip disimpan: ' . ($nama ?: '(belum ada nama)');
+        if (blank($setting->nama_bendahara) && $nama) {
+            $pesan .= ' — diambil otomatis dari pemegang jabatan '
+                . $setting->jabatan_penanda_tangan . '.';
+        }
+        if ($request->boolean('hapus_ttd')) {
+            $pesan .= ' Gambar tanda tangan dihapus.';
+        } elseif ($request->hasFile('ttd')) {
+            $pesan .= ' Gambar tanda tangan diperbarui.';
+        }
+
+        return back()->with('success', $pesan);
+    }
 
     public function generate(PeriodePenggajian $periode)
     {

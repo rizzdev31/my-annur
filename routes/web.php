@@ -545,6 +545,9 @@ Route::prefix('admin')
                 Route::get('/{periode}/export',             [PenggajianController::class, 'export'])->name('export');
                 Route::get('/{periode}/preview',            [PenggajianController::class, 'preview'])->name('preview');
                 Route::get('/{periode}',                    [PenggajianController::class, 'detail'])->name('detail');
+                // Penanda tangan slip (nama + gambar PNG) — kewenangan superadmin.
+                Route::post('/ttd', [PenggajianController::class, 'simpanTtd'])
+                    ->middleware('role:super_admin')->name('ttd');
                 Route::patch('/{penggajian}/override',      [PenggajianController::class, 'override'])->name('override');
                 Route::patch('/{penggajian}/penyesuaian-liburan', [PenggajianController::class, 'penyesuaianLiburan'])->name('penyesuaian-liburan');
                 Route::patch('/{penggajian}/finalisasi',    [PenggajianController::class, 'finalisasi'])->name('finalisasi');

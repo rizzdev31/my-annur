@@ -94,8 +94,12 @@
                 <!-- Tanda tangan -->
                 <div class="mt-8 text-sm">
                     <p class="text-[#434656]">Sidoarjo, {{ tglCetak }}</p>
-                    <p class="text-[#1b1b1b] mt-0.5">Bendahara,</p>
-                    <div class="h-14"></div>
+                    <p class="text-[#1b1b1b] mt-0.5">{{ instansi.jabatan_ttd ?? 'Bendahara' }},</p>
+                    <!-- Gambar TTD bila sudah diunggah; kalau belum, ruang kosong
+                         setinggi sama agar tata letak slip tidak bergeser. -->
+                    <img v-if="instansi.ttd_gambar" :src="instansi.ttd_gambar" alt="Tanda tangan"
+                        class="h-14 object-contain object-left my-1" />
+                    <div v-else class="h-14"></div>
                     <p class="font-bold underline decoration-1 underline-offset-2 uppercase">{{ instansi.bendahara }}</p>
                     <p v-if="slip.ada_koreksi" class="mt-3 text-[11px] text-[#9c1c00] italic no-print">* terdapat koreksi manual</p>
                 </div>

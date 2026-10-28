@@ -65,16 +65,175 @@
                 Buat periode pertama →
             </Link>
         </div>
+
+        <!-- Penanda tangan slip gaji -->
+        <div v-if="bolehUbahTtd" class="bg-white rounded-2xl border border-gray-200 p-5 mt-6">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h3 class="text-sm font-bold text-gray-800">Tanda Tangan Slip Gaji</h3>
+                    <p class="text-xs text-gray-500 mt-1 max-w-xl">
+                        Nama &amp; gambar ini yang tercetak di bagian bawah setiap slip.
+                        Biarkan nama <b>kosong</b> agar sistem memakai pemegang jabatan
+                        {{ ttdForm.jabatan || 'Bendahara' }} yang sedang aktif — jadi saat
+                        bendaharanya berganti, slip ikut berubah sendiri.
+                    </p>
+                </div>
+                <div class="text-right shrink-0">
+                    <p class="text-[11px] text-gray-400">Tercetak di slip</p>
+                    <p class="text-sm font-bold text-gray-800 uppercase">
+                        {{ ttd.nama_tercetak || '(belum ada nama)' }}
+                    </p>
+                    <span v-if="ttd.otomatis"
+                        class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">
+                        otomatis dari jabatan
+                    </span>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-5 mt-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+                            Nama penanda tangan <span class="text-gray-400">(opsional)</span>
+                        </label>
+                        <input v-model="ttdForm.nama" type="text" maxlength="150"
+                            :placeholder="ttd.nama_tercetak || 'Kosongkan untuk otomatis'"
+                            class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                        <p class="text-[11px] text-gray-400 mt-1">
+                            Isi hanya bila ejaan resminya berbeda dari nama akun.
+                        </p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Label jabatan</label>
+                        <input v-model="ttdForm.jabatan" type="text" maxlength="100" placeholder="Bendahara"
+                            class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+                        Gambar tanda tangan <span class="text-gray-400">(PNG)</span>
+                    </label>
+                    <div class="rounded-xl border-2 border-dashed border-gray-200 p-4 text-center">
+                        <img v-if="pratinjauTtd || ttd.gambar" :src="pratinjauTtd || ttd.gambar"
+                            alt="Tanda tangan" class="h-20 mx-auto object-contain" />
+                        <p v-else class="text-xs text-gray-400 py-6">Belum ada gambar tanda tangan.</p>
+
+                        <input ref="inputTtd" type="file" accept="image/png" class="hidden"
+                            @change="pilihTtd" />
+                        <div class="flex items-center justify-center gap-2 mt-3">
+                            <button @click="$refs.inputTtd.click()"
+                                class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
+                                {{ (pratinjauTtd || ttd.gambar) ? 'Ganti PNG' : 'Pilih PNG' }}
+                            </button>
+                            <button v-if="ttd.gambar && !ttdForm.berkas" @click="hapusTtd"
+                                class="px-3 py-1.5 text-xs font-semibold rounded-lg text-red-600 hover:bg-red-50">
+                                Hapus
+                            </button>
+                            <button v-if="ttdForm.berkas" @click="batalPilih"
+                                class="px-3 py-1.5 text-xs font-medium rounded-lg text-gray-500 hover:bg-gray-50">
+                                Batal pilih
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-gray-400 mt-1.5">
+                        PNG berlatar transparan, maksimal 2 MB. JPG ditolak karena akan
+                        mencetak kotak putih di atas garis slip.
+                    </p>
+                </div>
+            </div>
+
+            <p v-if="ttdGalat" class="mt-3 text-sm text-red-600">{{ ttdGalat }}</p>
+
+            <div class="flex justify-end mt-4">
+                <button @click="simpanTtd" :disabled="menyimpanTtd"
+                    class="px-4 py-2 text-sm font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60">
+                    {{ menyimpanTtd ? 'Menyimpan…' : 'Simpan Penanda Tangan' }}
+                </button>
+            </div>
+        </div>
+
     </AdminLayout>
 </template>
 
 <script setup>
-import { Head, Link } from '@inertiajs/vue3'
+import { ref, reactive, computed } from 'vue'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
-defineProps({
+const props = defineProps({
     periodes: { type: Object, default: () => ({ data: [] }) },
+    ttd: { type: Object, default: () => ({}) },
 })
+
+// ── Penanda tangan slip ─────────────────────────────────────────────────────
+// Nama sengaja boleh kosong: slip lalu memakai pemegang jabatan penanda tangan
+// yang aktif, jadi pergantian bendahara tidak perlu diingat di sini.
+const bolehUbahTtd = computed(() => usePage().props.auth?.user?.role === 'super_admin')
+const ttdForm = reactive({
+    nama: props.ttd.nama_tersimpan ?? '',
+    jabatan: props.ttd.jabatan ?? 'Bendahara',
+    berkas: null,
+})
+const pratinjauTtd = ref(null)
+const ttdGalat = ref('')
+const menyimpanTtd = ref(false)
+const inputTtd = ref(null)
+
+function pilihTtd(e) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    // Dijaga di sini juga supaya penolakan terasa langsung, bukan setelah unggah.
+    if (f.type !== 'image/png') {
+        ttdGalat.value = 'Berkas harus PNG agar latarnya transparan.'
+        e.target.value = ''
+        return
+    }
+    if (f.size > 2 * 1024 * 1024) {
+        ttdGalat.value = 'Berkas maksimal 2 MB.'
+        e.target.value = ''
+        return
+    }
+    ttdGalat.value = ''
+    ttdForm.berkas = f
+    pratinjauTtd.value = URL.createObjectURL(f)
+}
+
+function batalPilih() {
+    ttdForm.berkas = null
+    pratinjauTtd.value = null
+    if (inputTtd.value) inputTtd.value.value = ''
+}
+
+function kirimTtd(muatan) {
+    menyimpanTtd.value = true
+    ttdGalat.value = ''
+    router.post(route('admin.smart-payroll.penggajian.ttd'), muatan, {
+        preserveScroll: true,
+        forceFormData: true,
+        onSuccess: () => batalPilih(),
+        // Inertia membalas 303 + errors; tanpa onError galatnya hilang diam-diam.
+        onError: (e) => { ttdGalat.value = Object.values(e)[0] ?? 'Gagal menyimpan.' },
+        onFinish: () => { menyimpanTtd.value = false },
+    })
+}
+
+function simpanTtd() {
+    kirimTtd({
+        nama_bendahara: ttdForm.nama?.trim() || null,
+        jabatan_penanda_tangan: ttdForm.jabatan?.trim() || 'Bendahara',
+        ttd: ttdForm.berkas,
+    })
+}
+
+function hapusTtd() {
+    if (!window.confirm('Hapus gambar tanda tangan dari slip?')) return
+    kirimTtd({
+        nama_bendahara: ttdForm.nama?.trim() || null,
+        jabatan_penanda_tangan: ttdForm.jabatan?.trim() || 'Bendahara',
+        hapus_ttd: true,
+    })
+}
 
 function badgeStatus(s) {
     return {

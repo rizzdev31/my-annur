@@ -22,12 +22,24 @@ class SlipGajiBuilder
     public static function instansi(): array
     {
         $logoPath = public_path('storage/logo1.png');
+
+        // Penanda tangan dibaca dari pengaturan, BUKAN ditulis keras. Nama
+        // bendahara pernah tertinggal di slip ("L'ANATUS SHOLIHAH") padahal
+        // bendaharanya sudah berganti, dan tak ada yang bisa memperbaikinya
+        // tanpa mengubah kode. Bila namanya dibiarkan kosong di pengaturan,
+        // ia diambil dari pemegang jabatan Bendahara yang aktif.
+        $ttd = \App\Models\SettingSlipGaji::ambil();
+
         return [
             'nama'      => 'PONPES MUHAMMADIYAH AN-NUR SIDOARJO',
             'alamat'    => 'Jl. H. Ahmad Dahlan No. 1, RT. 03, RW. 01 Desa Penatarsewu, Kec. Tanggulangin, Kab. Sidoarjo',
             'perihal'   => 'Absensi kehadiran Per-Tanggal 25',
-            'bendahara' => "L'ANATUS SHOLIHAH, S.Pd.",
-            'logo'      => file_exists($logoPath) ? asset('storage/logo1.png') : null,
+            // Cadangan terakhir dipertahankan agar slip tidak pernah tampil
+            // tanpa penanda tangan sama sekali.
+            'bendahara'        => $ttd->namaTercetak() ?: "L'ANATUS SHOLIHAH, S.Pd.",
+            'jabatan_ttd'      => $ttd->jabatan_penanda_tangan ?: 'Bendahara',
+            'ttd_gambar'       => $ttd->ttdUrl(),
+            'logo'             => file_exists($logoPath) ? asset('storage/logo1.png') : null,
         ];
     }
 
