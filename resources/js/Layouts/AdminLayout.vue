@@ -154,11 +154,16 @@
                 <SidebarItem v-if="boleh('buku_tamu')" :href="route('admin.smart-payroll.buku-tamu.index')"
                     icon="users" label="Buku Tamu"
                     :active="isActive('admin.smart-payroll.buku-tamu')" :collapsed="!sidebarOpen" />
-                <SidebarGroup v-if="boleh('gaji_periode','gaji_data')" icon="dollar" label="Penggajian"
-                    :active="isActive('admin.smart-payroll.penggajian') || isActive('admin.smart-payroll.periode')"
+                <SidebarGroup v-if="isSuper || boleh('gaji_periode','gaji_data')" icon="dollar" label="Penggajian"
+                    :active="isActive('admin.smart-payroll.penggajian') || isActive('admin.smart-payroll.periode')
+                        || isActive('admin.smart-payroll.gaji-pokok')"
                     :collapsed="!sidebarOpen">
                     <SidebarSubItem v-if="boleh('gaji_periode')" :href="route('admin.smart-payroll.periode.index')" label="Periode Gaji" />
                     <SidebarSubItem v-if="boleh('gaji_data')" :href="route('admin.smart-payroll.penggajian.index')" label="Data Gaji" />
+                    <!-- Rutenya tak terpetakan modul, jadi AksesModul sudah membatasinya
+                         ke superadmin; tautannya disembunyikan agar admin tidak menabrak
+                         halaman Akses Ditolak. -->
+                    <SidebarSubItem v-if="isSuper" :href="route('admin.smart-payroll.gaji-pokok.index')" label="Gaji Pokok" />
                 </SidebarGroup>
                 <SidebarGroup v-if="boleh('gaji_laporan')" icon="chart" label="Laporan" :active="isActive('admin.smart-payroll.laporan')"
                     :collapsed="!sidebarOpen">

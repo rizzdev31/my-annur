@@ -46,6 +46,7 @@ use App\Http\Controllers\Superadmin\WaInboxController;
 
 // ── Smart Payroll — Penggajian ────────────────────────────────────────────────
 use App\Http\Controllers\Superadmin\PeriodePenggajianController;
+use App\Http\Controllers\Superadmin\GajiPokokController;
 use App\Http\Controllers\Superadmin\PenggajianController;
 
 // ── Smart Payroll — Laporan ───────────────────────────────────────────────────
@@ -522,6 +523,14 @@ Route::prefix('admin')
             Route::patch('periode/{periode}/kunci',
                 [PeriodePenggajianController::class, 'kunci'])->name('periode.kunci');
             Route::resource('periode', PeriodePenggajianController::class);
+
+            // ── GAJI POKOK per guru (komponen: jam mengajar, jabatan, tunjangan) ──
+            Route::prefix('gaji-pokok')->name('gaji-pokok.')->group(function () {
+                Route::get('/', [GajiPokokController::class, 'index'])->name('index');
+                // Menetapkan gaji orang adalah kewenangan superadmin.
+                Route::post('/{tenagaPendidik}', [GajiPokokController::class, 'simpan'])
+                    ->middleware('role:super_admin')->name('simpan');
+            });
 
             Route::prefix('penggajian')->name('penggajian.')->group(function () {
                 Route::get('/',                             [PenggajianController::class, 'index'])->name('index');
