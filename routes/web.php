@@ -528,6 +528,11 @@ Route::prefix('admin')
             Route::prefix('gaji-pokok')->name('gaji-pokok.')->group(function () {
                 Route::get('/', [GajiPokokController::class, 'index'])->name('index');
                 // Menetapkan gaji orang adalah kewenangan superadmin.
+                // Katalog variabel: hanya mengisi formulir, tidak menggeser gaji.
+                Route::post('/variabel/simpan', [GajiPokokController::class, 'variabelSimpan'])
+                    ->middleware('role:super_admin')->name('variabel.simpan');
+                Route::delete('/variabel/{variabel}', [GajiPokokController::class, 'variabelHapus'])
+                    ->middleware('role:super_admin')->name('variabel.hapus');
                 Route::post('/{tenagaPendidik}', [GajiPokokController::class, 'simpan'])
                     ->middleware('role:super_admin')->name('simpan');
             });

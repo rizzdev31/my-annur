@@ -7,6 +7,7 @@ use App\Models\KomponenGajiPokok;
 use App\Models\Penggajian;
 use App\Models\PeriodePenggajian;
 use App\Models\TenagaPendidik;
+use App\Models\VariabelGajiPokok;
 use App\Services\KinerjaCalculationService;
 use App\Services\TimezoneHelper;
 use Illuminate\Http\Request;
@@ -156,8 +157,83 @@ class GajiPokokController extends Controller
                 'perlu_ditinjau' => $guru->where('perlu_ditinjau', true)->count(),
                 'total_gaji_pokok' => (float) $guru->sum('gaji_pokok_berlaku'),
             ],
+            // Katalog nominal baku untuk mengisi formulir per guru.
+            'variabel' => $this->katalogVariabel(),
             'filters' => ['bulan' => $bulan, 'tahun' => $tahun, 'q' => $cari, 'saring' => $saring],
         ]);
+    }
+
+    /**
+     * Katalog variabel, dikelompokkan per jenis untuk dipakai formulir.
+     *
+     * Jam mengajar sengaja TIDAK berkatalog: 18 nilai berbeda karena mengikuti
+     * JP masing-masing orang, jadi nominal baku tidak bermakna di sana.
+     */
+    private function katalogVariabel(): array
+    {
+        return VariabelGajiPokok::aktif()
+            ->orderBy('jenis')->orderBy('urutan')->orderBy('nominal')
+            ->get(['id', 'jenis', 'label', 'nominal'])
+            ->groupBy('jenis')
+            ->map(fn ($g) => $g->map(fn ($v) => [
+                'id' => $v->id, 'label' => $v->label, 'nominal' => (float) $v->nominal,
+            ])->values())
+            ->toArray();
+    }
+
+    /** Tambah atau ubah satu variabel katalog. */
+    public function variabelSimpan(Request $request)
+    {
+        $data = $request->validate([
+            'id'      => 'nullable|integer|exists:variabel_gaji_pokok,id',
+            'jenis'   => 'required|in:jabatan,tunjangan_pendidikan',
+            'label'   => 'required|string|max:150',
+            'nominal' => 'required|numeric|min:0|max:100000000',
+            'urutan'  => 'nullable|integer|min:0|max:9999',
+            'catatan' => 'nullable|string|max:300',
+        ], [], ['label' => 'nama variabel']);
+
+        $label = trim($data['label']);
+
+        // Satu label per jenis: katalog ganda hanya membingungkan pengisi.
+        $bentrok = VariabelGajiPokok::where('jenis', $data['jenis'])
+            ->where('label', $label)
+            ->when(!empty($data['id']), fn ($q) => $q->where('id', '!=', $data['id']))
+            ->exists();
+        if ($bentrok) {
+            return back()->with('error', "Variabel \"{$label}\" sudah ada pada jenis itu.");
+        }
+
+        $isi = [
+            'jenis'           => $data['jenis'],
+            'label'           => $label,
+            'nominal'         => (float) $data['nominal'],
+            'urutan'          => (int) ($data['urutan'] ?? 0),
+            'catatan'         => $data['catatan'] ?? null,
+            'ditetapkan_oleh' => Auth::id(),
+        ];
+
+        if (!empty($data['id'])) {
+            VariabelGajiPokok::findOrFail($data['id'])->update($isi);
+            $pesan = "Variabel \"{$label}\" diperbarui.";
+        } else {
+            VariabelGajiPokok::create($isi + ['is_aktif' => true]);
+            $pesan = "Variabel \"{$label}\" ditambahkan.";
+        }
+
+        // Ditegaskan supaya tidak ada yang menyangka gaji orang ikut bergeser.
+        return back()->with('success', $pesan
+            . ' Katalog ini hanya mengisi formulir — gaji pokok guru yang sudah ditetapkan tidak berubah.');
+    }
+
+    /** Nonaktifkan atau hapus satu variabel katalog. */
+    public function variabelHapus(VariabelGajiPokok $variabel)
+    {
+        $label = $variabel->label;
+        $variabel->delete();
+
+        return back()->with('success', "Variabel \"{$label}\" dihapus dari katalog. "
+            . 'Komponen guru yang memakai nominal itu tidak berubah.');
     }
 
     /**

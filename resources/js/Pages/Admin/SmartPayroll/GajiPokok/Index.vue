@@ -154,6 +154,91 @@
             </div>
         </div>
 
+        <!-- Katalog variabel: nominal baku untuk mengisi formulir -->
+        <div v-if="bolehUbah" class="bg-white rounded-2xl border border-gray-200 p-4 mt-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h3 class="text-sm font-bold text-gray-800">Variabel Gaji Pokok</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        Nominal baku untuk mengisi formulir. Mengubah di sini
+                        <b>tidak</b> menggeser gaji pokok guru yang sudah ditetapkan.
+                    </p>
+                </div>
+                <button @click="bukaVariabel(null)"
+                    class="px-4 py-2 text-sm font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition">
+                    Tambah Variabel
+                </button>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-4 mt-4">
+                <div v-for="(daftar, jenis) in variabel" :key="jenis">
+                    <p class="text-xs font-semibold text-gray-600 mb-2">
+                        {{ jenis === 'jabatan' ? 'Jabatan' : 'Tunjangan Pendidikan' }}
+                        <span class="text-gray-400">({{ daftar.length }})</span>
+                    </p>
+                    <div class="rounded-xl border border-gray-100 divide-y divide-gray-50 max-h-64 overflow-y-auto">
+                        <div v-for="v in daftar" :key="v.id"
+                            class="flex items-center justify-between gap-2 px-3 py-2 hover:bg-gray-50/60">
+                            <span class="text-sm text-gray-700 truncate">{{ v.label }}</span>
+                            <span class="flex items-center gap-2 shrink-0">
+                                <span class="text-sm font-semibold text-gray-800 tabular-nums">{{ rp(v.nominal) }}</span>
+                                <button @click="bukaVariabel({ ...v, jenis })"
+                                    class="text-[11px] text-indigo-600 hover:text-indigo-800">ubah</button>
+                                <button @click="hapusVariabel(v)"
+                                    class="text-[11px] text-red-500 hover:text-red-700">hapus</button>
+                            </span>
+                        </div>
+                        <div v-if="!daftar.length" class="px-3 py-4 text-center text-xs text-gray-400">
+                            Belum ada variabel.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dialog variabel -->
+        <div v-if="varForm.buka" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-gray-900/40" @click="varForm.kirim || (varForm.buka = false)"></div>
+            <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                <h3 class="text-lg font-semibold text-gray-900">
+                    {{ varForm.id ? 'Ubah Variabel' : 'Tambah Variabel' }}
+                </h3>
+                <div class="mt-4 space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Jenis</label>
+                        <select v-model="varForm.jenis" :disabled="!!varForm.id"
+                            class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl disabled:bg-gray-50">
+                            <option value="jabatan">Jabatan</option>
+                            <option value="tunjangan_pendidikan">Tunjangan Pendidikan</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nama variabel</label>
+                        <input v-model="varForm.label" type="text" maxlength="150" placeholder="Mis. Wali Kelas"
+                            class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nominal</label>
+                        <input v-model.number="varForm.nominal" type="number" min="0" step="1000"
+                            class="w-full px-3 py-2 text-sm text-right border border-gray-200 rounded-xl tabular-nums" />
+                    </div>
+                </div>
+                <p v-if="varForm.galat" class="mt-3 text-sm text-red-600">{{ varForm.galat }}</p>
+                <div class="flex justify-end gap-2 mt-5">
+                    <button @click="varForm.buka = false" :disabled="varForm.kirim"
+                        class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-xl">Batal</button>
+                    <button @click="simpanVariabel"
+                        :disabled="varForm.kirim || !varForm.label.trim() || !(varForm.nominal >= 0)"
+                        class="px-4 py-2 text-sm font-semibold rounded-xl"
+                        :class="!varForm.kirim && varForm.label.trim()
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'">
+                        {{ varForm.kirim ? 'Menyimpan…' : 'Simpan' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Dialog ubah -->
         <div v-if="ubah.buka" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div class="absolute inset-0 bg-gray-900/40" @click="ubah.kirim || (ubah.buka = false)"></div>
@@ -165,6 +250,17 @@
                     <div v-for="s in ubah.slot" :key="s.kunci"
                         class="rounded-xl border border-gray-200 p-3">
                         <p class="text-xs font-semibold text-gray-700 mb-2">{{ s.label }}</p>
+
+                        <!-- Pilihan variabel: mengisi label & nominal sekaligus.
+                             Jam mengajar tidak berkatalog karena mengikuti JP per orang. -->
+                        <select v-if="katalogUntuk(s).length" @change="pilihVariabel(s, $event.target.value)"
+                            class="w-full mb-2 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="">Pilih dari variabel…</option>
+                            <option v-for="v in katalogUntuk(s)" :key="v.id" :value="v.id">
+                                {{ v.label }} — {{ rp(v.nominal) }}
+                            </option>
+                        </select>
+
                         <div class="flex gap-2">
                             <input v-if="s.berlabel" v-model="s.isi_label" type="text"
                                 :placeholder="'Nama ' + s.label.toLowerCase()"
@@ -172,6 +268,9 @@
                             <input v-model.number="s.nominal" type="number" min="0" step="1000" placeholder="0"
                                 class="w-40 px-3 py-2 text-sm text-right border border-gray-200 rounded-xl tabular-nums focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
+                        <p v-if="s.kunci === 'jam_mengajar'" class="text-[10px] text-gray-400 mt-1.5">
+                            Diisi angka langsung — nominalnya mengikuti JP tiap orang.
+                        </p>
                     </div>
                 </div>
 
@@ -226,6 +325,7 @@ const props = defineProps({
     periode: { type: Object, default: () => ({}) },
     periodeOpsi: { type: Array, default: () => [] },
     ringkasan: { type: Object, default: () => ({}) },
+    variabel: { type: Object, default: () => ({}) },
     filters: { type: Object, default: () => ({}) },
 })
 
@@ -289,6 +389,56 @@ function bukaUbah(g) {
         berlaku_mulai: awalPeriodeIso(),
         catatan: g.catatan ?? '', galat: '', kirim: false,
     })
+}
+
+// ── Katalog variabel ────────────────────────────────────────────────────────
+// Hanya mengisi formulir. Jam mengajar tidak berkatalog karena nominalnya
+// mengikuti JP masing-masing orang (18 nilai berbeda di berkas asal).
+function katalogUntuk(slotRow) {
+    if (slotRow.kunci === 'jam_mengajar') return []
+    const jenis = slotRow.kunci === 'tunjangan_pendidikan' ? 'tunjangan_pendidikan' : 'jabatan'
+    return props.variabel[jenis] ?? []
+}
+
+function pilihVariabel(slotRow, id) {
+    if (!id) return
+    const v = katalogUntuk(slotRow).find((x) => String(x.id) === String(id))
+    if (!v) return
+    slotRow.nominal = v.nominal
+    if (slotRow.berlabel) slotRow.isi_label = v.label
+}
+
+const varForm = reactive({
+    buka: false, id: null, jenis: 'jabatan', label: '', nominal: 0, galat: '', kirim: false,
+})
+
+function bukaVariabel(v) {
+    Object.assign(varForm, {
+        buka: true,
+        id: v?.id ?? null,
+        jenis: v?.jenis ?? 'jabatan',
+        label: v?.label ?? '',
+        nominal: v?.nominal ?? 0,
+        galat: '', kirim: false,
+    })
+}
+
+function simpanVariabel() {
+    varForm.kirim = true; varForm.galat = ''
+    router.post(route('admin.smart-payroll.gaji-pokok.variabel.simpan'), {
+        id: varForm.id, jenis: varForm.jenis,
+        label: varForm.label.trim(), nominal: Number(varForm.nominal) || 0,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => { varForm.buka = false },
+        onError: (e) => { varForm.galat = Object.values(e)[0] ?? 'Gagal menyimpan.' },
+        onFinish: () => { varForm.kirim = false },
+    })
+}
+
+function hapusVariabel(v) {
+    if (!window.confirm(`Hapus variabel "${v.label}" dari katalog?\n\nGaji pokok guru yang sudah ditetapkan TIDAK berubah.`)) return
+    router.delete(route('admin.smart-payroll.gaji-pokok.variabel.hapus', v.id), { preserveScroll: true })
 }
 
 function simpan() {
