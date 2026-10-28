@@ -40,8 +40,13 @@ class PayrollCalculationService
         $gajiPokok           = 0;
         $detailGajiPokokList = collect();
         try {
-            $gajiPokok           = $guru->getGajiPokokAktif();
-            $detailGajiPokokList = $guru->getDetailGajiPokokPerJabatan();
+            // Tanggal ACUAN = akhir periode, bukan hari ini. Tanpa ini,
+            // menghitung ulang slip periode lampau akan memakai nominal gaji
+            // pokok yang berlaku HARI INI — jadi kenaikan bulan ini bisa
+            // merembes ke slip bulan lalu tanpa ada yang menyadarinya.
+            $acuanGaji           = $tanggalSelesai->toDateString();
+            $gajiPokok           = $guru->getGajiPokokAktif($acuanGaji);
+            $detailGajiPokokList = $guru->getDetailGajiPokokPerJabatan($acuanGaji);
         } catch (\Throwable $e) {
             $errors[] = "Gaji pokok: " . $e->getMessage();
             Log::warning("Payroll [{$guru->id}] gaji_pokok error: " . $e->getMessage());
@@ -232,7 +237,8 @@ class PayrollCalculationService
             'satuan'           => 'bulan',
             'nilai_per_satuan' => $d['nominal'],
             'subtotal'         => $d['nominal'],
-            'referensi_ids'    => [$d['jabatan_id']],
+            // Komponen gaji pokok tidak terikat jabatan, jadi jangan menyimpan [null].
+            'referensi_ids'    => array_values(array_filter([$d['jabatan_id'] ?? null])),
         ])->toArray();
 
         $hasil = [

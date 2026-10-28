@@ -375,13 +375,60 @@ class TenagaPendidik extends Model
      * 1. Override individu total (jabatan_id = NULL)
      * 2. Sum gaji dari semua jabatan aktif
      */
-    public function getGajiPokokAktif(): float
+    /** Komponen penyusun gaji pokok (jam mengajar, jabatan, tunjangan). */
+    public function komponenGajiPokok()
     {
+        return $this->hasMany(KomponenGajiPokok::class, 'tenaga_pendidik_id');
+    }
+
+    /**
+     * Komponen yang BERLAKU pada satu tanggal, urut seperti berkas asalnya.
+     *
+     * @param  string|null  $tanggal  null = hari ini
+     */
+    public function komponenGajiPokokAktif(?string $tanggal = null)
+    {
+        return $this->komponenGajiPokok()
+            ->berlakuPada($tanggal)
+            ->orderBy('urutan')->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Gaji pokok yang berlaku pada satu tanggal.
+     *
+     * Urutan sumber: KOMPONEN per guru -> override tunggal -> per jabatan.
+     * Komponen menang karena ia satu-satunya yang bisa menyatakan nominal
+     * berbeda untuk nama jabatan yang sama (lihat migration komponen_gaji_pokok).
+     *
+     * @param  string|null  $tanggal  null = hari ini. WAJIB diisi tanggal periode
+     *         saat menghitung gaji, kalau tidak slip periode lampau akan memakai
+     *         nominal hari ini.
+     */
+    public function getGajiPokokAktif(?string $tanggal = null): float
+    {
+        $komponen = $this->komponenGajiPokokAktif($tanggal);
+        if ($komponen->isNotEmpty()) {
+            return (float) $komponen->sum('nominal');
+        }
+
+        return $this->gajiPokokCaraLama($tanggal);
+    }
+
+    /**
+     * Cara lama: override tunggal lalu jumlah per jabatan. Dipertahankan sebagai
+     * jaring untuk guru yang komponennya belum ditetapkan, supaya gajinya tidak
+     * jatuh ke nol hanya karena datanya belum dipindahkan.
+     */
+    private function gajiPokokCaraLama(?string $tanggal = null): float
+    {
+        $tgl = $tanggal ?? now()->toDateString();
+
         try {
             $override = $this->gajiPokokIndividu()
-                ->where('berlaku_mulai', '<=', now())
+                ->where('berlaku_mulai', '<=', $tgl)
                 ->where(fn($q) => $q->whereNull('berlaku_selesai')
-                                    ->orWhere('berlaku_selesai', '>=', now()))
+                                    ->orWhere('berlaku_selesai', '>=', $tgl))
                 ->whereNull('jabatan_id')
                 ->latest('berlaku_mulai')
                 ->first();
@@ -390,16 +437,16 @@ class TenagaPendidik extends Model
         } catch (\Exception $e) {
             // Kolom jabatan_id belum ada — fallback
             $override = $this->gajiPokokIndividu()
-                ->where('berlaku_mulai', '<=', now())
+                ->where('berlaku_mulai', '<=', $tgl)
                 ->where(fn($q) => $q->whereNull('berlaku_selesai')
-                                    ->orWhere('berlaku_selesai', '>=', now()))
+                                    ->orWhere('berlaku_selesai', '>=', $tgl))
                 ->latest('berlaku_mulai')
                 ->first();
 
             if ($override) return (float) $override->nominal;
         }
 
-        return $this->getDetailGajiPokokPerJabatan()->sum('nominal');
+        return $this->detailPerJabatan($tgl)->sum('nominal');
     }
 
     /**
@@ -408,8 +455,40 @@ class TenagaPendidik extends Model
      *
      * @return Collection
      */
-    public function getDetailGajiPokokPerJabatan(): Collection
+    /**
+     * Rincian gaji pokok untuk slip & layar.
+     *
+     * Bila guru punya KOMPONEN (jam mengajar / jabatan / tunjangan pendidikan),
+     * itulah yang dikembalikan — bentuknya disamakan dengan rincian per jabatan
+     * supaya pemakai lama (slip, layar jabatan, layar tenaga pendidik) tidak
+     * perlu diubah. Bila belum ada komponen, jatuh ke cara lama.
+     *
+     * @param  string|null  $tanggal  null = hari ini
+     */
+    public function getDetailGajiPokokPerJabatan(?string $tanggal = null): Collection
     {
+        $komponen = $this->komponenGajiPokokAktif($tanggal);
+
+        if ($komponen->isNotEmpty()) {
+            return $komponen->map(fn ($k) => [
+                // Komponen tidak terikat jabatan RBAC/kinerja, jadi tanpa id.
+                'jabatan_id'   => null,
+                'nama_jabatan' => $k->keterangan,
+                'nominal'      => (float) $k->nominal,
+                'sumber'       => 'komponen',
+                'jenis'        => $k->jenis,
+                'komponen_id'  => $k->id,
+            ])->values();
+        }
+
+        return $this->detailPerJabatan($tanggal);
+    }
+
+    /** Cara lama: satu baris per jabatan aktif, nominal dari override/setting. */
+    private function detailPerJabatan(?string $tanggal = null): Collection
+    {
+        $tgl = $tanggal ?? now()->toDateString();
+
         $jabatanAktif = $this->jabatan_aktif;
 
         // Fallback jika pivot belum ada data
@@ -419,14 +498,14 @@ class TenagaPendidik extends Model
 
         if ($jabatanAktif->isEmpty()) return collect();
 
-        return $jabatanAktif->map(function ($jabatan) {
+        return $jabatanAktif->map(function ($jabatan) use ($tgl) {
             // Override per jabatan
             try {
                 $overridePerJabatan = $this->gajiPokokIndividu()
                     ->where('jabatan_id', $jabatan->id)
-                    ->where('berlaku_mulai', '<=', now())
+                    ->where('berlaku_mulai', '<=', $tgl)
                     ->where(fn($q) => $q->whereNull('berlaku_selesai')
-                                        ->orWhere('berlaku_selesai', '>=', now()))
+                                        ->orWhere('berlaku_selesai', '>=', $tgl))
                     ->latest('berlaku_mulai')
                     ->first();
             } catch (\Exception $e) {
@@ -444,9 +523,9 @@ class TenagaPendidik extends Model
 
             $setting = SettingGajiPokok::where('jabatan_id', $jabatan->id)
                 ->where('is_aktif', true)
-                ->where('berlaku_mulai', '<=', now())
+                ->where('berlaku_mulai', '<=', $tgl)
                 ->where(fn($q) => $q->whereNull('berlaku_selesai')
-                                    ->orWhere('berlaku_selesai', '>=', now()))
+                                    ->orWhere('berlaku_selesai', '>=', $tgl))
                 ->latest('berlaku_mulai')
                 ->first();
 
