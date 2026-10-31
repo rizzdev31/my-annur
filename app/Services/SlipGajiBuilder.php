@@ -161,7 +161,18 @@ class SlipGajiBuilder
             $penerimaan[] = ['label' => 'Pembina Ekstrakurikuler', 'qty' => null, 'nominal' => (float) $penggajian->vakasi_ekstrakurikuler];
         }
 
-        if ($penggajian->tunjangan_lainnya > 0) {
+        // Koreksi manual kini punya baris rinciannya sendiri (bertipe 'tunjangan')
+        // yang memuat catatan aslinya. Barisnya menang atas kolom gelondongan,
+        // sebab labelnya memberi tahu guru koreksi apa yang diterimanya. Kolom
+        // tetap dipakai sebagai cadangan untuk slip lama yang belum punya baris.
+        $barisKoreksiTunjangan = $detail->where('tipe', 'tunjangan')
+            ->filter(fn ($d) => (float) $d->subtotal > 0);
+        if ($barisKoreksiTunjangan->isNotEmpty()) {
+            foreach ($barisKoreksiTunjangan as $d) {
+                $penerimaan[] = ['label' => $d->keterangan ?: 'Tunjangan Lainnya',
+                    'qty' => null, 'nominal' => (float) $d->subtotal];
+            }
+        } elseif ($penggajian->tunjangan_lainnya > 0) {
             $penerimaan[] = ['label' => 'Tunjangan Lainnya', 'qty' => null, 'nominal' => (float) $penggajian->tunjangan_lainnya];
         }
 
@@ -169,7 +180,8 @@ class SlipGajiBuilder
         // supaya tidak ada rupiah yang hilang dari mata guru.
         $sudah = ['gaji_pokok', 'vakasi_mengajar', 'vakasi_absen', 'vakasi_tugas_jabatan',
             'vakasi_tugas_tambahan', 'vakasi_peserta_kegiatan', 'vakasi_lembur',
-            'vakasi_piket', 'vakasi_ekstrakurikuler'];
+            'vakasi_piket', 'vakasi_ekstrakurikuler',
+            'tunjangan'];   // sudah diurus di atas; tanpa ini ia tampil dua kali
         foreach ($detail->whereNotIn('tipe', $sudah) as $d) {
             if ((float) $d->subtotal <= 0) continue;                 // potongan diurus di bawah
             if ($d->isPotongan()) continue;                          // potongan diurus terpisah
@@ -194,7 +206,17 @@ class SlipGajiBuilder
         foreach ($detail->where('tipe', 'potongan_guru') as $d) {
             $potongan[] = ['label' => $d->keterangan, 'qty' => null, 'nominal' => abs((float) $d->subtotal)];
         }
-        if ($penggajian->potongan_lainnya > 0) {
+        // Sama seperti tunjangan: baris 'potongan_lain' memuat catatan koreksinya
+        // (mis. "Simpan Pinjam Angsuran Ke-2"), jauh lebih berguna bagi guru
+        // daripada label buta "Potongan Lainnya".
+        $barisKoreksiPotongan = $detail->where('tipe', 'potongan_lain')
+            ->filter(fn ($d) => abs((float) $d->subtotal) > 0);
+        if ($barisKoreksiPotongan->isNotEmpty()) {
+            foreach ($barisKoreksiPotongan as $d) {
+                $potongan[] = ['label' => $d->keterangan ?: 'Potongan Lainnya',
+                    'qty' => null, 'nominal' => abs((float) $d->subtotal)];
+            }
+        } elseif ($penggajian->potongan_lainnya > 0) {
             $potongan[] = ['label' => 'Potongan Lainnya', 'qty' => null, 'nominal' => (float) $penggajian->potongan_lainnya];
         }
 

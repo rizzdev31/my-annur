@@ -197,9 +197,27 @@ class PenggajianController extends Controller
         $gagal  = [];
         $peringatan = [];
 
+        // Koreksi manual dibaca SEBELUM generate. hitung() menulis seluruh slip
+        // dari nol (termasuk catatan => null), jadi tanpa ini satu klik Generate
+        // melenyapkan override yang diinput tangan tanpa jejak — persis yang
+        // terjadi pada 31 Okt 2026: 50 slip tertimpa dalam 4 detik dan potongan
+        // "Simpan Pinjam Angsuran Ke-2" Rp 250.000 hilang.
+        $koreksiLama = $this->bacaKoreksiManual($periode);
+        $dipertahankan = [];
+
         foreach ($guruAktif as $guru) {
             try {
                 $hasil = $this->payrollService->hitung($guru, $periode, dryRun: false);
+
+                if (isset($koreksiLama[$guru->id])) {
+                    $k    = $koreksiLama[$guru->id];
+                    $slip = Penggajian::where('periode_penggajian_id', $periode->id)
+                        ->where('tenaga_pendidik_id', $guru->id)->first();
+                    if ($slip) {
+                        $this->terapkanKoreksiManual($slip, $k['tunjangan'], $k['potongan'], $k['catatan']);
+                        $dipertahankan[] = $guru->user->name;
+                    }
+                }
 
                 // Catat peringatan komponen (generate berhasil tapi ada komponen error)
                 if (!empty($hasil['_errors'])) {
@@ -236,6 +254,11 @@ class PenggajianController extends Controller
             $pesan .= " " . count($peringatan) . " guru berhasil tapi ada komponen yang perlu diperhatikan.";
         }
 
+        if (!empty($dipertahankan)) {
+            $pesan .= " Koreksi manual dipertahankan untuk " . count($dipertahankan)
+                . " guru (" . implode(', ', $dipertahankan) . ") — periksa bila nominalnya sudah tidak berlaku.";
+        }
+
         return redirect()
             ->route('admin.smart-payroll.penggajian.detail', $periode->id)
             ->with($tipe, $pesan)
@@ -255,9 +278,23 @@ class PenggajianController extends Controller
 
         try {
             $guru->load(['jabatanGuru.jabatan', 'gajiPokokIndividu']);
+
+            $koreksi = $this->bacaKoreksiManual($periode)[$guru->id] ?? null;
+
             $hasil = $this->payrollService->hitung($guru, $periode, dryRun: false);
 
             $msg = "Gaji {$guru->user->name} berhasil di-generate.";
+
+            if ($koreksi) {
+                $slip = Penggajian::where('periode_penggajian_id', $periode->id)
+                    ->where('tenaga_pendidik_id', $guru->id)->first();
+                if ($slip) {
+                    $this->terapkanKoreksiManual($slip, $koreksi['tunjangan'],
+                        $koreksi['potongan'], $koreksi['catatan']);
+                    $msg .= " Koreksi manual (" . ($koreksi['catatan'] ?: 'tanpa catatan')
+                        . ") dipertahankan.";
+                }
+            }
 
             if (!empty($hasil['_errors'])) {
                 $msg .= " Peringatan: " . implode('; ', $hasil['_errors']);
@@ -387,23 +424,98 @@ class PenggajianController extends Controller
             'catatan'           => 'required|string|max:500',
         ]);
 
-        $tunjangan = $data['tunjangan_lainnya'] ?? 0;
-        $potongan  = $data['potongan_lainnya']  ?? 0;
-
-        $totalPendapatan = $penggajian->total_pendapatan - $penggajian->tunjangan_lainnya + $tunjangan;
-        $totalPotongan   = $penggajian->total_potongan   - $penggajian->potongan_lainnya  + $potongan;
-
-        $penggajian->update([
-            'tunjangan_lainnya'  => $tunjangan,
-            'potongan_lainnya'   => $potongan,
-            'total_pendapatan'   => $totalPendapatan,
-            'total_potongan'     => $totalPotongan,
-            'gaji_bersih'        => max(0, $totalPendapatan - $totalPotongan),
-            'catatan'            => $data['catatan'],
-            'ada_koreksi_manual' => true,
-        ]);
+        $this->terapkanKoreksiManual(
+            $penggajian,
+            (float) ($data['tunjangan_lainnya'] ?? 0),
+            (float) ($data['potongan_lainnya'] ?? 0),
+            $data['catatan'],
+        );
 
         return back()->with('success', 'Override gaji berhasil disimpan.');
+    }
+
+    /**
+     * Baca koreksi manual seluruh slip satu periode, berindeks tenaga_pendidik_id.
+     * Dipakai sebagai cadangan sebelum slip digenerate ulang.
+     */
+    private function bacaKoreksiManual(PeriodePenggajian $periode): array
+    {
+        return Penggajian::where('periode_penggajian_id', $periode->id)
+            ->where('ada_koreksi_manual', true)
+            ->get(['tenaga_pendidik_id', 'tunjangan_lainnya', 'potongan_lainnya', 'catatan'])
+            ->filter(fn ($p) => (float) $p->tunjangan_lainnya != 0.0 || (float) $p->potongan_lainnya != 0.0)
+            ->mapWithKeys(fn ($p) => [$p->tenaga_pendidik_id => [
+                'tunjangan' => (float) $p->tunjangan_lainnya,
+                'potongan'  => (float) $p->potongan_lainnya,
+                'catatan'   => $p->catatan,
+            ]])
+            ->all();
+    }
+
+    /**
+     * SATU pintu untuk menuliskan koreksi manual ke slip — dipakai tombol Override
+     * maupun generate ulang yang mempertahankannya.
+     *
+     * Baris rinciannya ikut diterbitkan (seperti penyesuaian liburan) karena slip
+     * wajib berjumlah pas: sebelum ini potongan override tidak punya baris, jadi
+     * slip Faizah memperlihatkan rincian Rp 1.995.000 sementara yang dibayar
+     * Rp 1.745.000 — guru tidak punya cara tahu Rp 250.000 itu potongan apa.
+     *
+     * Catatan semantik: nominal override MENGGANTI isi ember tunjangan/potongan
+     * lainnya (termasuk punishment kinerja yang dihitung sistem), bukan menambah.
+     * Itu perilaku lama yang dipertahankan; baris punishment karenanya dihapus
+     * agar jumlah baris tetap sama dengan total.
+     */
+    private function terapkanKoreksiManual(
+        Penggajian $penggajian,
+        float $tunjangan,
+        float $potongan,
+        ?string $catatan,
+    ): void {
+        DB::transaction(function () use ($penggajian, $tunjangan, $potongan, $catatan) {
+            $totalPendapatan = (float) $penggajian->total_pendapatan
+                - (float) $penggajian->tunjangan_lainnya + $tunjangan;
+            $totalPotongan   = (float) $penggajian->total_potongan
+                - (float) $penggajian->potongan_lainnya + $potongan;
+
+            $penggajian->update([
+                'tunjangan_lainnya'  => $tunjangan,
+                'potongan_lainnya'   => $potongan,
+                'total_pendapatan'   => $totalPendapatan,
+                'total_potongan'     => $totalPotongan,
+                'gaji_bersih'        => max(0, $totalPendapatan - $totalPotongan),
+                'catatan'            => $catatan,
+                'ada_koreksi_manual' => true,
+            ]);
+
+            $label = $catatan ?: 'Koreksi manual';
+
+            $penggajian->detailPenggajian()->whereIn('tipe', ['tunjangan', 'potongan_lain'])->delete();
+
+            if ($tunjangan > 0) {
+                $penggajian->detailPenggajian()->create([
+                    'tipe'             => 'tunjangan',
+                    'keterangan'       => $label,
+                    'jumlah_satuan'    => 1,
+                    'satuan'           => 'periode',
+                    'nilai_per_satuan' => $tunjangan,
+                    'subtotal'         => $tunjangan,
+                    'referensi_ids'    => [],
+                ]);
+            }
+
+            if ($potongan > 0) {
+                $penggajian->detailPenggajian()->create([
+                    'tipe'             => 'potongan_lain',
+                    'keterangan'       => $label,
+                    'jumlah_satuan'    => 1,
+                    'satuan'           => 'periode',
+                    'nilai_per_satuan' => $potongan,
+                    'subtotal'         => -$potongan,
+                    'referensi_ids'    => [],
+                ]);
+            }
+        });
     }
 
     // ══════════════════════════════════════════════════════════════════════════
