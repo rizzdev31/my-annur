@@ -163,7 +163,8 @@ class KelasController extends Controller
             return back()->with('error', "Kelas {$kelas->nama} nonaktif — aktifkan dulu sebelum mengatur santri.");
         }
 
-        $hasil = app(\App\Services\KenaikanKelasService::class)
+        $keanggotaan = app(\App\Services\KenaikanKelasService::class);
+        $hasil = $keanggotaan
             ->aturAnggota($kelas, $d['santri_ids'], $d['tanggal'] ?? null);
 
         $masuk   = count($hasil['masuk']);
@@ -174,10 +175,16 @@ class KelasController extends Controller
             return back()->with('success', "Tidak ada perubahan santri di {$kelas->nama}.");
         }
 
-        return back()->with('success', "Santri {$kelas->nama} diperbarui: {$masuk} masuk"
+        $pesan = "Santri {$kelas->nama} diperbarui: {$masuk} masuk"
             . ($pindah ? " ({$pindah} dipindah dari kelas lain)" : '')
             . ", {$keluar} keluar."
-            . (in_array($kelas->jenis, \App\Services\KenaikanKelasService::JENIS_DIKABARI, true) ? ' Pengampu sudah dikabari.' : ''));
+            . (in_array($kelas->jenis, \App\Services\KenaikanKelasService::JENIS_DIKABARI, true) ? ' Pengampu sudah dikabari.' : '');
+
+        // Kenaikan level tahsin mengubah MATERI yang akan dinilai, jadi tidak
+        // boleh terjadi tanpa diberitahukan; yang tertahan disebut namanya.
+        if ($lvl = $keanggotaan->ringkasanLevelTahsin()) $pesan .= ' ' . $lvl;
+
+        return back()->with('success', $pesan);
     }
 
     /** POST kelas/{kelas}/naik-kelas — pindahkan santri aktif kelas ini ke kelas tujuan (sejenis). */
@@ -192,16 +199,19 @@ class KelasController extends Controller
 
         $tujuan = Kelas::findOrFail($d['kelas_tujuan_id']);
         try {
-            $hasil = app(\App\Services\KenaikanKelasService::class)->naikKelasMassal(
+            $keanggotaan = app(\App\Services\KenaikanKelasService::class);
+            $hasil = $keanggotaan->naikKelasMassal(
                 $kelas, $tujuan, $d['kecuali'] ?? [], $d['tanggal'] ?? null
             );
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success',
-            "{$hasil['dipindah']} santri naik ke {$tujuan->nama}" .
-            ($hasil['dilewati'] ? ", {$hasil['dilewati']} dikecualikan (tinggal kelas)" : '') . '.');
+        $pesan = "{$hasil['dipindah']} santri naik ke {$tujuan->nama}"
+            . ($hasil['dilewati'] ? ", {$hasil['dilewati']} dikecualikan (tinggal kelas)" : '') . '.';
+        if ($lvl = $keanggotaan->ringkasanLevelTahsin()) $pesan .= ' ' . $lvl;
+
+        return back()->with('success', $pesan);
     }
 
     /**
@@ -298,7 +308,8 @@ class KelasController extends Controller
         )->all();
 
         try {
-            $hasil = app(\App\Services\KenaikanKelasService::class)
+            $keanggotaan = app(\App\Services\KenaikanKelasService::class);
+            $hasil = $keanggotaan
                 ->rombak($peta, $d['tanggal'] ?? null, $d['keterangan'] ?? null);
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage());
@@ -314,6 +325,7 @@ class KelasController extends Controller
         if ($n) {
             $pesan .= ' Pencapaian hafalan tidak berubah; pengampu sudah dikabari.';
         }
+        if ($lvl = $keanggotaan->ringkasanLevelTahsin()) $pesan .= ' ' . $lvl;
 
         return back()->with($n || !$hasil['gagal'] ? 'success' : 'error', $pesan);
     }

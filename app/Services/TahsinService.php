@@ -153,6 +153,12 @@ class TahsinService
         }
 
         $santri->update(['tahsin_level' => $level + 1]);
+        // Ikut dicatat supaya satu riwayat memuat SEMUA sebab level berubah —
+        // kalau hanya kenaikan dari kelas yang tercatat, jejaknya bohong:
+        // level yang naik lewat tasnif akan tampak seperti tidak pernah naik.
+        $santri->catatLevelTahsin($level, $level + 1, 'tasnif', null, null,
+            $override ? 'override pengampu: belum semua materi lulus' : null);
+
         return ['level' => $level + 1, 'tahsin_selesai' => false];
     }
 }

@@ -132,6 +132,12 @@ class KenaikanKelasService
     /** Santri yang baru dibuka keanggotaannya di kelas TAHSIN: [santri_id => Kelas]. */
     private array $masukTahsin = [];
 
+    /**
+     * Hasil kenaikan level tahsin akibat perpindahan, untuk dilaporkan ke layar.
+     * [santri_id => ['nama','status','dari','ke','alasan']]
+     */
+    private array $hasilLevelTahsin = [];
+
     public function __construct(private SantriSyncService $sync) {}
 
     // ══════════════════════════════════════════════════════════════════════
@@ -157,6 +163,7 @@ class KenaikanKelasService
      */
     public function aturAnggota(Kelas $kelas, array $santriIds, ?string $tanggal = null): array
     {
+        $this->hasilLevelTahsin = [];
         $tanggal ??= $this->hariIni();
         $target  = Santri::aktif()->whereIn('id', array_map('intval', $santriIds))->pluck('id');
         $aktif   = DB::table('kelas_santri')->where('kelas_id', $kelas->id)->where('is_aktif', true)->pluck('santri_id');
@@ -191,6 +198,7 @@ class KenaikanKelasService
      */
     public function aturKelasSantri(Santri $santri, array $kelasIds, ?string $tanggal = null): void
     {
+        $this->hasilLevelTahsin = [];
         $tanggal ??= $this->hariIni();
         $kelas = $this->pastikanSatuPerSlot($kelasIds);
 
@@ -246,6 +254,7 @@ class KenaikanKelasService
      */
     public function naikKelasMassal(Kelas $sumber, Kelas $tujuan, array $kecuali = [], ?string $tanggal = null, ?string $keterangan = null): array
     {
+        $this->hasilLevelTahsin = [];
         if ($sumber->id === $tujuan->id) {
             throw new \DomainException('Kelas tujuan tidak boleh sama dengan kelas sumber.');
         }
@@ -307,6 +316,7 @@ class KenaikanKelasService
      */
     public function rombak(array $peta, ?string $tanggal = null, ?string $keterangan = null): array
     {
+        $this->hasilLevelTahsin = [];
         $peta = collect($peta)
             ->mapWithKeys(fn ($kelasId, $santriId) => [(int) $santriId => (int) $kelasId])
             ->filter(fn ($kelasId, $santriId) => $santriId > 0 && $kelasId > 0);
@@ -368,6 +378,7 @@ class KenaikanKelasService
      */
     public function pindahTerpilih(array $santriIds, Kelas $tujuan, ?string $tanggal = null, ?string $keterangan = null): array
     {
+        $this->hasilLevelTahsin = [];
         $peta = collect($santriIds)->mapWithKeys(fn ($id) => [(int) $id => $tujuan->id])->all();
 
         return $this->rombak($peta, $tanggal, $keterangan);
@@ -469,6 +480,44 @@ class KenaikanKelasService
         }
     }
 
+    /**
+     * Hasil kenaikan level tahsin dari operasi terakhir. Dibaca pemanggil
+     * SETELAH aturAnggota/pindahKelas/rombak selesai.
+     *
+     * @return array<int, array{nama:string, status:string, dari:?int, ke:?int, alasan:?string}>
+     */
+    public function hasilLevelTahsin(): array
+    {
+        return $this->hasilLevelTahsin;
+    }
+
+    /**
+     * Ringkasan sekalimat untuk pesan di layar; null bila tak ada apa pun.
+     * Yang TERTAHAN disebut namanya satu-satu — itu justru yang perlu
+     * ditindaklanjuti admin, bukan yang berhasil naik.
+     */
+    public function ringkasanLevelTahsin(): ?string
+    {
+        if (!$this->hasilLevelTahsin) return null;
+
+        $naik     = array_filter($this->hasilLevelTahsin, fn ($h) => $h['status'] === 'naik');
+        $tertahan = array_filter($this->hasilLevelTahsin, fn ($h) => $h['status'] === 'tertahan');
+
+        $bagian = [];
+
+        if ($naik) {
+            $bagian[] = count($naik) . ' santri naik level mengikuti kelasnya ('
+                . implode(', ', array_map(
+                    fn ($h) => $h['nama'] . ' ' . ($h['dari'] ?? '-') . '→' . $h['ke'], $naik)) . ')';
+        }
+
+        foreach ($tertahan as $h) {
+            $bagian[] = 'Level ' . $h['nama'] . ' TIDAK dinaikkan: ' . $h['alasan'];
+        }
+
+        return implode('. ', $bagian) . '.';
+    }
+
     private function catat(int $kelasId, int $santriId, string $arah): void
     {
         $this->perubahan[$kelasId][$arah][] = $santriId;
@@ -480,6 +529,8 @@ class KenaikanKelasService
         $this->perubahan = [];
         $this->santriBerubah = [];
         $this->masukTahsin = [];
+        // hasilLevelTahsin TIDAK dikosongkan di sini: mulai() dipanggil di akhir
+        // selesai(), dan pemanggil membaca hasilnya SESUDAH operasi selesai.
     }
 
     /**
@@ -490,8 +541,12 @@ class KenaikanKelasService
      *    pindah halaqoh langsung lanjut dari pencapaian terakhir.
      *  - Tahsin → tahfidz: tahfidz mulai dari data hafalannya sendiri (baru);
      *    level & nilai tahsin tetap tersimpan.
-     *  - Masuk kelas tahsin: level hanya ditempatkan bila santri belum punya
-     *    progres tahsin (Santri::tempatkanLevelTahsin).
+     *  - Masuk kelas tahsin: SATU pengecualian yang disengaja. Tahsin berjenjang
+     *    (Level 1..5, 6 = Persiapan Tahfidz), jadi pindah ke kelas tahsin
+     *    berlevel lebih TINGGI adalah kenaikan dan levelnya ikut — kalau tidak,
+     *    guru di kelas level 4 masih disuguhi materi Level 3 karena materi
+     *    dibaca dari santri.tahsin_level. Turunnya tidak pernah ikut, dan
+     *    pagar-pagar lainnya ada di Santri::naikkanLevelTahsinMengikutiKelas().
      */
     private function selesai(): void
     {
@@ -499,7 +554,11 @@ class KenaikanKelasService
             $s = Santri::find($sid);
             if (!$s) continue;
             if (isset($this->masukTahsin[$sid])) {
-                $s->tempatkanLevelTahsin($this->masukTahsin[$sid]);
+                $h = $s->naikkanLevelTahsinMengikutiKelas($this->masukTahsin[$sid]);
+
+                if ($h['status'] !== 'tetap') {
+                    $this->hasilLevelTahsin[$sid] = $h + ['nama' => $s->nama_lengkap];
+                }
             }
             $this->sync->sync($s);         // RamahAnak (outbox)
         }

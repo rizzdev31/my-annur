@@ -74,7 +74,12 @@ class SantriController extends Controller
         $keanggotaan->aturKelasSantri($santri, $kelasIds);   // + level tahsin & sinkron RamahAnak
         $this->sync->sync($santri->fresh());
 
-        return back()->with('success', "Santri {$data['nama_lengkap']} berhasil ditambahkan.");
+        // Kenaikan level tahsin WAJIB dilaporkan: ia mengubah materi yang akan
+        // dinilai guru, dan yang tertahan perlu ditindaklanjuti admin.
+        $pesan = "Santri {$data['nama_lengkap']} berhasil ditambahkan.";
+        if ($lvl = $keanggotaan->ringkasanLevelTahsin()) $pesan .= ' ' . $lvl;
+
+        return back()->with('success', $pesan);
     }
 
     public function update(Request $request, Santri $santri)
@@ -94,7 +99,10 @@ class SantriController extends Controller
         $keanggotaan->aturKelasSantri($santri, $kelasIds);   // + level tahsin & sinkron RamahAnak
         $this->sync->sync($santri->fresh());
 
-        return back()->with('success', "Santri {$santri->nama_lengkap} berhasil diperbarui.");
+        $pesan = "Santri {$santri->nama_lengkap} berhasil diperbarui.";
+        if ($lvl = $keanggotaan->ringkasanLevelTahsin()) $pesan .= ' ' . $lvl;
+
+        return back()->with('success', $pesan);
     }
 
     public function destroy(Santri $santri)
