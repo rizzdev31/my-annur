@@ -326,6 +326,26 @@
                         <p class="text-[11px] text-gray-400 mt-1">
                             Nominal lama tetap tersimpan untuk periode sebelum tanggal ini.
                         </p>
+                        <!-- Periode gaji berjalan 26→25, jadi "26 Okt" masuk periode
+                             NOVEMBER. Tanpa petunjuk ini, nominal diisi lalu dicari
+                             di slip bulan yang salah — kejadian nyata pada 34 komponen
+                             bertanggal 26 Okt yang dicari di slip Oktober. -->
+                        <p v-if="periodeDariTanggal" class="text-[11px] mt-1.5 px-2 py-1.5 rounded-lg"
+                            :class="periodeDariTanggal.ada_slip
+                                ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'">
+                            Masuk periode <strong>{{ periodeDariTanggal.label }}</strong>
+                            ({{ periodeDariTanggal.dari }} – {{ periodeDariTanggal.sampai }}).
+                            <template v-if="periodeDariTanggal.ada_slip">
+                                Slipnya langsung diperbarui begitu disimpan.
+                            </template>
+                            <template v-else>
+                                Periode ini <strong>belum punya slip</strong> — angkanya baru
+                                terlihat setelah periode itu di-generate.
+                            </template>
+                        </p>
+                        <p v-else-if="ubah.berlaku_mulai" class="text-[11px] text-rose-600 mt-1.5">
+                            Tanggal ini di luar semua periode penggajian yang ada.
+                        </p>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1.5">Catatan (opsional)</label>
@@ -413,6 +433,13 @@ const ubah = reactive({
 
 const belumBerkomponen = computed(() =>
     Math.max(0, (props.ringkasan.guru ?? 0) - (props.ringkasan.ada_komponen ?? 0)))
+
+// Periode mana yang dikenai tanggal berlaku yang sedang dipilih.
+const periodeDariTanggal = computed(() => {
+    const d = ubah.berlaku_mulai
+    if (!d) return null
+    return props.periodeOpsi.find((p) => p.dari_iso <= d && d <= p.sampai_iso) ?? null
+})
 
 const totalUbah = computed(() => ubah.slot.reduce((a, s) => a + (Number(s.nominal) || 0), 0))
 

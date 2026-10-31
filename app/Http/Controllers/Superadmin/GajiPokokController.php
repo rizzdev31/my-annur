@@ -9,6 +9,7 @@ use App\Models\PeriodePenggajian;
 use App\Models\TenagaPendidik;
 use App\Models\VariabelGajiPokok;
 use App\Services\KinerjaCalculationService;
+use App\Services\KoreksiSlipService;
 use App\Services\TimezoneHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -208,6 +209,12 @@ class GajiPokokController extends Controller
                     'label' => $p->nama_bulan,
                     'dari'  => $p->tanggal_mulai->format('d M Y'),
                     'sampai'=> $p->tanggal_selesai->format('d M Y'),
+                    // ISO dipakai layar untuk memberi tahu tanggal berlaku yang
+                    // dipilih itu masuk periode mana — periode berjalan 26→25,
+                    // jadi "26 Okt" masuk periode NOVEMBER, bukan Oktober.
+                    'dari_iso'   => $p->tanggal_mulai->toDateString(),
+                    'sampai_iso' => $p->tanggal_selesai->toDateString(),
+                    'ada_slip'   => \App\Models\Penggajian::where('periode_penggajian_id', $p->id)->exists(),
                 ])->values()->all(),
             'ringkasan' => [
                 'guru'           => $guru->count(),
@@ -380,14 +387,51 @@ class GajiPokokController extends Controller
         });
 
         $sesudah = (float) $tenagaPendidik->fresh()->getGajiPokokAktif($mulai);
+
+        // ── Slip ikut diperbarui, tanpa perlu ingat menekan Generate ────────
+        // Sebelum ini nominal baru hanya hidup di tabel komponen: slip periode
+        // berjalan tetap memakai angka lama sampai ada yang menekan Generate,
+        // dan tidak ada apa pun di layar yang memberi tahu. Yang digenerate
+        // ulang HANYA slip yang sudah terbit dan belum final — menerbitkan slip
+        // baru tetap tindakan sadar admin, bukan efek samping.
+        $koreksiSlip = app(KoreksiSlipService::class);
+        $ikut = [];
+        $belum = [];
+
+        foreach ($koreksiSlip->periodeTerdampak($mulai) as $periode) {
+            $hasil = $koreksiSlip->regenerasi($tenagaPendidik, $periode);
+
+            if ($hasil['status'] === 'digenerate') {
+                $ikut[] = $hasil['pesan'];
+            } elseif ($hasil['status'] === 'tanpa_slip') {
+                $belum[] = $periode->nama_bulan;
+            }
+        }
         $rp = fn ($n) => number_format($n, 0, ',', '.');
 
         $pesan = "Gaji pokok {$tenagaPendidik->user->name} ditetapkan: Rp {$rp($sesudah)}";
         if (abs($sesudah - $sebelum) >= 1) {
             $pesan .= ' (sebelumnya Rp ' . $rp($sebelum) . ')';
         }
-        $pesan .= '. Berlaku sejak ' . \Carbon\Carbon::parse($mulai)->format('d M Y')
-            . '. Slip periode itu perlu di-generate ulang agar angkanya ikut.';
+        $pesan .= '. Berlaku sejak ' . \Carbon\Carbon::parse($mulai)->format('d M Y') . '.';
+
+        // Pesannya menyebut periode mana yang IKUT berubah dan mana yang belum
+        // punya slip. Tanggal berlaku 26 suatu bulan masuk periode BULAN
+        // BERIKUTNYA (periode 26→25), dan itu sumber salah paham yang nyata:
+        // 34 komponen diisi dengan berlaku 26 Okt lalu dicari di slip Oktober,
+        // padahal tempatnya periode November yang slipnya belum digenerate.
+        if ($ikut) {
+            $pesan .= ' Slip ikut diperbarui — ' . implode('; ', $ikut) . '.';
+        }
+
+        if ($belum) {
+            $pesan .= ' Periode ' . implode(' & ', $belum)
+                . ' belum punya slip, jadi angkanya baru terlihat setelah periode itu di-generate.';
+        }
+
+        if (! $ikut && ! $belum) {
+            $pesan .= ' Tidak ada slip periode berjalan atau mendatang yang terdampak.';
+        }
 
         return back()->with('success', $pesan);
     }
