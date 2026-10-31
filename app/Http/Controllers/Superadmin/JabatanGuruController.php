@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\JabatanGuru;
 use App\Models\TenagaPendidik;
 use App\Models\Jabatan;
-use App\Models\SettingGajiPokok;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -43,11 +42,9 @@ class JabatanGuruController extends Controller
                 'kode_jabatan' => $j->kode_jabatan,
                 'tipe'         => $j->tipe,
                 'sudah_aktif'  => $jabatanAktif->contains('jabatan_id', $j->id),
-                // Gaji pokok jabatan ini (untuk preview)
-                'gaji_pokok'   => SettingGajiPokok::where('jabatan_id', $j->id)
-                    ->where('is_aktif', true)
-                    ->latest('berlaku_mulai')
-                    ->value('nominal') ?? 0,
+                // Dulu preview nominal jabatan. Gaji pokok kini per guru, jadi
+                // mencentang jabatan tidak menambah gaji apa pun.
+                'gaji_pokok'   => 0,
             ]);
 
         // Ringkasan gaji pokok total

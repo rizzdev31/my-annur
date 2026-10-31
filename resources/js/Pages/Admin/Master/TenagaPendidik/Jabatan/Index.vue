@@ -68,7 +68,7 @@
                         <p class="text-xs text-gray-400">per bulan</p>
                     </div>
                     <div class="px-5 py-3 border-t border-gray-50 bg-gray-50/30">
-                        <Link :href="route('admin.smart-payroll.setting-gaji.pokok.index')"
+                        <Link :href="route('admin.smart-payroll.gaji-pokok.index')"
                             class="text-xs text-indigo-600 hover:underline flex items-center gap-1">
                             Atur setting gaji pokok jabatan →
                         </Link>
@@ -269,10 +269,9 @@
                                         </div>
                                     </div>
                                     <div class="text-right shrink-0">
-                                        <p v-if="j.gaji_pokok > 0" class="text-xs font-bold text-indigo-600">
-                                            {{ formatRp(j.gaji_pokok) }}
-                                        </p>
-                                        <p v-else class="text-xs text-gray-400">Belum ada gaji</p>
+                                        <!-- "Belum ada gaji" dulu tampil di semua jabatan dan
+                                             menyesatkan: nominalnya memang tidak di sini lagi. -->
+                                        <p class="text-xs text-gray-400">diatur per guru</p>
                                         <p v-if="j.sudah_aktif" class="text-xs text-emerald-600 mt-0.5">Aktif</p>
                                     </div>
                                 </button>
@@ -319,14 +318,17 @@
                                 class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white" />
                         </div>
 
-                        <!-- Preview gaji jika jabatan dipilih -->
-                        <div v-if="jabatanDipilih && jabatanDipilih.gaji_pokok > 0"
-                            class="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-100 rounded-xl">
-                            <span class="text-emerald-500">💰</span>
-                            <p class="text-xs text-emerald-700">
-                                Gaji pokok jabatan ini: <strong>{{ formatRp(jabatanDipilih.gaji_pokok) }}</strong>/bulan
-                                <span v-if="jabatanAktif.length > 0"> → Total baru: <strong>{{ formatRp(totalGajiPokok +
-                                        jabatanDipilih.gaji_pokok) }}</strong></span>
+                        <!-- Mencentang jabatan TIDAK menambah gaji: nominalnya ditetapkan
+                             per guru. Preview lama menjanjikan "total baru" dari angka
+                             jabatan, yang sejak gaji pokok pindah selalu nol. -->
+                        <div v-if="jabatanDipilih"
+                            class="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl">
+                            <span class="text-amber-500">ⓘ</span>
+                            <p class="text-xs text-amber-700">
+                                Menambah jabatan <strong>tidak</strong> otomatis menambah gaji pokok.
+                                Nominalnya diatur per guru di
+                                <Link :href="route('admin.smart-payroll.gaji-pokok.index')"
+                                    class="font-semibold underline">Smart Payroll → Gaji Pokok</Link>.
                             </p>
                         </div>
                     </div>

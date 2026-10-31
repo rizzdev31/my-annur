@@ -578,8 +578,14 @@ Route::prefix('admin')
             // ── Setting Gaji (Pokok + Vakasi + Jam Kerja) ─────────────────
             Route::prefix('setting-gaji')->name('setting-gaji.')->group(function () {
 
-                Route::resource('pokok', SettingGajiController::class)
-                    ->parameters(['pokok' => 'pokoh']);
+                // Setting gaji pokok PER JABATAN sudah tidak dipakai: nominalnya
+                // ditetapkan per guru di Smart Payroll → Gaji Pokok, dan 63 baris
+                // setting lama sudah dinonaktifkan semuanya (nol baris aktif, nol
+                // guru memakainya). Layarnya dicabut karena store()-nya selalu
+                // menulis is_aktif = true — satu klik "tambah" akan menghidupkan
+                // kembali jalur kedua penentu gaji. Tabel & datanya DIBIARKAN:
+                // slip September 2026 dibuat dari sana, itu satu-satunya catatan
+                // asal angkanya.
 
                 Route::get('vakasi',               [SettingGajiController::class, 'vakasiIndex'])->name('vakasi.index');
                 Route::get('vakasi/create',        [SettingGajiController::class, 'vakasiCreate'])->name('vakasi.create');

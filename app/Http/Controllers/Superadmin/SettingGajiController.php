@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\SettingGajiPokok;
 use App\Models\SettingVakasi;
 use App\Models\SettingJamKerja;
 use App\Models\Jabatan;
@@ -17,93 +16,19 @@ class SettingGajiController extends Controller
     // GAJI POKOK PER JABATAN
     // ══════════════════════════════════════════════════════════════════════
 
-    public function index()
-    {
-        $settingGaji = SettingGajiPokok::with('jabatan')
-            ->aktif()
-            ->orderBy('jabatan_id')
-            ->get()
-            ->map(fn($s) => [
-                'id'           => $s->id,
-                'jabatan_id'   => $s->jabatan_id,
-                'jabatan_nama' => $s->jabatan?->nama_jabatan ?? '—',
-                'jabatan_kode' => $s->jabatan?->kode_jabatan ?? '',
-                'jabatan_tipe' => $s->jabatan?->tipe ?? 'fungsional',
-                'nominal'      => $s->nominal,
-                'berlaku_mulai'=> $s->berlaku_mulai?->format('d M Y'),
-                'keterangan'   => $s->keterangan,
-            ]);
-
-        return Inertia::render('Admin/SmartPayroll/SettingGaji/Pokok/Index', [
-            'settingGaji' => $settingGaji,
-        ]);
-    }
-
-    public function create()
-    {
-        return Inertia::render('Admin/SmartPayroll/SettingGaji/Pokok/Form', [
-            'jabatan' => Jabatan::aktif()->orderBy('tipe')->orderBy('nama_jabatan')
-                ->get(['id', 'nama_jabatan', 'kode_jabatan', 'tipe']),
-        ]);
-    }
-
-    public function store(Request $request)
-    {
-        $data = $request->validate([
-            'jabatan_id'    => 'required|exists:jabatan,id',
-            'nominal'       => 'required|numeric|min:0',
-            'berlaku_mulai' => 'required|date',
-            'keterangan'    => 'nullable|string|max:500',
-        ]);
-
-        // Nonaktifkan setting lama jabatan yang sama
-        SettingGajiPokok::where('jabatan_id', $data['jabatan_id'])
-            ->where('is_aktif', true)
-            ->update(['is_aktif' => false, 'berlaku_selesai' => now()]);
-
-        SettingGajiPokok::create(array_merge($data, [
-            'is_aktif'    => true,
-            'dibuat_oleh' => auth()->id(),
-        ]));
-
-        return redirect()->route('admin.smart-payroll.setting-gaji.pokok.index')
-            ->with('success', 'Setting gaji pokok berhasil disimpan.');
-    }
-
-    public function edit(SettingGajiPokok $pokoh)
-    {
-        return Inertia::render('Admin/SmartPayroll/SettingGaji/Pokok/Form', [
-            'setting' => array_merge($pokoh->toArray(), [
-                'berlaku_mulai' => $pokoh->berlaku_mulai?->format('Y-m-d'),
-                'jabatan'       => $pokoh->jabatan,
-            ]),
-            'jabatan' => Jabatan::aktif()->orderBy('tipe')->orderBy('nama_jabatan')
-                ->get(['id', 'nama_jabatan', 'kode_jabatan', 'tipe']),
-        ]);
-    }
-
-    public function update(Request $request, SettingGajiPokok $pokoh)
-    {
-        $data = $request->validate([
-            'nominal'       => 'required|numeric|min:0',
-            'berlaku_mulai' => 'required|date',
-            'keterangan'    => 'nullable|string|max:500',
-        ]);
-
-        $pokoh->update($data);
-
-        return redirect()->route('admin.smart-payroll.setting-gaji.pokok.index')
-            ->with('success', 'Setting gaji pokok diperbarui.');
-    }
-
-    public function destroy(SettingGajiPokok $pokoh)
-    {
-        $pokoh->update(['is_aktif' => false]);
-        return back()->with('success', 'Setting gaji pokok dinonaktifkan.');
-    }
-
     // ══════════════════════════════════════════════════════════════════════
-    // VAKASI
+    // SETTING GAJI POKOK PER JABATAN — DICABUT
+    //
+    // Nominal gaji pokok kini ditetapkan per guru (jam mengajar + jabatan +
+    // tunjangan pendidikan) di Smart Payroll → Gaji Pokok, dan 63 setting lama
+    // sudah dinonaktifkan seluruhnya. CRUD-nya dihapus bersama rutenya karena
+    // store() selalu menulis is_aktif = true: satu klik "tambah" akan
+    // menghidupkan kembali jalur kedua penentu gaji, dan guru yang komponennya
+    // belum terisi akan dibayar dari angka jabatan tanpa ada yang sadar.
+    //
+    // Tabel setting_gaji_pokok DIBIARKAN berisi: slip September 2026 dibuat
+    // dari sana (46 dari 73 baris gaji pokoknya bernama jabatan), jadi itu
+    // satu-satunya catatan asal angkanya.
     // ══════════════════════════════════════════════════════════════════════
 
     public function vakasiIndex()

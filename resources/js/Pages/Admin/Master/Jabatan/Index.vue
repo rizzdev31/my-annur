@@ -141,11 +141,16 @@
                         <div class="grid grid-cols-2 gap-2 mb-3">
                             <div class="bg-indigo-50 rounded-xl px-3 py-2.5">
                                 <p class="text-xs text-indigo-500 font-medium mb-0.5">Gaji Pokok</p>
-                                <p v-if="j.gaji_pokok > 0" class="text-sm font-bold text-indigo-700">
-                                    {{ formatRupiah(j.gaji_pokok) }}
-                                </p>
-                                <p v-else class="text-xs text-indigo-400 italic">Belum di-setting</p>
-                                <p class="text-xs text-indigo-400 mt-0.5">per bulan</p>
+                                <!-- Nominal gaji pokok TIDAK lagi menempel pada jabatan: ia
+                                     ditetapkan per orang (jam mengajar + jabatan + tunjangan)
+                                     di Smart Payroll → Gaji Pokok. Dulu sel ini menampilkan
+                                     "Rp 0 / Belum di-setting" untuk seluruh 52 jabatan, yang
+                                     terbaca seperti fakta padahal gajinya dibayar penuh. -->
+                                <Link :href="route('admin.smart-payroll.gaji-pokok.index')"
+                                    class="text-sm font-semibold text-indigo-700 hover:text-indigo-800 hover:underline">
+                                    diatur per guru →
+                                </Link>
+                                <p class="text-xs text-indigo-400 mt-0.5">beda tiap orang</p>
                             </div>
                             <div class="bg-violet-50 rounded-xl px-3 py-2.5">
                                 <p class="text-xs text-violet-500 font-medium mb-0.5">Vakasi Jabatan</p>
@@ -211,8 +216,11 @@
 
                     <!-- Warnings -->
                     <div class="px-4 pb-3 space-y-2">
-                        <!-- Warning: ada guru tapi gaji pokok & vakasi belum di-setting -->
-                        <div v-if="j.jumlah_guru > 0 && j.gaji_pokok === 0 && j.vakasi_jabatan === 0"
+                        <!-- Dulu: "gaji pokok & vakasi belum di-setting → penggajian Rp 0".
+                             Separuh syaratnya (gaji_pokok === 0) kini selalu benar karena
+                             gaji pokok pindah ke per guru, jadi peringatannya menuduh semua
+                             jabatan secara salah. Yang masih bermakna hanya vakasi jabatan. -->
+                        <div v-if="j.jumlah_guru > 0 && j.vakasi_jabatan === 0"
                             class="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
                             <svg class="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24"
                                 stroke="currentColor">
@@ -220,24 +228,12 @@
                                     d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
                             <p class="text-xs text-amber-700">
-                                {{ j.jumlah_guru }} guru aktif tapi <strong>gaji pokok dan vakasi jabatan belum
-                                    di-setting</strong>.
-                                Penggajian akan menghasilkan Rp 0.
+                                {{ j.jumlah_guru }} guru aktif tapi <strong>vakasi jabatan belum di-setting</strong>.
+                                Gaji pokoknya tetap terbayar — itu diatur per guru. Abaikan bila
+                                jabatan ini memang tidak bervakasi.
                             </p>
                         </div>
 
-                        <!-- Warning: gaji pokok ada tapi vakasi jabatan kosong -->
-                        <div v-else-if="j.jumlah_guru > 0 && j.gaji_pokok > 0 && j.vakasi_jabatan === 0"
-                            class="flex items-start gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-xl">
-                            <svg class="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24"
-                                stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <p class="text-xs text-blue-600">
-                                Vakasi jabatan belum di-setting. Jika jabatan ini tidak perlu vakasi jabatan, abaikan.
-                            </p>
-                        </div>
 
                         <!-- Warning: ada guru tapi tidak ada template tugas -->
                         <div v-if="j.jumlah_guru > 0 && j.jumlah_tugas === 0"

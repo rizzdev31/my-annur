@@ -30,34 +30,83 @@ use Inertia\Inertia;
  */
 class GajiPokokController extends Controller
 {
-    /** Lima slot tetap, urut seperti berkas asalnya. */
-    private const SLOT = [
-        ['kunci' => 'jam_mengajar',         'jenis' => 'jam_mengajar',         'label' => 'Jam Mengajar',          'urutan' => 1, 'berlabel' => false],
-        ['kunci' => 'jabatan_1',            'jenis' => 'jabatan',              'label' => 'Jabatan 1',             'urutan' => 2, 'berlabel' => true],
-        ['kunci' => 'tunjangan_pendidikan', 'jenis' => 'tunjangan_pendidikan', 'label' => 'Tunjangan Pendidikan',  'urutan' => 3, 'berlabel' => false],
-        ['kunci' => 'jabatan_2',            'jenis' => 'jabatan',              'label' => 'Jabatan 2',             'urutan' => 4, 'berlabel' => true],
-        ['kunci' => 'jabatan_3',            'jenis' => 'jabatan',              'label' => 'Jabatan 3',             'urutan' => 5, 'berlabel' => true],
-    ];
+    /** Slot jabatan paling sedikit yang selalu tampil, walau kosong. */
+    private const JABATAN_MINIMAL = 3;
+
+    /** Batas waras; menahan kunci slot yang dikarang dari luar formulir. */
+    private const JABATAN_MAKSIMAL = 12;
 
     /**
-     * Petakan komponen yang ada ke LIMA slot tetap, supaya layar selalu punya
-     * bentuk yang sama walau gurunya hanya punya satu komponen.
+     * Urutan baku tiap slot. Nilainya TIDAK boleh digeser: 148 komponen yang
+     * sudah tersimpan memakai urutan 1..5, dan pemetaan baliknya bersandar
+     * pada sortBy('urutan'). Jabatan ke-4 dan seterusnya melanjutkan deret itu.
      */
-    private function petakanSlot($komponen): array
+    private static function urutanJabatan(int $ke): int
+    {
+        return $ke === 1 ? 2 : $ke + 2;     // 1→2, 2→4, 3→5, 4→6, 5→7 …
+    }
+
+    /**
+     * Definisi slot untuk sejumlah jabatan tertentu. Jam mengajar dan tunjangan
+     * pendidikan tetap satu, jabatannya sebanyak yang diperlukan.
+     */
+    private static function slotDefinisi(int $jumlahJabatan): array
+    {
+        $jumlahJabatan = max(self::JABATAN_MINIMAL, min(self::JABATAN_MAKSIMAL, $jumlahJabatan));
+
+        $def = [
+            ['kunci' => 'jam_mengajar', 'jenis' => 'jam_mengajar',
+             'label' => 'Jam Mengajar', 'urutan' => 1, 'berlabel' => false],
+            ['kunci' => 'jabatan_1', 'jenis' => 'jabatan',
+             'label' => 'Jabatan 1', 'urutan' => self::urutanJabatan(1), 'berlabel' => true],
+            ['kunci' => 'tunjangan_pendidikan', 'jenis' => 'tunjangan_pendidikan',
+             'label' => 'Tunjangan Pendidikan', 'urutan' => 3, 'berlabel' => false],
+        ];
+
+        for ($ke = 2; $ke <= $jumlahJabatan; $ke++) {
+            $def[] = ['kunci' => 'jabatan_' . $ke, 'jenis' => 'jabatan',
+                'label' => 'Jabatan ' . $ke, 'urutan' => self::urutanJabatan($ke), 'berlabel' => true];
+        }
+
+        return $def;
+    }
+
+    /** Terjemahkan satu kunci slot kiriman formulir menjadi definisinya. */
+    private static function definisiDariKunci(string $kunci): ?array
+    {
+        if ($kunci === 'jam_mengajar' || $kunci === 'tunjangan_pendidikan') {
+            return collect(self::slotDefinisi(self::JABATAN_MINIMAL))->firstWhere('kunci', $kunci);
+        }
+
+        if (preg_match('/^jabatan_(\d{1,2})$/', $kunci, $m)) {
+            $ke = (int) $m[1];
+            if ($ke < 1 || $ke > self::JABATAN_MAKSIMAL) return null;
+
+            return ['kunci' => $kunci, 'jenis' => 'jabatan', 'label' => 'Jabatan ' . $ke,
+                'urutan' => self::urutanJabatan($ke), 'berlabel' => true];
+        }
+
+        return null;
+    }
+
+    /**
+     * Petakan komponen yang ada ke slot, dengan jumlah slot jabatan yang bisa
+     * tumbuh. Sebelumnya slotnya dipatok lima: guru dengan jabatan ke-4 tidak
+     * pernah melihat komponen itu di layar DAN kehilangannya begitu tombol
+     * simpan ditekan, karena penyimpanan hanya menulis slot yang terdefinisi.
+     *
+     * @param  int|null  $jumlahJabatan  dipaksa seragam untuk seluruh tabel,
+     *         supaya kolomnya sejajar antar guru.
+     */
+    private function petakanSlot($komponen, ?int $jumlahJabatan = null): array
     {
         $jabatan = $komponen->where('jenis', 'jabatan')->sortBy('urutan')->values();
         $out = [];
 
-        foreach (self::SLOT as $def) {
-            $isi = null;
-
-            if ($def['jenis'] === 'jabatan') {
-                // Slot jabatan 1/2/3 diisi urut dari jabatan yang ada.
-                $ke = (int) filter_var($def['kunci'], FILTER_SANITIZE_NUMBER_INT) - 1;
-                $isi = $jabatan->get($ke);
-            } else {
-                $isi = $komponen->firstWhere('jenis', $def['jenis']);
-            }
+        foreach (self::slotDefinisi($jumlahJabatan ?? $jabatan->count()) as $def) {
+            $isi = $def['jenis'] === 'jabatan'
+                ? $jabatan->get((int) filter_var($def['kunci'], FILTER_SANITIZE_NUMBER_INT) - 1)
+                : $komponen->firstWhere('jenis', $def['jenis']);
 
             $out[] = [
                 'kunci'    => $def['kunci'],
@@ -92,10 +141,17 @@ class GajiPokokController extends Controller
             ? Penggajian::where('periode_penggajian_id', $periode->id)->get()->keyBy('tenaga_pendidik_id')
             : collect();
 
-        $guru = TenagaPendidik::aktif()
-            ->with(['user', 'jabatan', 'komponenGajiPokok'])
-            ->get()
-            ->map(function ($g) use ($acuan, $slip) {
+        $daftar = TenagaPendidik::aktif()->with(['user', 'jabatan', 'komponenGajiPokok'])->get();
+
+        // Kolom tabel harus sejajar antar guru, jadi jumlah slot jabatannya
+        // diambil dari yang TERBANYAK (minimal 3). Tanpa ini guru berjabatan 4
+        // akan punya kolom lebih dan tabelnya melenceng.
+        $maksJabatan = (int) $daftar
+            ->map(fn ($g) => $g->komponenGajiPokokAktif($acuan)->where('jenis', 'jabatan')->count())
+            ->max();
+
+        $guru = $daftar
+            ->map(function ($g) use ($acuan, $slip, $maksJabatan) {
                 $komponen = $g->komponenGajiPokokAktif($acuan);
                 $s = $slip->get($g->id);
 
@@ -103,7 +159,7 @@ class GajiPokokController extends Controller
                     'id'             => $g->id,
                     'nama'           => $g->user->name,
                     'jabatan_utama'  => $g->jabatan?->nama_jabatan ?? '—',
-                    'slot'           => $this->petakanSlot($komponen),
+                    'slot'           => $this->petakanSlot($komponen, $maksJabatan),
                     'total'          => (float) $komponen->sum('nominal'),
                     // Bila komponen belum ada, gaji pokok masih dari cara lama.
                     'ada_komponen'   => $komponen->isNotEmpty(),
@@ -130,7 +186,9 @@ class GajiPokokController extends Controller
 
         return Inertia::render('Admin/SmartPayroll/GajiPokok/Index', [
             'guru'    => $guru,
-            'slotDef' => self::SLOT,
+            'slotDef'          => self::slotDefinisi($maksJabatan),
+            // Layar boleh menambah slot jabatan sampai batas ini.
+            'jabatanMaksimal'  => self::JABATAN_MAKSIMAL,
             'periode' => [
                 'bulan'     => $bulan,
                 'tahun'     => $tahun,
@@ -247,7 +305,9 @@ class GajiPokokController extends Controller
         $data = $request->validate([
             'berlaku_mulai'           => 'required|date',
             'slot'                    => 'required|array',
-            'slot.*.kunci'            => 'required|string',
+            // Kunci dibatasi pola: tanpa ini kiriman bisa mengarang slot.
+            'slot.*.kunci'            => ['required', 'string',
+                                          'regex:/^(jam_mengajar|tunjangan_pendidikan|jabatan_\d{1,2})$/'],
             'slot.*.nominal'          => 'nullable|numeric|min:0|max:100000000',
             'slot.*.label'            => 'nullable|string|max:150',
             'catatan'                 => 'nullable|string|max:300',
@@ -287,8 +347,15 @@ class GajiPokokController extends Controller
                         : $k->update(['berlaku_selesai' => $sebelumnya]);
                 });
 
-            foreach (self::SLOT as $def) {
-                $isi = collect($data['slot'])->firstWhere('kunci', $def['kunci']);
+            // Yang ditulis adalah slot yang DIKIRIM formulir, bukan daftar tetap,
+            // supaya jabatan ke-4 dan seterusnya ikut tersimpan. Kunci kembar
+            // dibuang agar satu slot tidak menghasilkan dua baris.
+            $dikirim = collect($data['slot'])->unique('kunci')->values();
+
+            foreach ($dikirim as $isi) {
+                $def = self::definisiDariKunci((string) $isi['kunci']);
+                if (! $def) continue;      // kunci di luar pola — abaikan
+
                 $nominal = (float) ($isi['nominal'] ?? 0);
                 $label = $def['berlabel'] ? trim((string) ($isi['label'] ?? '')) : null;
 

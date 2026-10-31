@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Jabatan;
 use App\Models\JabatanGuru;
 use App\Models\TenagaPendidik;
-use App\Models\SettingGajiPokok;
 use App\Models\SettingVakasi;
 use App\Models\PeriodePenggajian;
 use Illuminate\Http\Request;
@@ -27,11 +26,10 @@ class JabatanController extends Controller
             ->get();
 
         $jabatan = $jabatan->map(function ($j) {
-            // Gaji pokok aktif dari setting
-            $gajiPokok = SettingGajiPokok::where('jabatan_id', $j->id)
-                ->where('is_aktif', true)
-                ->latest('berlaku_mulai')
-                ->value('nominal') ?? 0;
+            // Gaji pokok tidak lagi berasal dari jabatan — ia ditetapkan per guru.
+            // Dikirim 0 agar bentuk payload tidak berubah bagi pemakai lain;
+            // layarnya sendiri tidak menampilkan angka ini lagi.
+            $gajiPokok = 0;
 
             // Vakasi jabatan aktif (tipe tugas_jabatan)
             $vakasiJabatan = SettingVakasi::aktif()

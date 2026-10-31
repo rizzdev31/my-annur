@@ -279,7 +279,6 @@
                 <SidebarGroup icon="dollar" label="Setting Gaji"
                     :active="isActive('admin.smart-payroll.setting-gaji') || isActive('admin.smart-payroll.setting-potongan') || isActive('admin.smart-payroll.potongan') || isActive('admin.smart-payroll.jadwal-shift')"
                     :collapsed="!sidebarOpen">
-                    <SidebarSubItem :href="route('admin.smart-payroll.setting-gaji.pokok.index')" label="Gaji Pokok" />
                     <SidebarSubItem :href="route('admin.smart-payroll.setting-gaji.vakasi.index')" label="Vakasi" />
                     <SidebarSubItem :href="route('admin.smart-payroll.setting-gaji.jam-kerja.index')" label="Jam Kerja" />
                     <SidebarSubItem :href="route('admin.smart-payroll.jadwal-shift.index')" label="Shift Satpam" />
@@ -719,7 +718,6 @@ const menuLinks = computed(() => {
         { label: 'Laporan Absensi', href: r('admin.smart-payroll.laporan.absensi'), icon: 'chart' },
         { label: 'Laporan Penggajian', href: r('admin.smart-payroll.laporan.penggajian'), icon: 'chart' },
         { label: 'Laporan Vakasi', href: r('admin.smart-payroll.laporan.vakasi'), icon: 'chart' },
-        { label: 'Gaji Pokok', href: r('admin.smart-payroll.setting-gaji.pokok.index'), icon: 'settings' },
         { label: 'Setting Vakasi', href: r('admin.smart-payroll.setting-gaji.vakasi.index'), icon: 'settings' },
         { label: 'Jam Kerja', href: r('admin.smart-payroll.setting-gaji.jam-kerja.index'), icon: 'settings' },
         { label: 'Setting Kinerja', href: r('admin.smart-payroll.setting-kinerja.index'), icon: 'bar-chart' },

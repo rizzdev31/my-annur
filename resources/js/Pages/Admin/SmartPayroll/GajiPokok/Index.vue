@@ -27,6 +27,28 @@
         </div>
 
         <!-- Ringkasan -->
+        <!-- Setelah setting gaji pokok per jabatan dicabut, guru tanpa komponen
+             TIDAK punya jaring lagi: gaji pokoknya jadi Rp 0 tanpa pesan apa pun.
+             Jalan masuknya ada tiga — guru baru, komponen yang masa berlakunya
+             lewat, atau komponen terhapus — jadi keadaan ini harus berisik. -->
+        <div v-if="belumBerkomponen > 0"
+            class="mb-5 px-4 py-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-3">
+            <span class="text-rose-500 text-lg leading-none">⚠</span>
+            <div class="flex-1">
+                <p class="text-sm font-semibold text-rose-900">
+                    {{ belumBerkomponen }} guru belum punya komponen gaji pokok
+                </p>
+                <p class="text-xs text-rose-700 mt-0.5">
+                    Gaji pokok mereka akan terhitung <strong>Rp 0</strong> pada periode ini.
+                    Nominalnya hanya bisa ditetapkan di layar ini.
+                </p>
+            </div>
+            <button type="button" @click="saring = 'belum_ada'; reload()"
+                class="shrink-0 px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700">
+                Tampilkan
+            </button>
+        </div>
+
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             <div class="bg-white rounded-2xl border border-gray-200 p-4">
                 <p class="text-xs text-gray-500">Guru aktif</p>
@@ -105,9 +127,12 @@
                                     class="inline-block mt-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700">
                                     perlu ditinjau
                                 </span>
+                                <!-- Dulu "masih cara lama", padahal cara lama sudah
+                                     tidak ada: setting per jabatan nol aktif dan
+                                     layarnya dicabut, jadi hasilnya Rp 0. -->
                                 <span v-else-if="!g.ada_komponen"
-                                    class="inline-block mt-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
-                                    masih cara lama
+                                    class="inline-block mt-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-700">
+                                    belum berkomponen → Rp 0
                                 </span>
                             </td>
                             <td v-for="s in g.slot" :key="s.kunci" class="px-3 py-3 text-right">
@@ -249,7 +274,13 @@
                 <div class="mt-4 space-y-3">
                     <div v-for="s in ubah.slot" :key="s.kunci"
                         class="rounded-xl border border-gray-200 p-3">
-                        <p class="text-xs font-semibold text-gray-700 mb-2">{{ s.label }}</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="text-xs font-semibold text-gray-700">{{ s.label }}</p>
+                            <button v-if="bisaHapusSlot(s)" type="button" @click="hapusSlot(s)"
+                                class="text-[11px] font-semibold text-rose-600 hover:text-rose-700">
+                                Hapus slot
+                            </button>
+                        </div>
 
                         <!-- Pilihan variabel: mengisi label & nominal sekaligus.
                              Jam mengajar tidak berkatalog karena mengikuti JP per orang. -->
@@ -273,6 +304,14 @@
                         </p>
                     </div>
                 </div>
+
+                <button type="button" @click="tambahJabatan" :disabled="!bisaTambahJabatan"
+                    class="mt-3 w-full px-3 py-2.5 rounded-xl border border-dashed border-indigo-300 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    + Tambah jabatan
+                </button>
+                <p v-if="!bisaTambahJabatan" class="text-[11px] text-gray-400 mt-1.5">
+                    Sudah mencapai batas {{ jabatanMaksimal }} jabatan.
+                </p>
 
                 <div class="mt-4 rounded-xl bg-indigo-50 border border-indigo-100 p-3 flex items-center justify-between">
                     <span class="text-sm font-semibold text-indigo-900">Jumlah Keseluruhan</span>
@@ -322,6 +361,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue'
 const props = defineProps({
     guru: { type: Array, default: () => [] },
     slotDef: { type: Array, default: () => [] },
+    jabatanMaksimal: { type: Number, default: 12 },
     periode: { type: Object, default: () => ({}) },
     periodeOpsi: { type: Array, default: () => [] },
     ringkasan: { type: Object, default: () => ({}) },
@@ -371,6 +411,9 @@ const ubah = reactive({
     berlaku_mulai: '', catatan: '', galat: '', kirim: false,
 })
 
+const belumBerkomponen = computed(() =>
+    Math.max(0, (props.ringkasan.guru ?? 0) - (props.ringkasan.ada_komponen ?? 0)))
+
 const totalUbah = computed(() => ubah.slot.reduce((a, s) => a + (Number(s.nominal) || 0), 0))
 
 function awalPeriodeIso() {
@@ -389,6 +432,39 @@ function bukaUbah(g) {
         berlaku_mulai: awalPeriodeIso(),
         catatan: g.catatan ?? '', galat: '', kirim: false,
     })
+}
+
+// ── Slot jabatan yang bisa bertambah ────────────────────────────────────────
+// Tiga slot bawaan sering tidak cukup: ada guru yang memegang lebih dari tiga
+// jabatan sekaligus. Nomor slot baru melanjutkan yang terbesar, bukan menghitung
+// jumlah baris, supaya tidak bertabrakan dengan slot yang baru saja dihapus.
+const nomorJabatan = (kunci) => {
+    const m = /^jabatan_(\d{1,2})$/.exec(kunci)
+    return m ? Number(m[1]) : 0
+}
+
+const jumlahJabatan = computed(() => ubah.slot.filter((s) => nomorJabatan(s.kunci) > 0).length)
+const bisaTambahJabatan = computed(() => jumlahJabatan.value < props.jabatanMaksimal)
+
+function tambahJabatan() {
+    if (!bisaTambahJabatan.value) return
+    const ke = Math.max(0, ...ubah.slot.map((s) => nomorJabatan(s.kunci))) + 1
+    ubah.slot.push({
+        kunci: `jabatan_${ke}`,
+        label: `Jabatan ${ke}`,
+        berlabel: true,
+        nominal: 0,
+        isi_label: '',
+    })
+}
+
+// Hanya slot jabatan di luar tiga bawaan yang boleh dibuang dari formulir;
+// yang bawaan cukup dikosongkan — nominal 0 tanpa nama memang tidak disimpan.
+const bisaHapusSlot = (s) => nomorJabatan(s.kunci) > 3
+
+function hapusSlot(s) {
+    const i = ubah.slot.indexOf(s)
+    if (i >= 0) ubah.slot.splice(i, 1)
 }
 
 // ── Katalog variabel ────────────────────────────────────────────────────────
