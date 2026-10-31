@@ -96,10 +96,14 @@
                     <p class="text-[#434656]">Sidoarjo, {{ tglCetak }}</p>
                     <p class="text-[#1b1b1b] mt-0.5">{{ instansi.jabatan_ttd ?? 'Bendahara' }},</p>
                     <!-- Gambar TTD bila sudah diunggah; kalau belum, ruang kosong
-                         setinggi sama agar tata letak slip tidak bergeser. -->
+                         SETINGGI SAMA agar tata letak slip tidak bergeser — karena
+                         itu tingginya dikunci lewat satu kelas .ttd-ruang yang dipakai
+                         keduanya, bukan angka yang ditulis dua kali lalu lupa diubah
+                         bersamaan. Lebarnya dibatasi supaya tanda tangan yang
+                         gambarnya melebar tidak mendesak kolom di sebelahnya. -->
                     <img v-if="instansi.ttd_gambar" :src="instansi.ttd_gambar" alt="Tanda tangan"
-                        class="h-14 object-contain object-left my-1" />
-                    <div v-else class="h-14"></div>
+                        class="ttd-ruang w-auto max-w-[200px] sm:max-w-[260px] object-contain object-left my-1" />
+                    <div v-else class="ttd-ruang"></div>
                     <p class="font-bold underline decoration-1 underline-offset-2 uppercase">{{ instansi.bendahara }}</p>
                     <p v-if="slip.ada_koreksi" class="mt-3 text-[11px] text-[#9c1c00] italic no-print">* terdapat koreksi manual</p>
                 </div>
@@ -158,12 +162,40 @@ function rupiah(n) {
     color: #434656;
 }
 
+/* Ruang tanda tangan: dulu h-14 (56px) dan terasa kecil, terutama pada PNG
+   yang banyak ruang kosongnya. Dinaikkan bertahap mengikuti lebar layar, bukan
+   satu angka besar — di ponsel tinggi 72px sudah memakan ruang, sementara di
+   layar lebar 96px baru terbaca sepadan dengan nama di bawahnya. */
+.ttd-ruang {
+    height: 68px;
+}
+
+@media (min-width: 640px) {
+    .ttd-ruang {
+        height: 84px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .ttd-ruang {
+        height: 96px;
+    }
+}
+
 @media print {
     #report {
         max-width: 100% !important;
         margin: 0 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+    }
+
+    /* Saat dicetak, ukurannya dipatok dalam milimeter: tinggi dalam piksel
+       bergantung DPI pencetak, jadi tanda tangan bisa keluar terlalu besar
+       atau terlalu kecil di kertas. */
+    .ttd-ruang {
+        height: 22mm !important;
+        max-width: 70mm !important;
     }
 }
 </style>
