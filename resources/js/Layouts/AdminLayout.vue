@@ -165,15 +165,25 @@
                          halaman Akses Ditolak. -->
                     <SidebarSubItem v-if="isSuper" :href="route('admin.smart-payroll.gaji-pokok.index')" label="Gaji Pokok" />
                 </SidebarGroup>
-                <SidebarGroup v-if="boleh('gaji_laporan')" icon="chart" label="Laporan" :active="isActive('admin.smart-payroll.laporan')"
+                <!-- Kode 'gaji_laporan' sudah DIHAPUS dari config/modul.php (dipecah
+                     granular lewat migration expand), jadi boleh('gaji_laporan')
+                     selalu false untuk admin biasa dan seluruh grup ini tak pernah
+                     tampil bagi mereka. Pola yang benar sudah dipakai grup Laporan
+                     Smart Education di bawah; grup ini tertinggal. Tiap tautan juga
+                     diberi gerbangnya sendiri, kalau tidak pemegang satu hak laporan
+                     melihat semua laporan. -->
+                <SidebarGroup v-if="boleh('laporan_ringkasan','laporan_kehadiran','laporan_mengajar','laporan_pengganti','laporan_absensi','laporan_penggajian','laporan_vakasi','laporan_guru')"
+                    icon="chart" label="Laporan" :active="isActive('admin.smart-payroll.laporan')"
                     :collapsed="!sidebarOpen">
-                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.ringkasan')" label="Ringkasan" />
-                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.kehadiran')" label="Kehadiran" />
-                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.mengajar')" label="Absensi Mengajar" />
-                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.pengganti')" label="Guru Pengganti" />
-                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.absensi')" label="Absensi" />
-                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.penggajian')" label="Penggajian" />
-                    <SidebarSubItem :href="route('admin.smart-payroll.laporan.vakasi')" label="Vakasi" />
+                    <SidebarSubItem v-if="boleh('laporan_ringkasan')" :href="route('admin.smart-payroll.laporan.ringkasan')" label="Ringkasan" />
+                    <SidebarSubItem v-if="boleh('laporan_kehadiran')" :href="route('admin.smart-payroll.laporan.kehadiran')" label="Kehadiran" />
+                    <SidebarSubItem v-if="boleh('laporan_mengajar')" :href="route('admin.smart-payroll.laporan.mengajar')" label="Absensi Mengajar" />
+                    <!-- Disebut "inval" dalam percakapan sehari-hari, jadi kata itu
+                         ikut ditulis agar ketemu saat dicari. -->
+                    <SidebarSubItem v-if="boleh('laporan_pengganti')" :href="route('admin.smart-payroll.laporan.pengganti')" label="Guru Pengganti (Inval)" />
+                    <SidebarSubItem v-if="boleh('laporan_absensi')" :href="route('admin.smart-payroll.laporan.absensi')" label="Absensi" />
+                    <SidebarSubItem v-if="boleh('laporan_penggajian')" :href="route('admin.smart-payroll.laporan.penggajian')" label="Penggajian" />
+                    <SidebarSubItem v-if="boleh('laporan_vakasi')" :href="route('admin.smart-payroll.laporan.vakasi')" label="Vakasi" />
                 </SidebarGroup>
 
                 <!-- ══ SMART EDUCATION ══════════════════════════════════════ -->
@@ -704,6 +714,8 @@ const menuLinks = computed(() => {
         { label: 'Laporan Ringkasan', href: r('admin.smart-payroll.laporan.ringkasan'), icon: 'chart' },
         { label: 'Laporan Kehadiran', href: r('admin.smart-payroll.laporan.kehadiran'), icon: 'chart' },
         { label: 'Laporan Absensi Mengajar', href: r('admin.smart-payroll.laporan.mengajar'), icon: 'chart' },
+        // Sempat tidak ada di daftar pencarian sama sekali, padahal menunya ada.
+        { label: 'Laporan Guru Pengganti (Inval)', href: r('admin.smart-payroll.laporan.pengganti'), icon: 'chart' },
         { label: 'Laporan Absensi', href: r('admin.smart-payroll.laporan.absensi'), icon: 'chart' },
         { label: 'Laporan Penggajian', href: r('admin.smart-payroll.laporan.penggajian'), icon: 'chart' },
         { label: 'Laporan Vakasi', href: r('admin.smart-payroll.laporan.vakasi'), icon: 'chart' },
