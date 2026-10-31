@@ -18,13 +18,28 @@
         <!-- ══ PER GURU ══ -->
         <div v-if="tab === 'guru'">
             <input v-model="cari" placeholder="Cari guru…" class="w-full max-w-sm px-4 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-indigo-500 mb-4" />
+            <div v-if="nonaktifDipotong.length"
+                class="mb-4 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                <span class="font-semibold">{{ nonaktifDipotong.length }} guru non-aktif masih dipotong.</span>
+                {{ nonaktifDipotong.map(g => g.nama + ' (' + g.status + ', ' + rupiah(g.total) + ')').join(' · ') }}
+                — potongan tetap berjalan selama itemnya aktif, jadi hentikan di sini bila sudah tidak berlaku.
+            </div>
             <div class="space-y-2.5">
                 <div v-for="g in guruTersaring" :key="g.id" @click="bukaGuru(g)"
                     class="bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-4 cursor-pointer hover:border-indigo-300 transition-colors">
                     <img v-if="g.foto" :src="g.foto" class="w-11 h-11 rounded-full object-cover shrink-0" />
                     <div v-else class="w-11 h-11 rounded-full bg-indigo-100 grid place-items-center font-bold text-indigo-600 shrink-0">{{ g.nama?.charAt(0) }}</div>
                     <div class="flex-1 min-w-0">
-                        <p class="text-sm font-bold text-gray-800 truncate">{{ g.nama }}</p>
+                        <p class="text-sm font-bold text-gray-800 truncate">
+                            {{ g.nama }}
+                            <!-- Guru non-aktif tetap muncul selama potongannya masih
+                                 jalan; tanpa lencana ini admin akan bingung kenapa
+                                 nama yang sudah cuti/nonaktif ada di daftar. -->
+                            <span v-if="g.status"
+                                class="ml-1.5 align-middle px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-semibold">
+                                {{ g.status }}
+                            </span>
+                        </p>
                         <p class="text-xs text-gray-400">{{ g.jabatan }}</p>
                     </div>
                     <div class="text-right shrink-0">
@@ -124,6 +139,11 @@ const guruTersaring = computed(() => {
     const q = cari.value.trim().toLowerCase()
     return q ? guruList.value.filter(g => g.nama.toLowerCase().includes(q)) : guruList.value
 })
+
+// Guru yang sudah tidak aktif tapi potongannya masih mengalir — dipisah supaya
+// bisa diperingatkan di atas daftar, bukan sekadar terselip di antara 50 nama.
+const nonaktifDipotong = computed(() =>
+    guruList.value.filter(g => g.status && g.total > 0))
 
 // ── Per guru ──
 const showGuru = ref(false)

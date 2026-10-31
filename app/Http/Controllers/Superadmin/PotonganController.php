@@ -25,13 +25,26 @@ class PotonganController extends Controller
             ->select('tenaga_pendidik_id', DB::raw('SUM(nominal) as total'))
             ->groupBy('tenaga_pendidik_id')->pluck('total', 'tenaga_pendidik_id');
 
-        $guru = TenagaPendidik::aktif()->with(['user:id,name,foto', 'jabatan:id,nama_jabatan'])
+        // Daftarnya TIDAK boleh hanya guru aktif. Potongan tetap dipotong selama
+        // barisnya aktif, apa pun status kepegawaiannya: Widiyanti (cuti_sakit)
+        // dipotong Rp 300.000 di slip September DAN Oktober sementara namanya
+        // tidak pernah muncul di layar ini, jadi nominalnya tak bisa diubah atau
+        // dihentikan. Siapa pun yang masih punya potongan aktif wajib terlihat.
+        $masihDipotong = $total->keys()->map(fn ($id) => (int) $id)->all();
+
+        $guru = TenagaPendidik::with(['user:id,name,foto', 'jabatan:id,nama_jabatan'])
+            ->where(fn ($q) => $q->whereIn('id', TenagaPendidik::aktif()->select('id'))
+                ->orWhereIn('id', $masihDipotong))
             ->get()->map(fn ($g) => [
                 'id'      => $g->id,
                 'nama'    => $g->user?->name ?? ('Guru #' . $g->id),
                 'foto'    => $g->user?->foto ? asset('storage/' . $g->user->foto) : null,
                 'jabatan' => $g->jabatan?->nama_jabatan ?? '-',
                 'total'   => (float) ($total[$g->id] ?? 0),
+                // Ditandai supaya admin tahu kenapa nama ini ada di sini.
+                'aktif'   => (bool) $g->is_aktif,
+                'status'  => $g->is_aktif ? null
+                    : ucfirst(str_replace('_', ' ', (string) ($g->status_kepegawaian ?? 'nonaktif'))),
             ])->sortBy('nama')->values();
 
         return Inertia::render('Admin/SmartPayroll/Potongan/Index', [
