@@ -124,6 +124,22 @@
                     <span class="text-[11px] text-gray-500">{{ rekap.length }} guru · untuk dicocokkan dengan slip gaji</span>
                 </div>
                 <div class="overflow-x-auto">
+                    <!-- Saringan status: satu klik untuk menemukan yang perlu dibetulkan -->
+                    <div class="flex flex-wrap items-center gap-2 mb-3 no-print">
+                        <span class="text-xs font-semibold text-gray-500">Status pengganti:</span>
+                        <button v-for="o in statusOpsi" :key="o.nilai" @click="pilihStatus(o.nilai)"
+                            class="px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors"
+                            :class="(form.status ?? '') === o.nilai ? o.aktif
+                                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'">
+                            {{ o.label }}
+                            <span class="ml-1 tabular-nums opacity-80">{{ o.jml }}</span>
+                        </button>
+                        <span v-if="(form.status ?? '') === 'belum_absen'" class="text-[11px] text-amber-700">
+                            Sesi ini sudah dialihkan tapi penggantinya belum mengabsen — tidak dibayar
+                            dan tidak tercatat terlaksana.
+                        </span>
+                    </div>
+
                     <table class="w-full text-sm">
                         <thead class="bg-gray-50/70">
                             <tr class="text-[11px] font-semibold text-gray-500 uppercase text-left">
@@ -257,6 +273,7 @@ const props = defineProps({
     rows: { type: Array, default: () => [] },
     rekap: { type: Array, default: () => [] },
     ringkasan: { type: Object, default: () => ({}) },
+    ringkasanStatus: { type: Object, default: () => ({}) },
     sumberTarif: { type: String, default: 'setting' },
 })
 
@@ -270,7 +287,27 @@ const form = reactive({
     pengganti_id: props.filters.pengganti_id,
     guru_id: props.filters.guru_id,
     jenis_kelas: props.filters.jenis_kelas,
+    status: props.filters.status ?? '',
 })
+
+// Saringan status: yang dicari saat membetulkan data adalah "ditunjuk pengganti
+// tapi belum diisi" — sesi itu tidak dibayar dan tidak pernah tercatat
+// terlaksana, jadi ia harus bisa ditemukan dalam satu klik.
+const statusOpsi = computed(() => [
+    { nilai: '', label: 'Semua', jml: props.ringkasanStatus.semua ?? 0,
+      aktif: 'bg-gray-800 text-white border-gray-800' },
+    { nilai: 'belum_absen', label: 'Belum diisi pengganti', jml: props.ringkasanStatus.belum_absen ?? 0,
+      aktif: 'bg-amber-500 text-white border-amber-500' },
+    { nilai: 'tidak_datang', label: 'Pengganti tidak datang', jml: props.ringkasanStatus.tidak_datang ?? 0,
+      aktif: 'bg-rose-500 text-white border-rose-500' },
+    { nilai: 'datang', label: 'Diampu (dibayar)', jml: props.ringkasanStatus.datang ?? 0,
+      aktif: 'bg-emerald-600 text-white border-emerald-600' },
+])
+
+function pilihStatus(nilai) {
+    form.status = nilai
+    terapkan()
+}
 
 function terapkan() {
     const q = { mode: form.mode }
@@ -279,6 +316,7 @@ function terapkan() {
     if (form.pengganti_id) q.pengganti_id = form.pengganti_id
     if (form.guru_id) q.guru_id = form.guru_id
     if (form.jenis_kelas) q.jenis_kelas = form.jenis_kelas
+    if (form.status) q.status = form.status
     router.get(route('admin.smart-payroll.laporan.pengganti'), q, { preserveScroll: true, preserveState: true })
 }
 
@@ -293,6 +331,8 @@ const kartu = computed(() => [
       sub: `${props.ringkasan.jumlah_pengganti ?? 0} guru pengganti`, cls: 'bg-white border-gray-200 text-gray-800' },
     { label: 'Diampu (dibayar)', value: props.ringkasan.sesi_datang ?? 0,
       cls: 'bg-emerald-50 border-emerald-100 text-emerald-800' },
+    { label: 'Belum diisi pengganti', value: props.ringkasan.sesi_belum ?? 0,
+      cls: 'bg-amber-50 border-amber-100 text-amber-800' },
     { label: 'Pengganti tidak datang', value: props.ringkasan.sesi_tidak ?? 0,
       cls: 'bg-rose-50 border-rose-100 text-rose-800' },
     { label: 'JP dibayar', value: props.ringkasan.total_jp ?? 0,

@@ -990,6 +990,23 @@ class LaporanController extends Controller
             ];
         })->values();
 
+        // ── Saringan STATUS ──────────────────────────────────────────────────
+        // Statusnya HASIL HITUNGAN (dibaca dari sudut pandang pengganti), bukan
+        // kolom, jadi penyaringannya sesudah pemetaan. Ringkasannya dihitung
+        // dari seluruh baris SEBELUM disaring, supaya angka pada tombol tidak
+        // ikut menyusut begitu salah satu saringan dipakai.
+        $ringkasanStatus = [
+            'semua'        => $rows->count(),
+            'datang'       => $rows->where('status', 'datang')->count(),
+            'belum_absen'  => $rows->where('status', 'belum_absen')->count(),
+            'tidak_datang' => $rows->where('status', 'tidak_datang')->count(),
+        ];
+
+        $saringStatus = (string) $request->input('status', '');
+        if (in_array($saringStatus, ['datang', 'belum_absen', 'tidak_datang'], true)) {
+            $rows = $rows->where('status', $saringStatus)->values();
+        }
+
         // ── Rekap per guru pengganti ─────────────────────────────────────────
         $rekap = $rows->groupBy('pengganti_id')->map(function ($g) {
             $datang = $g->where('status', 'datang');
@@ -1024,9 +1041,13 @@ class LaporanController extends Controller
                 'jenis_kelas'  => $request->jenis_kelas,
                 'tanggal_awal' => $mulai->toDateString(),
                 'tanggal_akhir'=> $selesai->toDateString(),
+                'status'       => $saringStatus,
             ],
             'rows'      => $rows,
             'rekap'     => $rekap,
+            // Dihitung SEBELUM penyaringan, supaya angka di tombol saringan
+            // tidak ikut menyusut saat salah satu status dipilih.
+            'ringkasanStatus' => $ringkasanStatus,
             // 'slip'    = angka sama dengan yang dibayarkan pada periode itu
             // 'setting' = perkiraan memakai tarif yang berlaku sekarang
             'sumberTarif' => $sumberTarif,
