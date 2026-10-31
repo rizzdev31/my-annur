@@ -340,7 +340,15 @@ function confirmGenerate() {
 }
 
 function generateSatu(pg) {
-    router.post(route('admin.smart-payroll.penggajian.generate-satu', [props.periode.id, pg.id]), {}, {
+    // Rutenya mengikat TenagaPendidik, jadi yang dikirim WAJIB id guru.
+    // Sebelumnya pg.id (id slip) yang dikirim: tombolnya men-generate orang
+    // lain atau 404 senyap, dan slip yang dimaksud tidak pernah berubah.
+    const guruId = pg.tenaga_pendidik_id
+    if (!guruId) {
+        alert('Baris ini tidak membawa id guru; muat ulang halaman lalu coba lagi.')
+        return
+    }
+    router.post(route('admin.smart-payroll.penggajian.generate-satu', [props.periode.id, guruId]), {}, {
         preserveScroll: true,
     })
 }

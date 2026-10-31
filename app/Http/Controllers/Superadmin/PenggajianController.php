@@ -189,7 +189,19 @@ class PenggajianController extends Controller
             return back()->with('error', 'Periode sudah dikunci, tidak bisa di-generate ulang.');
         }
 
-        $guruAktif = TenagaPendidik::aktif()
+        // Guru aktif SAJA tidak cukup. Potongan & gaji pokok tetap mengalir
+        // untuk guru yang statusnya cuti/nonaktif selama slipnya sudah terbit,
+        // tapi loop `aktif()` tidak pernah menyentuh slip itu — jadi setting
+        // yang diubah tidak pernah sampai ke slipnya. Terukur: Widiyanti
+        // (cuti_sakit) settingnya Rp 500.000 sementara slipnya mencetak
+        // Rp 300.000, dan tak ada tombol massal yang bisa menyusulkannya.
+        // Yang ikut digenerate = guru aktif ∪ pemilik slip periode ini.
+        $slipTerbit = Penggajian::where('periode_penggajian_id', $periode->id)
+            ->pluck('tenaga_pendidik_id');
+
+        $guruAktif = TenagaPendidik::query()
+            ->where(fn ($q) => $q->whereIn('id', TenagaPendidik::aktif()->select('id'))
+                ->orWhereIn('id', $slipTerbit))
             ->with(['user', 'jabatan', 'jabatanGuru.jabatan', 'gajiPokokIndividu'])
             ->get();
 
@@ -537,6 +549,13 @@ class PenggajianController extends Controller
         $guru = $pg->tenagaPendidik;
         return [
             'id'                     => $pg->id,
+            // WAJIB dikirim: tombol "Generate ulang" per baris dulu memakai
+            // `id` (id SLIP) sebagai id guru, padahal rutenya mengikat
+            // TenagaPendidik. Terukur pada periode Oktober: 6 dari 53 baris
+            // mengenai GURU LAIN (baris Widiyanti slip#53 men-generate
+            // Miqdad Muhammad tp#53) dan 47 baris 404 senyap karena id slip
+            // 44..104 melewati id guru yang hanya sampai 57.
+            'tenaga_pendidik_id'     => $pg->tenaga_pendidik_id,
             'nama'                   => $guru->user->name,
             'foto'                   => $guru->user->foto ? asset('storage/'.$guru->user->foto) : null,
             'jabatan'                => $guru->jabatan?->nama_jabatan ?? '—',
