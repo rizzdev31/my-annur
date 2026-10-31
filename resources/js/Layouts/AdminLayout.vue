@@ -100,7 +100,7 @@
                 </template>
 
                 <!-- ══ SMART PAYROLL ════════════════════════════════════════ -->
-                <SidebarSection v-if="sidebarOpen && boleh('absensi','monitoring','kinerja','tugas_jabatan','tugas_tambahan','absensi_kegiatan','lembur','pengajuan_izin','gaji_periode','gaji_data','gaji_laporan','kalender_libur','buku_tamu')" label="Smart Payroll" />
+                <SidebarSection v-if="sidebarOpen && boleh('absensi','monitoring','kinerja','tugas_jabatan','tugas_tambahan','absensi_kegiatan','lembur','pengajuan_izin','gaji_periode','gaji_data','laporan_ringkasan','laporan_kehadiran','laporan_mengajar','laporan_pengganti','laporan_absensi','laporan_penggajian','laporan_vakasi','laporan_guru','kalender_libur','buku_tamu')" label="Smart Payroll" />
 
                 <!-- 1. Absensi -->
                 <SidebarGroup v-if="boleh('absensi')" icon="clock" label="Absensi" :active="isActive('admin.smart-payroll.absensi')"
