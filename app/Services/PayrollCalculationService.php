@@ -356,6 +356,21 @@ class PayrollCalculationService
                 ->lockForUpdate()
                 ->first();
 
+            // PAGAR TERAKHIR: slip yang sudah difinalisasi/dibayar tidak boleh
+            // ditimpa. Sebelum ini tidak ada pagar APA PUN di sini, dan
+            // generate() hanya menolak bila STATUS PERIODE 'dibayar' — padahal
+            // periode September 2026 masih 'draft' sementara 51 slipnya sudah
+            // difinalisasi senilai Rp 57.279.000. Satu klik Generate di layar
+            // September akan menghitung ulang seluruhnya dengan nominal gaji
+            // pokok hari ini. Dipasang di titik tulis supaya tidak ada pemanggil
+            // yang bisa melewatinya, termasuk skrip.
+            if ($penggajian && ($penggajian->difinalisasi_oleh || $penggajian->dibayar_pada)) {
+                throw new \DomainException(
+                    'Slip sudah ' . ($penggajian->dibayar_pada ? 'dibayar' : 'difinalisasi')
+                    . ', tidak bisa di-generate ulang. Buka finalisasinya dulu bila memang perlu diperbaiki.'
+                );
+            }
+
             $payload = array_merge($data, [
                 'status'  => 'draft',
                 'catatan' => !empty($errors)

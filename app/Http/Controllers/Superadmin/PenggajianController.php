@@ -213,6 +213,14 @@ class PenggajianController extends Controller
         $gagal  = [];
         $peringatan = [];
 
+        // Slip yang sudah difinalisasi/dibayar DILEWATI dengan laporan, bukan
+        // dicoba lalu gagal: uang yang sudah keluar bukan kegagalan teknis.
+        // Pagar kerasnya ada di PayrollCalculationService (titik tulis), ini
+        // supaya pesannya jujur dan tidak terbaca seperti error.
+        $dilewatiFinal = Penggajian::where('periode_penggajian_id', $periode->id)
+            ->where(fn ($q) => $q->whereNotNull('difinalisasi_oleh')->orWhereNotNull('dibayar_pada'))
+            ->pluck('tenaga_pendidik_id')->all();
+
         // Koreksi manual dibaca SEBELUM generate. hitung() menulis seluruh slip
         // dari nol (termasuk catatan => null), jadi tanpa ini satu klik Generate
         // melenyapkan override yang diinput tangan tanpa jejak — persis yang
@@ -222,6 +230,8 @@ class PenggajianController extends Controller
         $dipertahankan = [];
 
         foreach ($guruAktif as $guru) {
+            if (in_array($guru->id, $dilewatiFinal, true)) continue;
+
             try {
                 $hasil = $this->payrollService->hitung($guru, $periode, dryRun: false);
 
@@ -258,7 +268,13 @@ class PenggajianController extends Controller
         }
 
         // Build pesan hasil
-        $pesan = "Generate selesai: {$sukses} dari {$guruAktif->count()} guru berhasil.";
+        $dicoba = $guruAktif->count() - count($dilewatiFinal);
+        $pesan = "Generate selesai: {$sukses} dari {$dicoba} guru berhasil.";
+
+        if ($dilewatiFinal) {
+            $pesan .= ' ' . count($dilewatiFinal)
+                . ' slip dilewati karena sudah difinalisasi/dibayar.';
+        }
         $tipe  = 'success';
 
         if (!empty($gagal)) {
@@ -291,6 +307,15 @@ class PenggajianController extends Controller
     {
         if ($periode->status === 'dibayar') {
             return back()->with('error', 'Periode sudah dikunci.');
+        }
+
+        $slipAda = Penggajian::where('periode_penggajian_id', $periode->id)
+            ->where('tenaga_pendidik_id', $guru->id)->first();
+
+        if ($slipAda && ($slipAda->difinalisasi_oleh || $slipAda->dibayar_pada)) {
+            return back()->with('error', "Slip {$guru->user->name} sudah "
+                . ($slipAda->dibayar_pada ? 'dibayar' : 'difinalisasi')
+                . ', tidak bisa di-generate ulang. Buka finalisasinya dulu bila perlu diperbaiki.');
         }
 
         try {
