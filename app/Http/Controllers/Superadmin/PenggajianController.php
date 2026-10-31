@@ -221,6 +221,20 @@ class PenggajianController extends Controller
             ->where(fn ($q) => $q->whereNotNull('difinalisasi_oleh')->orWhereNotNull('dibayar_pada'))
             ->pluck('tenaga_pendidik_id')->all();
 
+        // Celah KEDUA: pagar di atas menjaga slip final yang SUDAH ada, tapi
+        // tidak menahan slip BARU diterbitkan di bulan yang sudah final.
+        // Terukur: Generate di September 2026 (51 slip final) menerbitkan 2
+        // slip baru untuk guru yang masuk belakangan dan menambah
+        // Rp 883.000 pada bulan yang gajinya sudah dibagikan.
+        // Bila periodenya sudah punya slip final, Generate massal hanya boleh
+        // menghitung ulang yang sudah ada. Guru yang benar-benar terlewat tetap
+        // bisa diterbitkan satu per satu lewat tombol per baris — di situ admin
+        // memutuskannya secara sadar.
+        $punyaSlip = Penggajian::where('periode_penggajian_id', $periode->id)
+            ->pluck('tenaga_pendidik_id')->all();
+        $adaYangFinal = count($dilewatiFinal) > 0;
+        $tanpaSlip = [];
+
         // Koreksi manual dibaca SEBELUM generate. hitung() menulis seluruh slip
         // dari nol (termasuk catatan => null), jadi tanpa ini satu klik Generate
         // melenyapkan override yang diinput tangan tanpa jejak — persis yang
@@ -231,6 +245,11 @@ class PenggajianController extends Controller
 
         foreach ($guruAktif as $guru) {
             if (in_array($guru->id, $dilewatiFinal, true)) continue;
+
+            if ($adaYangFinal && !in_array($guru->id, $punyaSlip, true)) {
+                $tanpaSlip[] = $guru->user->name;
+                continue;
+            }
 
             try {
                 $hasil = $this->payrollService->hitung($guru, $periode, dryRun: false);
@@ -268,12 +287,18 @@ class PenggajianController extends Controller
         }
 
         // Build pesan hasil
-        $dicoba = $guruAktif->count() - count($dilewatiFinal);
+        $dicoba = $guruAktif->count() - count($dilewatiFinal) - count($tanpaSlip);
         $pesan = "Generate selesai: {$sukses} dari {$dicoba} guru berhasil.";
 
         if ($dilewatiFinal) {
             $pesan .= ' ' . count($dilewatiFinal)
                 . ' slip dilewati karena sudah difinalisasi/dibayar.';
+        }
+
+        if ($tanpaSlip) {
+            $pesan .= ' ' . count($tanpaSlip) . ' guru belum berslip di periode ini TIDAK diterbitkan'
+                . ' karena periodenya sudah difinalisasi (' . implode(', ', $tanpaSlip)
+                . ') — terbitkan satu per satu bila memang berhak.';
         }
         $tipe  = 'success';
 
