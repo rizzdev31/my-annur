@@ -31,7 +31,7 @@
             <p class="text-xs text-gray-400 mb-1">
                 <strong>Paten</strong>: harinya tetap dan terbit otomatis tiap pekan — guru tidak perlu
                 (dan tidak bisa) mengajukan. <strong>Pengajuan</strong>: guru memilih sendiri Jumat atau
-                Sabtu, satu hari per pekan, lewat Pengajuan Izin.
+                Ahad, satu hari per pekan, lewat Pengajuan Izin.
             </p>
             <p class="text-[11px] text-amber-600 mb-3">
                 Libur mengurangi hari kerja, jadi perubahan di sini ikut memengaruhi gaji periode
@@ -74,7 +74,7 @@
                         <option v-for="(h, i) in namaHari" :key="i" :value="i + 1">{{ h }}</option>
                     </select>
                     <span v-else-if="modeForm[g.id].mode === 'pengajuan'" class="text-[11px] text-gray-400">
-                        Jumat atau Sabtu, dipilih guru
+                        Jumat atau Ahad, dipilih guru
                     </span>
                 </div>
                 <div v-if="!modeTersaring.length" class="px-3 py-6 text-center text-xs text-gray-400">

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
  * LIBUR PEKANAN GURU ASRAMA — diajukan sendiri lewat Pengajuan Izin.
  *
  * Guru asrama bekerja Senin–Ahad dan liburnya dipilih sendiri antara Jumat
- * atau Sabtu, satu hari per pekan. Mekanisme liburnya sudah ada
+ * atau Ahad, satu hari per pekan. Mekanisme liburnya sudah ada
  * (`libur_tendik`, dihormati auto-alfa, kinerja, payroll dan kegiatan piket),
  * yang belum ada adalah PENGAJUAN dari sisi guru: selama ini hanya admin yang
  * bisa menetapkannya, dan hasilnya terukur 1 Nov 2026 hanya 4 dari 15 guru
@@ -75,14 +75,14 @@ return new class extends Migration
 
         // ── Jenis pengajuannya ───────────────────────────────────────────────
         // Langsung disetujui (keputusan pengguna: paling simpel), dibatasi satu
-        // hari per pekan dan hanya Jumat/Sabtu. Tidak memotong gaji dan tanpa
+        // hari per pekan dan hanya Jumat/Ahad. Tidak memotong gaji dan tanpa
         // kuota tahunan — ini hak libur pekanan, bukan izin meninggalkan kerja.
         $ada = DB::table('setting_jenis_pengajuan')->where('kode', 'LIBUR_ASRAMA')->first();
         $isi = [
             'nama'                          => 'Libur Pekanan Asrama',
             'kode'                          => 'LIBUR_ASRAMA',
             'kategori'                      => 'izin',
-            'deskripsi'                     => 'Libur pekanan guru asrama — pilih Jumat atau Sabtu, '
+            'deskripsi'                     => 'Libur pekanan guru asrama — pilih Jumat atau Ahad, '
                 . 'satu hari per pekan. Hari itu menjadi libur: tidak perlu absen, '
                 . 'pembelajarannya netral, dan kinerja tidak terpengaruh.',
             'max_hari_per_pengajuan'        => 1,
@@ -95,7 +95,7 @@ return new class extends Migration
             'update_status_kepegawaian'     => false,
             'buat_tugas_tambahan'           => false,
             'jadi_libur_tendik'             => true,
-            'hari_diizinkan'                => json_encode([5, 6]),   // Jumat, Sabtu
+            'hari_diizinkan'                => json_encode([5, 7]),   // Jumat, Ahad
             'maks_per_pekan'                => 1,
             'is_aktif'                      => true,
             'updated_at'                    => now(),

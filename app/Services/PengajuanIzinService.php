@@ -487,8 +487,9 @@ class PengajuanIzinService
      * Pagar libur pekanan guru asrama.
      *
      * Semua angkanya dibaca dari setting jenis (hari_diizinkan, maks_per_pekan),
-     * bukan ditanam di sini, supaya mengubah kebijakan "Jumat atau Sabtu"
-     * menjadi mis. "Ahad" tidak perlu menyentuh kode.
+     * bukan ditanam di sini. Terbukti berguna: kebijakannya berubah dari
+     * "Jumat atau Sabtu" menjadi "Jumat atau Ahad" dan cukup mengubah datanya,
+     * tanpa menyentuh kode maupun deploy.
      */
     private function validasiLiburPekanan(
         TenagaPendidik $guru,
@@ -536,14 +537,16 @@ class PengajuanIzinService
 
         $hariDiizinkan = $jenis->hari_diizinkan ?: [];
         if ($hariDiizinkan && !in_array($mulai->dayOfWeekIso, array_map('intval', $hariDiizinkan), true)) {
+            // Nama harinya dari TimezoneHelper, bukan dari locale Carbon:
+            // locale id merender Ahad sebagai "Minggu", sementara layar admin
+            // dan seluruh sistem memakai "Ahad".
             $nama = collect($hariDiizinkan)
-                ->map(fn ($h) => Carbon::now()->startOfWeek()->addDays((int) $h - 1)
-                    ->locale('id')->isoFormat('dddd'))
+                ->map(fn ($h) => \App\Services\TimezoneHelper::namaHariIso((int) $h))
                 ->implode(' atau ');
 
             throw new \InvalidArgumentException(
                 "Libur pekanan hanya boleh pada hari {$nama}. Tanggal yang dipilih hari "
-                . $mulai->locale('id')->isoFormat('dddd') . '.'
+                . \App\Services\TimezoneHelper::namaHariIso($mulai->dayOfWeekIso) . '.'
             );
         }
 
@@ -555,9 +558,11 @@ class PengajuanIzinService
             );
         }
 
-        // Satu per pekan. Pekannya dihitung Senin–Ahad (ISO), supaya Jumat dan
-        // Sabtu selalu berada di pekan yang sama — kalau pekannya dimulai Ahad,
-        // Sabtu akan terhitung pekan berikutnya dan jatah jadi dua.
+        // Satu per pekan. Pekannya dihitung Senin–Ahad (ISO), jadi Jumat dan
+        // Ahad pada pekan yang sama memakai jatah yang SAMA — guru yang sudah
+        // libur Jumat 6 Nov tidak bisa menambah Ahad 8 Nov; pilihan berikutnya
+        // Jumat 13 atau Ahad 15. Kalau pekannya dihitung mulai Ahad, Ahad 8 Nov
+        // akan terbaca pekan berikutnya dan jatahnya jadi dua hari berdekatan.
         $maks = (int) ($jenis->maks_per_pekan ?? 0);
         if ($maks > 0) {
             $awalPekan  = $mulai->copy()->startOfWeek(Carbon::MONDAY);

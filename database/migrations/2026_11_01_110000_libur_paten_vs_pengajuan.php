@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
  *    tidak berubah; kalau sesekali perlu bergeser, admin memakai tukar/pindah
  *    di layar Libur Individu.
  *  • LIBUR PENGAJUAN — fleksibel, dipilih sendiri tiap pekan antara Jumat atau
- *    Sabtu lewat Pengajuan Izin.
+ *    Ahad lewat Pengajuan Izin.
  *
  * Karena itu `boleh_libur_pekanan` saja tidak cukup: ia hanya menjawab "berhak
  * atau tidak", bukan "lewat jalur mana". `hari_libur_paten` mengisi kekurangan

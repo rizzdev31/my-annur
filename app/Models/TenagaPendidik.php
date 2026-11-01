@@ -38,7 +38,7 @@ class TenagaPendidik extends Model
         'no_rekening', 'nama_bank', 'nama_rekening',
         'jenis_guru', 'is_aktif',
         'is_mukim',                 // guru mukim asrama → punya libur individu rolling
-        // Penanda EKSPLISIT hak libur pekanan (Jumat/Sabtu, 1x/pekan). Tidak
+        // Penanda EKSPLISIT hak libur pekanan (Jumat/Ahad, 1x/pekan). Tidak
         // diturunkan dari is_mukim atau setting jam kerja: terukur keduanya
         // melewatkan orang (lihat migration 2026_11_01_090000).
         'boleh_libur_pekanan',
@@ -137,8 +137,7 @@ class TenagaPendidik extends Model
     {
         if (! $this->hari_libur_paten) return null;
 
-        return \Carbon\Carbon::now()->startOfWeek(\Carbon\Carbon::MONDAY)
-            ->addDays((int) $this->hari_libur_paten - 1)->locale('id')->isoFormat('dddd');
+        return \App\Services\TimezoneHelper::namaHariIso((int) $this->hari_libur_paten);
     }
 
     public function scopeMukim($query)

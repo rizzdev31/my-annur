@@ -160,4 +160,21 @@ class TimezoneHelper
         \Log::error('[JADWAL] Tidak ada setting jam kerja yang bisa di-resolve', compact('namaHari'));
         return null;
     }
+    /**
+     * Nama hari dari nomor ISO (1=Senin … 7=Ahad), memakai konvensi pesantren:
+     * hari ketujuh disebut **Ahad**, bukan "Minggu".
+     *
+     * Sengaja tidak memakai Carbon->locale('id')->isoFormat('dddd'): locale id
+     * merender Sunday sebagai "Minggu", sementara seluruh sistem ini memakai
+     * 'ahad' (lihat peta namaHariDB dan LiburTendikController::HARI). Dua
+     * istilah untuk hari yang sama membuat pesan ke guru tidak cocok dengan
+     * pilihan di layar admin.
+     */
+    public static function namaHariIso(int $iso): string
+    {
+        return [
+            1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis',
+            5 => 'Jumat', 6 => 'Sabtu', 7 => 'Ahad',
+        ][$iso] ?? '-';
+    }
 }
