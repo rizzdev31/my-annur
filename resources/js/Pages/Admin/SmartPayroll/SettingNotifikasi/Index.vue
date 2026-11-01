@@ -1,4 +1,50 @@
 <template>
+
+    <!-- Status penerimaan push di HP guru.
+         Sakelar "push" di bawah hanya menentukan APAKAH DIKIRIM; sampai atau
+         tidak bergantung pada guru yang mengizinkan notifikasi di HP-nya.
+         Keduanya ditampilkan berdampingan supaya tidak disimpulkan salah. -->
+    <div class="bg-white rounded-2xl border border-gray-200 p-5 mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+            <h3 class="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <span class="text-amber-500">📱</span> Penerimaan Notifikasi di HP
+            </h3>
+            <span class="text-xs font-semibold"
+                :class="statusPush.belum ? 'text-amber-600' : 'text-emerald-600'">
+                {{ statusPush.aktif }} dari {{ statusPush.total }} guru aktif
+            </span>
+        </div>
+        <p class="text-xs text-gray-400 mb-3">
+            Sakelar <strong>Push</strong> di bawah menentukan apakah notifikasi DIKIRIM.
+            Sampai atau tidak bergantung pada guru yang mengizinkan notifikasi di HP-nya —
+            keduanya harus menyala.
+        </p>
+
+        <div v-if="!statusPush.siap_server"
+            class="mb-3 px-3 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+            <strong>VAPID belum terpasang di server.</strong> Selama ini kosong, push tidak akan
+            terkirim sama sekali, seberapa pun banyak guru yang berlangganan.
+        </div>
+
+        <div v-if="statusPush.belum"
+            class="mb-3 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+            <strong>{{ statusPush.belum }} guru belum mengaktifkan notifikasi</strong> — notifikasi
+            apa pun tidak akan muncul di HP mereka. Mereka perlu membuka PWA lalu menekan
+            “Aktifkan sekarang” pada spanduk di beranda (di iPhone, pasang dulu ke Layar Utama).
+        </div>
+
+        <div class="max-h-64 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-100">
+            <div v-for="g in statusPush.guru" :key="g.id"
+                class="flex items-center gap-2 px-3 py-2 text-xs">
+                <span :class="['w-2 h-2 rounded-full shrink-0', g.aktif ? 'bg-emerald-500' : 'bg-amber-400']"></span>
+                <span class="flex-1 truncate text-gray-700">{{ g.nama }}</span>
+                <span v-if="g.aktif" class="text-gray-400 tabular-nums">
+                    {{ g.perangkat }} perangkat<span v-if="g.terakhir"> · {{ g.terakhir }}</span>
+                </span>
+                <span v-else class="text-amber-600 font-semibold">belum aktif</span>
+            </div>
+        </div>
+    </div>
     <AdminLayout title="Setting Notifikasi" subtitle="Pengaturan">
         <Head title="Setting Notifikasi" />
 
@@ -130,6 +176,7 @@ import { Head, router, useForm } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
 const props = defineProps({
+    statusPush: { type: Object, default: () => ({ total: 0, aktif: 0, belum: 0, guru: [], siap_server: true }) },
     grup: { type: Object, default: () => ({}) },
     jabatan: { type: Array, default: () => [] },
     guru: { type: Array, default: () => [] },

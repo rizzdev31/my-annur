@@ -32,7 +32,13 @@ class SettingNotifikasiController extends Controller
             ->groupBy('kategori');
 
         return Inertia::render('Admin/SmartPayroll/SettingNotifikasi/Index', [
-            'grup'    => $grup,
+            'grup'      => $grup,
+            // Siapa yang HP-nya benar-benar bisa menerima push. Tanpa ini tidak
+            // ada cara mengetahuinya dari layar: terukur 1 Nov 2026 hanya 17
+            // dari 50 guru berlangganan, sementara sakelar push di layar ini
+            // tampak menyala — jadi admin wajar menyimpulkan notifikasinya
+            // sudah sampai ke semua orang.
+            'statusPush' => $this->statusPush(),
             'jabatan' => Jabatan::where('is_aktif', true)->get(['id', 'nama_jabatan'])
                 ->map(fn ($j) => ['id' => $j->id, 'nama' => $j->nama_jabatan]),
             'guru'    => TenagaPendidik::where('is_aktif', true)->with(['user', 'jabatan'])->get()
@@ -43,6 +49,49 @@ class SettingNotifikasiController extends Controller
                     'jabatan' => $g->jabatan?->nama_jabatan ?? '—',
                 ])->values(),
         ]);
+    }
+
+    /**
+     * Status langganan Web Push per guru aktif.
+     *
+     * Sakelar "push" pada setiap event hanya menentukan APAKAH DIKIRIM; sampai
+     * atau tidak bergantung pada guru yang mengizinkan notifikasi di HP-nya.
+     * Keduanya harus terlihat berdampingan, kalau tidak kesimpulan adminnya
+     * salah.
+     */
+    private function statusPush(): array
+    {
+        $langganan = \App\Models\PushSubscription::selectRaw(
+            'user_id, COUNT(*) jml, MAX(terakhir_dipakai) terakhir')
+            ->groupBy('user_id')->get()->keyBy('user_id');
+
+        $guru = TenagaPendidik::where('is_aktif', true)->with('user')->get()
+            ->filter(fn ($g) => $g->user)
+            ->map(function ($g) use ($langganan) {
+                $l = $langganan->get($g->user_id);
+
+                return [
+                    'id'       => $g->id,
+                    'nama'     => $g->user->name,
+                    'aktif'    => $l !== null,
+                    'perangkat'=> (int) ($l->jml ?? 0),
+                    'terakhir' => $l?->terakhir
+                        ? \Carbon\Carbon::parse($l->terakhir)->locale('id')->isoFormat('D MMM, HH:mm')
+                        : null,
+                ];
+            })
+            ->sortBy([['aktif', 'asc'], ['nama', 'asc']])
+            ->values();
+
+        return [
+            'total'  => $guru->count(),
+            'aktif'  => $guru->where('aktif', true)->count(),
+            'belum'  => $guru->where('aktif', false)->count(),
+            'guru'   => $guru->all(),
+            // VAPID tidak terpasang → push TIDAK AKAN terkirim sama sekali,
+            // seberapa pun banyak yang berlangganan.
+            'siap_server' => filled(config('webpush.vapid.public_key') ?? env('VAPID_PUBLIC_KEY')),
+        ];
     }
 
     public function update(Request $request, SettingNotifikasi $setting)

@@ -5,10 +5,23 @@ import api from '../api'
 import { tanggalLokal } from '../tanggal'
 import { auth } from '../store/auth'
 import { ui } from '../store/ui'
+import { push, cekPush, aktifkanPush } from '../push'
 
 const data = ref(null)
 const loading = ref(true)
 const error = ref('')
+
+// Status notifikasi dibaca saat beranda dibuka. cekPush() TIDAK memicu prompt
+// izin (lihat push.js) — izin hanya diminta saat tombol ditekan, karena bila
+// ditolak sekali peramban tidak akan pernah bertanya lagi.
+onMounted(cekPush)
+
+// Terukur 1 Nov 2026: hanya 17 dari 50 guru berlangganan push. Penyebabnya
+// tombol pengaktifnya HANYA ada di halaman /notifikasi — guru harus sengaja
+// membukanya, dan tidak ada apa pun yang memberi tahu bahwa notifikasinya
+// belum aktif. Spanduk ini yang memberi tahu, di halaman yang pasti dibuka.
+const perluAktifkanNotif = computed(() =>
+    push.didukung && !push.aktif && push.izin !== 'denied' && !push.perluHomeScreen)
 
 // Akses cepat — fitur tersering. Selebihnya di drawer "Semua Menu".
 const quick = [
@@ -171,6 +184,56 @@ onMounted(load)
     </div>
 
     <div v-else class="space-y-4 anim-in">
+        <!-- ══ Notifikasi HP belum aktif ══
+             Sengaja tidak bisa ditutup: kalau bisa, ia akan ditutup sekali lalu
+             notifikasinya tidak pernah aktif. Hilang sendiri begitu aktif. -->
+        <section v-if="perluAktifkanNotif"
+            class="rounded-2xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
+            <span class="text-xl leading-none">🔔</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-bold text-amber-900">Notifikasi HP belum aktif</p>
+                <p class="text-xs text-amber-700 mt-0.5">
+                    Pengingat absen, penunjukan guru pengganti, dan keputusan izin tidak akan
+                    muncul di HP Anda sampai ini diaktifkan.
+                </p>
+                <button @click="aktifkanPush" :disabled="push.sibuk"
+                    class="mt-2.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold active:scale-95 transition">
+                    {{ push.sibuk ? 'Mengaktifkan…' : 'Aktifkan sekarang' }}
+                </button>
+                <p v-if="push.pesan" class="text-[11px] text-amber-700 mt-1.5">{{ push.pesan }}</p>
+            </div>
+        </section>
+
+        <!-- iOS: push baru bisa setelah dipasang ke Layar Utama, jadi yang
+             ditampilkan panduannya — bukan tombol yang pasti gagal. -->
+        <section v-else-if="push.perluHomeScreen && !push.aktif"
+            class="rounded-2xl bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
+            <span class="text-xl leading-none">📲</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-bold text-blue-900">Pasang dulu ke Layar Utama</p>
+                <p class="text-xs text-blue-700 mt-0.5">
+                    Di iPhone, notifikasi hanya bisa aktif setelah aplikasi ini dipasang ke Layar
+                    Utama. Tekan tombol <strong>Bagikan</strong> di Safari →
+                    <strong>Tambahkan ke Layar Utama</strong>, lalu buka dari ikonnya.
+                </p>
+            </div>
+        </section>
+
+        <!-- Izin pernah DITOLAK: peramban tidak akan bertanya lagi, jadi
+             satu-satunya jalan lewat setelan peramban. -->
+        <section v-else-if="push.didukung && push.izin === 'denied' && !push.aktif"
+            class="rounded-2xl bg-rose-50 border border-rose-200 p-4 flex items-start gap-3">
+            <span class="text-xl leading-none">🔕</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-bold text-rose-900">Notifikasi diblokir</p>
+                <p class="text-xs text-rose-700 mt-0.5">
+                    Izin notifikasi pernah ditolak, sehingga peramban tidak akan menanyakannya
+                    lagi. Buka setelan situs di peramban Anda, izinkan Notifikasi untuk
+                    myannur.id, lalu muat ulang halaman ini.
+                </p>
+            </div>
+        </section>
+
         <!-- ══ HERO: salam + absensi jadi satu ══ -->
         <section
             class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#06346B] via-[#0A4C9E] to-[#0C78FF] text-white p-5 shadow-lg shadow-blue-900/20">
