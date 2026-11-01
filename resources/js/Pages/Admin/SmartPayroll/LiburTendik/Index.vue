@@ -17,6 +17,78 @@
 
         <!-- Kelola Guru Mukim (tandai grup) -->
         <div class="bg-white border border-gray-200 rounded-2xl p-5 mb-5">
+        <!-- MODE LIBUR ASRAMA per guru -->
+        <div class="bg-white rounded-2xl border border-gray-200 p-5 mb-4">
+            <div class="flex items-center justify-between mb-1">
+                <h3 class="text-sm font-bold text-gray-800 flex items-center gap-2">
+                    <span class="text-emerald-500">🗓️</span> Mode Libur Asrama
+                </h3>
+                <button @click="simpanMode" :disabled="modeKirim"
+                    class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
+                    {{ modeKirim ? 'Menyimpan…' : 'Simpan Mode' }}
+                </button>
+            </div>
+            <p class="text-xs text-gray-400 mb-1">
+                <strong>Paten</strong>: harinya tetap dan terbit otomatis tiap pekan — guru tidak perlu
+                (dan tidak bisa) mengajukan. <strong>Pengajuan</strong>: guru memilih sendiri Jumat atau
+                Sabtu, satu hari per pekan, lewat Pengajuan Izin.
+            </p>
+            <p class="text-[11px] text-amber-600 mb-3">
+                Libur mengurangi hari kerja, jadi perubahan di sini ikut memengaruhi gaji periode
+                berjalan. Berlaku mulai periode November 2026; tanggal sebelumnya tidak bisa diajukan.
+            </p>
+
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                <input v-model="cariMode" placeholder="Cari guru…"
+                    class="px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-emerald-500" />
+                <span class="text-[11px] text-gray-500">
+                    paten {{ jumlahMode.paten }} · pengajuan {{ jumlahMode.pengajuan }} ·
+                    tidak berhak {{ jumlahMode.tidak }}
+                </span>
+            </div>
+
+            <div class="max-h-80 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-100">
+                <div v-for="g in modeTersaring" :key="g.id"
+                    class="flex flex-wrap items-center gap-2 px-3 py-2.5">
+                    <p class="flex-1 min-w-[180px] text-sm text-gray-800 truncate">
+                        {{ g.nama }}
+                        <span class="text-[10px] text-gray-400">({{ g.jenis_guru }})</span>
+                    </p>
+
+                    <select v-model="modeForm[g.id].mode"
+                        class="px-2.5 py-1.5 rounded-xl border text-xs outline-none focus:border-emerald-500"
+                        :class="modeForm[g.id].mode === 'paten' ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                            : (modeForm[g.id].mode === 'pengajuan' ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                            : 'border-gray-200 text-gray-500')">
+                        <option value="tidak">Tidak berhak</option>
+                        <option value="paten">Libur paten</option>
+                        <option value="pengajuan">Lewat pengajuan</option>
+                    </select>
+
+                    <!-- Hari hanya bermakna untuk paten; untuk pengajuan harinya
+                         dipilih guru tiap pekan. -->
+                    <select v-if="modeForm[g.id].mode === 'paten'" v-model.number="modeForm[g.id].hari"
+                        class="px-2.5 py-1.5 rounded-xl border text-xs outline-none focus:border-emerald-500"
+                        :class="modeForm[g.id].hari ? 'border-gray-200 text-gray-700' : 'border-rose-300 bg-rose-50 text-rose-600'">
+                        <option :value="null">— pilih hari —</option>
+                        <option v-for="(h, i) in namaHari" :key="i" :value="i + 1">{{ h }}</option>
+                    </select>
+                    <span v-else-if="modeForm[g.id].mode === 'pengajuan'" class="text-[11px] text-gray-400">
+                        Jumat atau Sabtu, dipilih guru
+                    </span>
+                </div>
+                <div v-if="!modeTersaring.length" class="px-3 py-6 text-center text-xs text-gray-400">
+                    Tidak ada guru yang cocok.
+                </div>
+            </div>
+
+            <p v-if="patenTanpaHari.length" class="mt-2 text-[11px] text-rose-600">
+                {{ patenTanpaHari.length }} guru bermode paten belum dipilih harinya
+                ({{ patenTanpaHari.join(', ') }}) — tanpa hari, liburnya tidak akan pernah terbit
+                dan ia juga tidak boleh mengajukan.
+            </p>
+        </div>
+
             <div class="flex items-center justify-between mb-1">
                 <h3 class="text-sm font-bold text-gray-800 flex items-center gap-2">
                     <span class="text-indigo-500">👥</span> Kelola Guru Mukim
@@ -233,6 +305,48 @@ const bulanOpsi = [
 ]
 
 const kelolaIds = ref(props.semuaGuru.filter(g => g.is_mukim).map(g => g.id))
+
+// ── Mode libur asrama ───────────────────────────────────────────────────────
+const namaHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Ahad']
+const cariMode = ref('')
+const modeKirim = ref(false)
+
+// Satu baris per guru, disalin dari payload supaya pilihan yang belum disimpan
+// tidak hilang saat panel lain dipakai.
+const modeForm = reactive(Object.fromEntries(
+    props.semuaGuru.map(g => [g.id, { mode: g.mode ?? 'tidak', hari: g.hari_libur_paten ?? null }])
+))
+
+const modeTersaring = computed(() => {
+    const q = cariMode.value.trim().toLowerCase()
+    return q ? props.semuaGuru.filter(g => g.nama.toLowerCase().includes(q)) : props.semuaGuru
+})
+
+const jumlahMode = computed(() => {
+    const h = { tidak: 0, paten: 0, pengajuan: 0 }
+    Object.values(modeForm).forEach(m => { h[m.mode] = (h[m.mode] ?? 0) + 1 })
+    return h
+})
+
+// Paten tanpa hari = guru tanpa libur sama sekali: liburnya tidak akan terbit
+// dan ia juga tidak boleh mengajukan. Diperingatkan sebelum disimpan.
+const patenTanpaHari = computed(() => props.semuaGuru
+    .filter(g => modeForm[g.id].mode === 'paten' && !modeForm[g.id].hari)
+    .map(g => g.nama))
+
+function simpanMode() {
+    modeKirim.value = true
+    router.post(r('mode-libur'), {
+        guru: props.semuaGuru.map(g => ({
+            id: g.id,
+            mode: modeForm[g.id].mode,
+            hari: modeForm[g.id].mode === 'paten' ? modeForm[g.id].hari : null,
+        })),
+    }, {
+        preserveScroll: true,
+        onFinish: () => { modeKirim.value = false },
+    })
+}
 
 const gen = reactive({
     bulan: new Date().getMonth() + 1,

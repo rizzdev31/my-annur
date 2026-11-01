@@ -26,7 +26,12 @@ class LiburTendikController extends Controller
     {
         $tahun = (int) ($request->tahun ?? now()->year);
 
-        $guruMukim = TenagaPendidik::mukim()->where('is_aktif', true)
+        // Daftar kiri: siapa pun yang punya libur asrama — penerima hak libur
+        // pekanan ATAU penanda mukim lama. Dulu hanya `mukim()`, sehingga guru
+        // yang berhak libur tapi tidak ditandai mukim tidak pernah muncul di
+        // pengelolaan liburnya.
+        $guruMukim = TenagaPendidik::where('is_aktif', true)
+            ->where(fn ($q) => $q->where('is_mukim', true)->orWhere('boleh_libur_pekanan', true))
             ->with(['user:id,name', 'jamKerja:id,nama'])
             ->get()
             ->map(fn($g) => [
@@ -34,6 +39,8 @@ class LiburTendikController extends Controller
                 'nama'      => $g->user?->name ?? '—',
                 'nip'       => $g->nip,
                 'jam_kerja' => $g->jamKerjaAktif()?->nama ?? '—',
+                'mode'      => $g->modeLiburAsrama(),
+                'hari_paten'=> $g->namaHariLiburPaten(),
             ])->values();
 
         // Semua guru aktif (untuk "Kelola Guru Mukim" — tandai grup).
@@ -46,6 +53,9 @@ class LiburTendikController extends Controller
                 'nama'       => $g->user?->name ?? '—',
                 'jenis_guru' => $g->jenis_guru,
                 'is_mukim'   => (bool) $g->is_mukim,
+                // Mode libur asrama: 'tidak' | 'paten' | 'pengajuan'.
+                'mode'             => $g->modeLiburAsrama(),
+                'hari_libur_paten' => $g->hari_libur_paten,
             ])->values();
 
         $guruId = $request->guru_id ? (int) $request->guru_id : ($guruMukim->first()['id'] ?? null);
@@ -124,6 +134,64 @@ class LiburTendikController extends Controller
         });
 
         return back()->with('success', count($ids) . ' guru ditetapkan sebagai guru mukim (libur individu).');
+    }
+
+    /**
+     * Tetapkan MODE LIBUR ASRAMA per guru dalam satu kiriman.
+     *
+     *  'tidak'     → bukan penerima hak libur asrama.
+     *  'paten'     → harinya tetap (wajib menyertakan nomor hari ISO 1-7);
+     *                terbit otomatis oleh command libur:paten-generate.
+     *  'pengajuan' → fleksibel, diajukan sendiri tiap pekan.
+     *
+     * Hanya guru yang DIKIRIM yang diubah — bukan "kosongkan semua lalu set
+     * yang dicentang" seperti kelolaMukim. Pola menimpa-semua berbahaya di
+     * sini: satu penyimpanan dari layar yang datanya basi akan mencabut hak
+     * libur guru yang baru saja ditetapkan orang lain.
+     */
+    public function simpanModeLibur(Request $request)
+    {
+        $data = $request->validate([
+            'guru'               => 'required|array|min:1',
+            'guru.*.id'          => 'required|integer|exists:tenaga_pendidik,id',
+            'guru.*.mode'        => 'required|in:tidak,paten,pengajuan',
+            'guru.*.hari'        => 'nullable|integer|min:1|max:7',
+        ]);
+
+        $ubah = 0;
+        $tanpaHari = [];
+
+        DB::transaction(function () use ($data, &$ubah, &$tanpaHari) {
+            foreach ($data['guru'] as $baris) {
+                $guru = TenagaPendidik::find($baris['id']);
+                if (! $guru) continue;
+
+                $mode = $baris['mode'];
+                $hari = $baris['hari'] ?? null;
+
+                // Paten tanpa hari tidak bermakna: command tidak akan pernah
+                // menerbitkan liburnya, dan gurunya juga tidak boleh mengajukan
+                // — ia akan terjebak tanpa libur sama sekali.
+                if ($mode === 'paten' && ! $hari) {
+                    $tanpaHari[] = $guru->user?->name ?? ('Guru #' . $guru->id);
+                    continue;
+                }
+
+                $guru->update([
+                    'boleh_libur_pekanan' => $mode !== 'tidak',
+                    'hari_libur_paten'    => $mode === 'paten' ? (int) $hari : null,
+                ]);
+                $ubah++;
+            }
+        });
+
+        $pesan = "Mode libur {$ubah} guru disimpan.";
+        if ($tanpaHari) {
+            $pesan .= ' ' . count($tanpaHari) . ' dilewati karena mode paten tanpa hari ('
+                . implode(', ', $tanpaHari) . ').';
+        }
+
+        return back()->with($tanpaHari ? 'warning' : 'success', $pesan);
     }
 
     /**

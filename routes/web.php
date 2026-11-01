@@ -495,6 +495,9 @@ Route::prefix('admin')
             // ── 6b. LIBUR INDIVIDU TENAGA PENDIDIK (guru mukim) ───────────
             Route::post('libur-tendik/kelola-mukim',
                 [LiburTendikController::class, 'kelolaMukim'])->name('libur-tendik.kelola-mukim');
+            // Mode libur asrama per guru: tidak / paten (+hari) / pengajuan.
+            Route::post('libur-tendik/mode-libur',
+                [LiburTendikController::class, 'simpanModeLibur'])->name('libur-tendik.mode-libur');
             Route::post('libur-tendik/generate',
                 [LiburTendikController::class, 'generate'])->name('libur-tendik.generate');
             Route::post('libur-tendik/tukar',
