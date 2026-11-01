@@ -1,6 +1,6 @@
 // Service worker PWA guru: installable + shell cache ringan + Web Push.
 // Strategi: network-first untuk navigasi; jangan cache API (/api/*) agar data live.
-const CACHE = 'guru-shell-v3'
+const CACHE = 'guru-shell-v4'
 const SHELL = ['/guru', '/logo.png', '/guru-manifest.json']
 
 self.addEventListener('install', (e) => {
@@ -46,6 +46,8 @@ self.addEventListener('push', (e) => {
     try { d = e.data ? e.data.json() : {} } catch (_) { d = { pesan: e.data && e.data.text() } }
 
     const judul = d.judul || 'An-Nur Smart'
+    const penting = !!d.penting
+
     const opsi = {
         body: d.pesan || '',
         icon: '/guru-icon-192.png',
@@ -55,7 +57,26 @@ self.addEventListener('push', (e) => {
         tag: d.tag || 'annur',
         renotify: true,
         data: { route: d.route || '/notifikasi' },
-        vibrate: [100, 50, 100],
+
+        // SUARA TIDAK BISA DIPILIH web app. Notification API tidak punya opsi
+        // suara (properti `sound` pernah ada di draf lama, tak pernah
+        // diimplementasikan, lalu dihapus), dan nada panggilan HP memang khusus
+        // panggilan — bukan notifikasi. Yang menentukan bunyinya adalah SISTEM:
+        // di Android pengguna bisa menggantinya di Setelan → Aplikasi →
+        // (peramban/PWA) → Notifikasi; di iPhone nada notifikasi PWA tidak bisa
+        // diubah sama sekali. Jadi yang bisa kita kuasai hanya GETAR, apakah
+        // notifikasinya bertahan di layar, dan seberapa menonjol isinya.
+        vibrate: penting ? [200, 100, 200, 100, 200] : [100, 50, 100],
+
+        // Event wajib (pengingat absen, penunjukan pengganti, keputusan izin)
+        // bertahan di layar sampai ditutup pengguna. Tanpa ini notifikasinya
+        // lenyap sendiri setelah beberapa detik dan alert-nya tidak pernah
+        // diketahui. Diabaikan iOS, tapi tidak merusak apa pun di sana.
+        requireInteraction: penting,
+
+        // Waktu KEJADIAN, bukan waktu notifikasi tiba — penting bagi push yang
+        // tertunda karena HP sedang mati atau tanpa jaringan.
+        timestamp: d.waktu || Date.now(),
     }
 
     // waitUntil wajib — tanpa ini SW bisa dimatikan sebelum notifikasi tampil.

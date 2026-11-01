@@ -130,7 +130,17 @@ class NotifikasiService
         if ($push && $idPush) {
             \App\Jobs\KirimPushJob::dispatch(
                 array_values(array_unique($idPush)), $judul, $pesan,
-                ['route' => $data['route'] ?? '/notifikasi', 'tag' => $kode]
+                [
+                    'route' => $data['route'] ?? '/notifikasi',
+                    'tag'   => $kode,
+                    // Event WAJIB diperlakukan penting: notifikasinya bertahan
+                    // di layar sampai ditutup pengguna dan bergetar lebih
+                    // panjang. Tanpa ini pengingat absen hilang sendiri setelah
+                    // beberapa detik — guru yang sedang tidak memegang HP tidak
+                    // akan pernah tahu alert itu ada.
+                    'penting' => (bool) ($cfg->wajib ?? false),
+                    'waktu'   => now()->getTimestampMs(),
+                ]
             );
         }
 

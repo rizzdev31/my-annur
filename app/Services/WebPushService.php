@@ -65,6 +65,12 @@ class WebPushService
             'pesan' => $pesan,
             'route' => $data['route'] ?? '/notifikasi',
             'tag'   => $data['tag']   ?? null,
+            // Diteruskan ke service worker: 'penting' menahan notifikasi di
+            // layar sampai ditutup, 'waktu' membuat HP menampilkan waktu
+            // KEJADIANNYA, bukan waktu notifikasi itu tiba — keduanya tidak
+            // bisa ditebak service worker dari isi pesan.
+            'penting' => (bool) ($data['penting'] ?? false),
+            'waktu'   => $data['waktu'] ?? null,
         ], JSON_UNESCAPED_UNICODE);
 
         foreach ($langganan as $s) {
