@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import api from '../api'
 import { kompresFoto } from '../foto'
 import { tanggalLokal } from '../tanggal'
@@ -14,6 +14,62 @@ const saving = ref(false)
 const msg = ref(null)
 
 const form = ref({ setting_jenis_pengajuan_id: '', tanggal_mulai: '', tanggal_selesai: '', alasan: '', dokumen: null })
+
+// ── Libur pekanan asrama ────────────────────────────────────────────────────
+// Jenis ini satu hari, hanya pada hari tertentu (Jumat/Ahad), satu kali per
+// pekan. Tanpa penyesuaian, guru harus mengisi DUA kolom tanggal dengan nilai
+// yang sama, memilih hari yang benar dari kalender bebas, dan menulis alasan
+// 10 karakter untuk libur yang memang haknya — tiga cara gagal di percobaan
+// pertama. Jadi formulirnya diringkas jadi: pilih tanggal, kirim.
+const jenisTerpilih = computed(() =>
+    jenis.value.find(j => String(j.id) === String(form.value.setting_jenis_pengajuan_id)) ?? null)
+
+const modeLibur = computed(() => !!jenisTerpilih.value?.jadi_libur_tendik)
+
+const namaHari = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Ahad']
+
+/** Nomor hari ISO sebuah Date (1=Senin … 7=Ahad). */
+const isoHari = (d) => d.getDay() === 0 ? 7 : d.getDay()
+
+/**
+ * Tanggal yang boleh dipilih: hari yang diizinkan, dari hari ini sampai dua
+ * pekan ke depan, tidak lebih awal dari tanggal berlakunya jenis ini.
+ */
+const tanggalLibur = computed(() => {
+    const j = jenisTerpilih.value
+    if (!j?.jadi_libur_tendik) return []
+    const boleh = (j.hari_diizinkan ?? []).map(Number)
+    const batas = j.berlaku_mulai ? new Date(j.berlaku_mulai + 'T00:00:00') : null
+
+    const out = []
+    const d = new Date(); d.setHours(0, 0, 0, 0)
+    for (let i = 0; i < 21; i++) {
+        if (boleh.includes(isoHari(d)) && (!batas || d >= batas)) {
+            const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            out.push({
+                iso,
+                hari: namaHari[isoHari(d) - 1],
+                label: `${d.getDate()} ${['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][d.getMonth()]}`,
+            })
+        }
+        d.setDate(d.getDate() + 1)
+    }
+    return out
+})
+
+/** Satu klik mengisi kedua kolom tanggal: liburnya memang satu hari. */
+function pilihTanggalLibur(iso) {
+    form.value.tanggal_mulai = iso
+    form.value.tanggal_selesai = iso
+}
+
+// Ganti jenis → bersihkan pilihan tanggal supaya tidak terbawa dari jenis lain.
+watch(() => form.value.setting_jenis_pengajuan_id, () => {
+    form.value.tanggal_mulai = ''
+    form.value.tanggal_selesai = ''
+    form.value.dokumen = null
+    form.value.alasan = modeLibur.value ? 'Libur pekanan asrama' : ''
+})
 
 const statusClass = (s) => ({
     disetujui: 'text-emerald-600 bg-emerald-50',
@@ -38,7 +94,19 @@ async function pilihDokumen(e) { let f = e.target.files?.[0]; if (f) f = await k
 async function ajukan() {
     msg.value = null
     const f = form.value
-    if (!f.setting_jenis_pengajuan_id || !f.tanggal_mulai || !f.tanggal_selesai || f.alasan.trim().length < 10) {
+    if (!f.setting_jenis_pengajuan_id) {
+        msg.value = { ok: false, text: 'Pilih jenis pengajuan dulu.' }
+        return
+    }
+    if (modeLibur.value) {
+        // Libur pekanan: cukup tanggalnya. Alasan tidak diwajibkan panjang —
+        // ini hak libur rutin, bukan permintaan meninggalkan kerja.
+        if (!f.tanggal_mulai) {
+            msg.value = { ok: false, text: 'Pilih tanggal liburnya.' }
+            return
+        }
+        if (!f.alasan.trim()) f.alasan = 'Libur pekanan asrama'
+    } else if (!f.tanggal_mulai || !f.tanggal_selesai || f.alasan.trim().length < 10) {
         msg.value = { ok: false, text: 'Lengkapi jenis, tanggal, dan alasan (min. 10 karakter).' }
         return
     }
@@ -242,7 +310,35 @@ async function tunjukPengganti(sesi) {
                         <option v-for="j in jenis" :key="j.id" :value="j.id">{{ j.nama }}<span v-if="j.sisa_kuota != null"> (sisa {{ j.sisa_kuota }})</span></option>
                     </select>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
+                <!-- LIBUR PEKANAN: pilih tanggal dengan satu tombol. Kolom "Selesai"
+                     tidak ditampilkan karena liburnya satu hari, dan kalender bebas
+                     diganti daftar hari yang memang boleh. -->
+                <div v-if="modeLibur">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                        Pilih tanggal libur
+                        <span class="text-gray-400 font-normal">· satu hari per pekan</span>
+                    </label>
+                    <div class="flex flex-wrap gap-2">
+                        <button v-for="t in tanggalLibur" :key="t.iso" type="button"
+                            @click="pilihTanggalLibur(t.iso)"
+                            :class="['px-3 py-2 rounded-xl border text-xs font-semibold transition-colors',
+                                form.tanggal_mulai === t.iso
+                                    ? 'border-[#0C78FF] bg-[#0C78FF] text-white'
+                                    : 'border-gray-200 text-gray-600 hover:border-[#0C78FF]']">
+                            {{ t.hari }}
+                            <span class="font-normal opacity-80">{{ t.label }}</span>
+                        </button>
+                    </div>
+                    <p v-if="!tanggalLibur.length" class="text-xs text-amber-600 mt-1">
+                        Belum ada tanggal yang bisa dipilih.
+                    </p>
+                    <p v-if="jenisTerpilih?.maks_per_pekan" class="text-[11px] text-gray-400 mt-1.5">
+                        Jatah {{ jenisTerpilih.maks_per_pekan }} hari per pekan. Jumat dan Ahad di
+                        akhir pekan yang sama memakai jatah yang sama.
+                    </p>
+                </div>
+
+                <div v-else class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-gray-600 mb-1">Mulai</label>
                         <input v-model="form.tanggal_mulai" type="date" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#0C78FF]" />
@@ -253,11 +349,16 @@ async function tunjukPengganti(sesi) {
                     </div>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Alasan</label>
-                    <textarea v-model="form.alasan" rows="3" placeholder="Tuliskan alasan (min. 10 karakter)…"
+                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                        {{ modeLibur ? 'Catatan (opsional)' : 'Alasan' }}
+                    </label>
+                    <textarea v-model="form.alasan" :rows="modeLibur ? 2 : 3"
+                        :placeholder="modeLibur ? 'Boleh dibiarkan — terisi otomatis' : 'Tuliskan alasan (min. 10 karakter)…'"
                         class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#0C78FF]"></textarea>
                 </div>
-                <div>
+                <!-- Libur pekanan tidak perlu dokumen; kolomnya disembunyikan
+                     agar formulirnya tidak terbaca seperti pengajuan izin biasa. -->
+                <div v-if="!modeLibur">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Dokumen (opsional, PDF/gambar)</label>
                     <input type="file" accept=".pdf,image/*" @change="pilihDokumen" class="block w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#0C78FF]/10 file:text-[#0C78FF] file:text-xs file:font-semibold" />
                 </div>

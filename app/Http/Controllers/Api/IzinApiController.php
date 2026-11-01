@@ -58,6 +58,9 @@ class IzinApiController extends Controller
             'jadi_libur_tendik'             => (bool) $j->jadi_libur_tendik,
             'hari_diizinkan'                => $j->hari_diizinkan ?: null,
             'maks_per_pekan'                => $j->maks_per_pekan,
+            // Layar memakainya untuk menyembunyikan tanggal sebelum fitur ini
+            // berlaku, supaya guru tidak memilih tanggal yang pasti ditolak.
+            'berlaku_mulai'                 => $j->berlaku_mulai?->toDateString(),
         ]);
 
         return response()->json([
