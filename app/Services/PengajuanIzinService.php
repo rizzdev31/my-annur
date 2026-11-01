@@ -516,6 +516,19 @@ class PengajuanIzinService
             );
         }
 
+        // Tidak boleh menyentuh periode gaji yang sudah berjalan/terbit slipnya.
+        // Hari libur MENGURANGI hari kerja di payroll, jadi satu baris libur
+        // yang jatuh di periode Oktober akan menggeser 52 slip Oktober begitu
+        // periodenya digenerate ulang. Batasnya dibaca dari setting jenis
+        // (berlaku_mulai), bukan ditanam di kode.
+        if ($jenis->berlaku_mulai && $mulai->lt($jenis->berlaku_mulai->copy()->startOfDay())) {
+            throw new \InvalidArgumentException(
+                'Libur pekanan berlaku mulai '
+                . $jenis->berlaku_mulai->locale('id')->isoFormat('D MMMM YYYY')
+                . '. Tanggal sebelum itu tidak bisa diajukan karena periode gajinya sudah berjalan.'
+            );
+        }
+
         // Satu HARI, bukan rentang: libur pekanan bukan cuti.
         if (!$mulai->isSameDay($selesai)) {
             throw new \InvalidArgumentException('Libur pekanan hanya untuk satu hari.');

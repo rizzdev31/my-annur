@@ -41,6 +41,18 @@ class GenerateLiburPaten extends Command
         $hariIni = TimezoneHelper::today()->startOfDay();
         $sampai  = $hariIni->copy()->addWeeks($pekan);
 
+        // Pagar yang sama dengan pengajuan: libur asrama berlaku mulai periode
+        // November 2026 dan tidak ke belakang, supaya slip gaji periode
+        // sebelumnya tidak pernah tersentuh. Command ini sendiri sudah tidak
+        // menyentuh masa lalu, tapi batas ini menjaga bila kelak dijalankan
+        // dengan tanggal mundur.
+        $batas = \App\Models\SettingJenisPengajuan::where('kode', 'LIBUR_ASRAMA')
+            ->value('berlaku_mulai');
+        if ($batas) {
+            $batas = \Carbon\Carbon::parse($batas)->startOfDay();
+            if ($hariIni->lt($batas)) $hariIni = $batas->copy();
+        }
+
         $guru = TenagaPendidik::aktif()
             ->whereNotNull('hari_libur_paten')
             ->with('user')
