@@ -496,10 +496,23 @@ class PengajuanIzinService
         Carbon $mulai,
         Carbon $selesai,
     ): void {
-        if (!$guru->boleh_libur_pekanan) {
+        $mode = $guru->modeLiburAsrama();
+
+        if ($mode === 'tidak') {
             throw new \InvalidArgumentException(
                 'Anda tidak terdaftar sebagai penerima hak libur pekanan asrama. '
                 . 'Hubungi superadmin bila seharusnya berhak.'
+            );
+        }
+
+        // Libur PATEN tidak diajukan: harinya sudah tetap dan terbit otomatis.
+        // Kalau pengajuan tetap dibuka, gurunya bisa punya dua hari libur dalam
+        // sepekan — satu dari jadwal patennya, satu dari pengajuannya.
+        if ($mode === 'paten') {
+            throw new \InvalidArgumentException(
+                'Libur Anda sudah tetap setiap hari ' . $guru->namaHariLiburPaten()
+                . ' dan terbit otomatis, jadi tidak perlu diajukan. '
+                . 'Hubungi superadmin bila sesekali perlu ditukar ke hari lain.'
             );
         }
 

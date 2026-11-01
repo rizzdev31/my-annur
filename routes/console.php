@@ -64,3 +64,10 @@ Schedule::command('kinerja:hitung --dengan-bulan-lalu')->monthlyOn(1, '02:10');
 // mencakup hari ini, supaya kinerja memakai jendela yang sama dengan slip gaji
 // (bukan bulan kalender) sejak hari pertama periode baru.
 Schedule::command('periode:pastikan-berikutnya')->dailyAt('00:20');
+
+// Libur PATEN guru asrama (hari tetap, mis. selalu Jumat) dijaga terisi 8 pekan
+// ke depan. Generator di layar admin bersifat manual per bulan, dan terukur
+// 1 Nov 2026 barisnya berhenti di 30 Okt — November kosong, sehingga libur yang
+// seharusnya pasti lapse tanpa suara dan gurunya akan dialfa. Idempoten: hanya
+// mengisi tanggal yang belum punya baris libur, dan tidak menyentuh masa lalu.
+Schedule::command('libur:paten-generate')->dailyAt('00:25')->withoutOverlapping();

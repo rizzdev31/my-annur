@@ -35,7 +35,9 @@ class IzinApiController extends Controller
             // tetap tampil bagi semua guru, yang tidak berhak akan memilihnya
             // lalu ditolak servicenya — pilihan yang pasti gagal lebih buruk
             // daripada pilihan yang tidak ada.
-            ->reject(fn ($j) => $j->jadi_libur_tendik && ! $tp->boleh_libur_pekanan);
+            // Hanya mode 'pengajuan' yang ditawari. Guru berlibur PATEN tidak
+            // perlu mengajukan — harinya sudah tetap dan terbit otomatis.
+            ->reject(fn ($j) => $j->jadi_libur_tendik && $tp->modeLiburAsrama() !== 'pengajuan');
 
         $data = $jenisList->map(fn($j) => [
             'id'                            => $j->id,

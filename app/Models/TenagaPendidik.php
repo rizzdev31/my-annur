@@ -42,6 +42,9 @@ class TenagaPendidik extends Model
         // diturunkan dari is_mukim atau setting jam kerja: terukur keduanya
         // melewatkan orang (lihat migration 2026_11_01_090000).
         'boleh_libur_pekanan',
+        // Nomor hari ISO (1-7). Terisi = libur PATEN pada hari itu; null =
+        // liburnya lewat pengajuan tiap pekan. Lihat modeLiburAsrama().
+        'hari_libur_paten',
         'wajib_absen_harian',       // false → cukup absen per sesi mengajar (mis. pembina ekskul)
         'hari_libur',               // hari libur mingguan tetap (array, mis. ["sabtu"])
         'hari_libur_diajukan',      // usulan libur dari guru (menunggu approval)
@@ -111,6 +114,31 @@ class TenagaPendidik extends Model
     public function isLiburPada(string $tanggal): bool
     {
         return LiburTendik::isLibur($this->id, $tanggal);
+    }
+
+    /**
+     * Mode libur guru asrama — satu istilah untuk seluruh sistem.
+     *
+     *  'tidak'     → bukan penerima hak libur asrama.
+     *  'paten'     → harinya tetap & pasti; diterbitkan otomatis oleh
+     *                command libur:paten-generate, TIDAK lewat pengajuan.
+     *                Pergeseran sesekali ditangani admin (tukar/pindah).
+     *  'pengajuan' → fleksibel; dipilih sendiri tiap pekan lewat Pengajuan Izin.
+     */
+    public function modeLiburAsrama(): string
+    {
+        if (! $this->boleh_libur_pekanan) return 'tidak';
+
+        return $this->hari_libur_paten ? 'paten' : 'pengajuan';
+    }
+
+    /** Nama hari libur patennya, untuk pesan ke pengguna. */
+    public function namaHariLiburPaten(): ?string
+    {
+        if (! $this->hari_libur_paten) return null;
+
+        return \Carbon\Carbon::now()->startOfWeek(\Carbon\Carbon::MONDAY)
+            ->addDays((int) $this->hari_libur_paten - 1)->locale('id')->isoFormat('dddd');
     }
 
     public function scopeMukim($query)
