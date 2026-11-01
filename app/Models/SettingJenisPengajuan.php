@@ -21,12 +21,17 @@ class SettingJenisPengajuan extends Model
         'is_aktif',
         // Sakelar otomatisasi tugas tambahan (dinyalakan untuk kategori dinas).
         'buat_tugas_tambahan',
+        // Libur pekanan (guru asrama): aturannya di DATA, bukan di kode.
+        'jadi_libur_tendik', 'hari_diizinkan', 'maks_per_pekan',
     ];
 
     protected function casts(): array
     {
         return [
-            'butuh_dokumen'                => 'boolean',
+                        'jadi_libur_tendik'            => 'boolean',
+            'hari_diizinkan'               => 'array',
+            'maks_per_pekan'               => 'integer',
+'butuh_dokumen'                => 'boolean',
             'auto_approve'                 => 'boolean',
             'update_status_kepegawaian'    => 'boolean',
             'is_aktif'                     => 'boolean',

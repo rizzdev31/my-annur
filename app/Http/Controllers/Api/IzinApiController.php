@@ -30,7 +30,12 @@ class IzinApiController extends Controller
         if (!$tp) return $this->notFound();
 
         $tahun     = now()->year;
-        $jenisList = SettingJenisPengajuan::aktif()->orderBy('kategori')->orderBy('nama')->get();
+        $jenisList = SettingJenisPengajuan::aktif()->orderBy('kategori')->orderBy('nama')->get()
+            // Libur pekanan hanya ditawarkan kepada yang berhak. Kalau jenisnya
+            // tetap tampil bagi semua guru, yang tidak berhak akan memilihnya
+            // lalu ditolak servicenya — pilihan yang pasti gagal lebih buruk
+            // daripada pilihan yang tidak ada.
+            ->reject(fn ($j) => $j->jadi_libur_tendik && ! $tp->boleh_libur_pekanan);
 
         $data = $jenisList->map(fn($j) => [
             'id'                            => $j->id,
@@ -46,6 +51,11 @@ class IzinApiController extends Controller
             'butuh_dokumen'                 => $j->butuh_dokumen ?? false,
             'keterangan_dokumen'            => $j->keterangan_dokumen,
             'auto_approve'                  => $j->auto_approve ?? false,
+            // Libur pekanan: layar memakainya untuk membatasi pilihan tanggal
+            // ke hari yang diizinkan, supaya guru tidak menebak lalu ditolak.
+            'jadi_libur_tendik'             => (bool) $j->jadi_libur_tendik,
+            'hari_diizinkan'                => $j->hari_diizinkan ?: null,
+            'maks_per_pekan'                => $j->maks_per_pekan,
         ]);
 
         return response()->json([

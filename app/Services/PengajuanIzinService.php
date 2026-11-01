@@ -180,6 +180,13 @@ class PengajuanIzinService
                 'catatan_admin' => "Dibatalkan: {$alasan}",
             ]);
 
+            // Libur pekanan: cabut hari liburnya. Tanpa ini harinya tetap
+            // libur padahal pengajuannya sudah dibatalkan — dan guru bisa
+            // memakai jatah pekan itu dua kali.
+            if ($statusLama === 'disetujui' && $pengajuan->jenisPengajuan?->jadi_libur_tendik) {
+                $this->cabutLiburTendik($pengajuan);
+            }
+
             // Rollback absensi jika sudah disetujui
             if ($statusLama === 'disetujui' && $pengajuan->absensi_sudah_diupdate) {
                 $this->rollbackAbsensi($pengajuan);
@@ -217,6 +224,15 @@ class PengajuanIzinService
     {
         $jenis = $pengajuan->jenisPengajuan;
         $guru  = $pengajuan->tenagaPendidik;
+
+        // LIBUR PEKANAN berhenti di sini: yang ditulis adalah hari liburnya,
+        // bukan absensi izin, dan tidak ada kuota/status kepegawaian yang
+        // tersentuh. Lihat tulisLiburTendik() untuk alasannya.
+        if ($jenis->jadi_libur_tendik) {
+            $this->tulisLiburTendik($pengajuan);
+
+            return;
+        }
 
         // 1. Update absensi harian untuk setiap hari dalam rentang
         $this->generateAbsensi($pengajuan);
@@ -467,10 +483,124 @@ class PengajuanIzinService
     // VALIDASI
     // ════════════════════════════════════════════════════════════════════════
 
+    /**
+     * Pagar libur pekanan guru asrama.
+     *
+     * Semua angkanya dibaca dari setting jenis (hari_diizinkan, maks_per_pekan),
+     * bukan ditanam di sini, supaya mengubah kebijakan "Jumat atau Sabtu"
+     * menjadi mis. "Ahad" tidak perlu menyentuh kode.
+     */
+    private function validasiLiburPekanan(
+        TenagaPendidik $guru,
+        SettingJenisPengajuan $jenis,
+        Carbon $mulai,
+        Carbon $selesai,
+    ): void {
+        if (!$guru->boleh_libur_pekanan) {
+            throw new \InvalidArgumentException(
+                'Anda tidak terdaftar sebagai penerima hak libur pekanan asrama. '
+                . 'Hubungi superadmin bila seharusnya berhak.'
+            );
+        }
+
+        // Satu HARI, bukan rentang: libur pekanan bukan cuti.
+        if (!$mulai->isSameDay($selesai)) {
+            throw new \InvalidArgumentException('Libur pekanan hanya untuk satu hari.');
+        }
+
+        $hariDiizinkan = $jenis->hari_diizinkan ?: [];
+        if ($hariDiizinkan && !in_array($mulai->dayOfWeekIso, array_map('intval', $hariDiizinkan), true)) {
+            $nama = collect($hariDiizinkan)
+                ->map(fn ($h) => Carbon::now()->startOfWeek()->addDays((int) $h - 1)
+                    ->locale('id')->isoFormat('dddd'))
+                ->implode(' atau ');
+
+            throw new \InvalidArgumentException(
+                "Libur pekanan hanya boleh pada hari {$nama}. Tanggal yang dipilih hari "
+                . $mulai->locale('id')->isoFormat('dddd') . '.'
+            );
+        }
+
+        // Sudah libur pada tanggal itu? (bisa dari generator admin atau tukar)
+        if (\App\Models\LiburTendik::isLibur($guru->id, $mulai->toDateString())) {
+            throw new \InvalidArgumentException(
+                'Tanggal ' . $mulai->locale('id')->isoFormat('D MMMM YYYY')
+                . ' sudah tercatat sebagai hari libur Anda.'
+            );
+        }
+
+        // Satu per pekan. Pekannya dihitung Senin–Ahad (ISO), supaya Jumat dan
+        // Sabtu selalu berada di pekan yang sama — kalau pekannya dimulai Ahad,
+        // Sabtu akan terhitung pekan berikutnya dan jatah jadi dua.
+        $maks = (int) ($jenis->maks_per_pekan ?? 0);
+        if ($maks > 0) {
+            $awalPekan  = $mulai->copy()->startOfWeek(Carbon::MONDAY);
+            $akhirPekan = $mulai->copy()->endOfWeek(Carbon::SUNDAY);
+
+            $terpakai = PengajuanIzin::where('tenaga_pendidik_id', $guru->id)
+                ->where('setting_jenis_pengajuan_id', $jenis->id)
+                ->whereIn('status', ['pending', 'disetujui'])
+                ->whereBetween('tanggal_mulai', [$awalPekan->toDateString(), $akhirPekan->toDateString()])
+                ->get();
+
+            if ($terpakai->count() >= $maks) {
+                $sudah = $terpakai->first();
+                throw new \InvalidArgumentException(
+                    'Jatah libur pekan ini sudah terpakai pada '
+                    . $sudah->tanggal_mulai->locale('id')->isoFormat('dddd, D MMMM YYYY')
+                    . '. Batalkan dulu bila ingin memindahkannya.'
+                );
+            }
+        }
+    }
+
+    /**
+     * Tuliskan libur individu dari pengajuan yang disetujui.
+     *
+     * Harinya menjadi BUKAN HARI KERJA — bukan hari kerja yang ditinggalkan.
+     * Itu sebabnya absensi 'izin' sengaja TIDAK dibuat: kalau ditandai izin,
+     * guru kehilangan vakasi kehadiran hari itu dan harinya tetap terhitung
+     * hari kerja di payroll. Sebagai libur, auto-alfa melewatinya, kinerja
+     * mengeluarkan tanggalnya, payroll tidak menghitungnya sebagai hari kerja,
+     * dan ia bukan peserta kegiatan piket.
+     *
+     * Sesi mengajarnya tetap netral karena SesiMengajarService membaca
+     * pengajuan izin yang disetujui (status 'izin', JP 0, netral di kinerja) —
+     * jadi tidak ada kode tambahan yang diperlukan untuk pembelajaran.
+     */
+    private function tulisLiburTendik(PengajuanIzin $pengajuan): void
+    {
+        $tanggal = $pengajuan->tanggal_mulai->toDateString();
+
+        \App\Models\LiburTendik::updateOrCreate(
+            ['tenaga_pendidik_id' => $pengajuan->tenaga_pendidik_id, 'tanggal' => $tanggal],
+            [
+                'tipe'              => 'pekanan',
+                'pengajuan_izin_id' => $pengajuan->id,
+                'alasan'            => $pengajuan->alasan ?: 'Libur pekanan asrama',
+                'dibuat_oleh'       => Auth::id(),
+            ]
+        );
+    }
+
+    /** Cabut liburnya saat pengajuannya dibatalkan — hanya yang lahir darinya. */
+    private function cabutLiburTendik(PengajuanIzin $pengajuan): void
+    {
+        \App\Models\LiburTendik::where('pengajuan_izin_id', $pengajuan->id)->delete();
+    }
+
     private function validasiBuat(TenagaPendidik $guru, SettingJenisPengajuan $jenis, array $data): void
     {
         $mulai   = Carbon::parse($data['tanggal_mulai']);
         $selesai = Carbon::parse($data['tanggal_selesai']);
+
+        // Libur pekanan punya pagarnya sendiri (hak, hari, satu per pekan) dan
+        // tidak terkena pagar kuota/dokumen yang berlaku bagi izin biasa.
+        if ($jenis->jadi_libur_tendik) {
+            $this->validasiLiburPekanan($guru, $jenis, $mulai, $selesai);
+
+            return;
+        }
 
         // Cek dokumen wajib
         if ($jenis->butuh_dokumen && empty($data['file_dokumen']) && !isset($data['_file_object'])) {

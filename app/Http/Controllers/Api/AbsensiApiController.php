@@ -85,10 +85,16 @@ class AbsensiApiController extends Controller
         // Dibebaskan absen harian → tombol absen tertutup setiap hari; klien lama
         // membacanya lewat hari_libur, klien baru lewat wajib_absen_harian.
         $bebasAbsenHarian = !$tp->wajibAbsenHarian();
-        $isLibur       = $hariLiburAktif !== null || $liburMingguan || $bebasAbsenHarian;
-        // Libur individu guru mukim: TIDAK menonaktifkan check-in (opsional) —
-        // hanya info + tidak dialfa + tidak dihitung hari kerja (lihat auto-alfa & payroll).
+
+        // Libur individu (guru asrama) kini BENAR-BENAR libur: tombol absennya
+        // tertutup, sama seperti hari libur pesantren. Sebelum 1 Nov 2026 ia
+        // hanya info dan check-in tetap dibuka — "opsional" itu membingungkan
+        // pada libur pekanan yang diajukan sendiri: guru melihat hari liburnya
+        // tapi aplikasinya masih meminta absen, dan yang absen lalu terhitung
+        // hadir di hari yang bukan hari kerja.
         $liburIndividu = \App\Models\LiburTendik::isLibur($tp->id, $kerjaDate->toDateString());
+        $isLibur       = $hariLiburAktif !== null || $liburMingguan || $bebasAbsenHarian
+            || $liburIndividu;
 
         $sudahCheckin  = $absensi?->jam_masuk  !== null;
         $sudahCheckout = $absensi?->jam_pulang !== null;
@@ -173,11 +179,11 @@ class AbsensiApiController extends Controller
                     'sumber'  => 'jam_kerja',
                     'opsional'=> false,
                 ] : ($liburIndividu ? [
-                    // Libur jadwal individu (mukim) → check-in tetap boleh (opsional).
                     'ada'     => true,
                     'nama'    => 'Libur (jadwal Anda)',
                     'sumber'  => 'libur_individu',
-                    'opsional'=> true,
+                    // Tidak lagi opsional: harinya bukan hari kerja.
+                    'opsional'=> false,
                 ] : ['ada' => false]))),
             ],
         ]);

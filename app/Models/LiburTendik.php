@@ -9,8 +9,10 @@ use Carbon\Carbon;
  * Libur individu tenaga pendidik (khusus guru mukim).
  *
  * Menandai TANGGAL tertentu sebagai hari libur seorang guru, terpisah dari jam
- * kerja mingguan. Mendukung pola rolling & tukar libur. Efek:
- *   • absensi: hari itu tampil "Libur" (check-in tetap opsional),
+ * kerja mingguan. Mendukung pola rolling, tukar libur, dan libur pekanan yang
+ * DIAJUKAN SENDIRI guru asrama lewat Pengajuan Izin (tipe `pekanan`). Efek:
+ *   • absensi: hari itu LIBUR — tombol absen tertutup (sejak 1 Nov 2026;
+ *     sebelumnya hanya info dan check-in tetap dibuka),
  *   • auto-alfa: dilewati (tidak dialfa),
  *   • payroll & kinerja: tidak dihitung sebagai hari kerja → tidak memotong gaji.
  */
@@ -22,6 +24,7 @@ class LiburTendik extends Model
         'tenaga_pendidik_id',
         'tanggal',
         'tipe',
+        'pengajuan_izin_id',
         'alasan',
         'ditukar_dengan_id',
         'ditukar_tanggal',
@@ -31,8 +34,9 @@ class LiburTendik extends Model
     protected function casts(): array
     {
         return [
-            'tanggal'         => 'date',
-            'ditukar_tanggal' => 'date',
+            'tanggal'           => 'date',
+            'ditukar_tanggal'   => 'date',
+            'pengajuan_izin_id' => 'integer',
         ];
     }
 

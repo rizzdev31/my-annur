@@ -77,7 +77,12 @@ class AbsensiWindowService
         // (tombol check-in tersembunyi), dan ditandai lewat flag baru di bawah
         // agar aplikasi baru bisa menampilkan sebabnya dengan benar.
         $bebasAbsenHarian = !$tp->wajibAbsenHarian();
-        $isLibur       = $hariLiburAktif || $liburMingguan || $bebasAbsenHarian;
+
+        // Libur individu guru asrama. Service ini sempat MENGIMPOR LiburTendik
+        // tanpa pernah memakainya, sehingga dua gerbang absensi tidak sepakat:
+        // AbsensiApiController tahu hari itu libur, service ini tidak.
+        $liburIndividu = LiburTendik::isLibur($tp->id, $kerjaDate->toDateString());
+        $isLibur       = $hariLiburAktif || $liburMingguan || $bebasAbsenHarian || $liburIndividu;
 
         $sudahCheckin  = $absensi?->jam_masuk  !== null;
         $sudahCheckout = $absensi?->jam_pulang !== null;
@@ -108,10 +113,13 @@ class AbsensiWindowService
             'bisa_checkin_mulai'     => $bisaCheckInMulai,
             'menit_menunggu_checkin' => $menitMenunggu,
             'is_libur'               => $isLibur,
+            'libur_individu'         => $liburIndividu,
             'wajib_absen_harian'     => !$bebasAbsenHarian,
-            'alasan_tanpa_absen'     => $bebasAbsenHarian
-                ? 'Anda tidak wajib absen harian. Kehadiran dicatat dari absensi tiap sesi mengajar.'
-                : null,
+            'alasan_tanpa_absen'     => match (true) {
+                $bebasAbsenHarian => 'Anda tidak wajib absen harian. Kehadiran dicatat dari absensi tiap sesi mengajar.',
+                $liburIndividu    => 'Hari ini libur Anda — tidak perlu absen, dan tidak dihitung sebagai hari kerja.',
+                default           => null,
+            },
             'izin_aktif'             => $izinAktif,
             'status'                 => $absensi?->status,
             'absen'                  => $absensi,

@@ -38,6 +38,10 @@ class TenagaPendidik extends Model
         'no_rekening', 'nama_bank', 'nama_rekening',
         'jenis_guru', 'is_aktif',
         'is_mukim',                 // guru mukim asrama → punya libur individu rolling
+        // Penanda EKSPLISIT hak libur pekanan (Jumat/Sabtu, 1x/pekan). Tidak
+        // diturunkan dari is_mukim atau setting jam kerja: terukur keduanya
+        // melewatkan orang (lihat migration 2026_11_01_090000).
+        'boleh_libur_pekanan',
         'wajib_absen_harian',       // false → cukup absen per sesi mengajar (mis. pembina ekskul)
         'hari_libur',               // hari libur mingguan tetap (array, mis. ["sabtu"])
         'hari_libur_diajukan',      // usulan libur dari guru (menunggu approval)
