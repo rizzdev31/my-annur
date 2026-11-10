@@ -21,15 +21,24 @@ const TOTAL_AYAT_QURAN = 6236
 // Urutan hafalan kelas — dipakai server untuk menurunkan juz dari posisi terakhir.
 const POLA = [
     { key: 'amma_maju', label: 'Juz 30 → 29 → lalu 1, 2, 3…' },
+    { key: 'amma3_maju', label: 'Juz 30 → 29 → 28 → lalu 1, 2, 3…' },
     { key: 'belakang', label: 'Juz 30 → 29 → 28…' },
     { key: 'depan', label: 'Juz 1 → 2 → 3…' },
 ]
 const pola = ref('amma_maju')
 
+// Cermin TahfidzService::urutanJuz() — dipakai HANYA untuk pratinjau di
+// layar; server tetap yang menghitung hasil akhirnya. Keduanya harus diubah
+// bersamaan: pratinjau yang berbeda dari hitungan server lebih menyesatkan
+// daripada tidak ada pratinjau sama sekali.
 function urutanJuz(p) {
     if (p === 'depan') return Array.from({ length: 30 }, (_, i) => i + 1)
     if (p === 'belakang') return Array.from({ length: 30 }, (_, i) => 30 - i)
-    return [30, 29, ...Array.from({ length: 28 }, (_, i) => i + 1)]
+    const n = p === 'amma3_maju' ? 3 : 2            // juz yang diambil dari belakang
+    return [
+        ...Array.from({ length: n }, (_, i) => 30 - i),
+        ...Array.from({ length: 30 - n }, (_, i) => i + 1),
+    ]
 }
 
 // Jumlah ayat tiap juz (untuk pratinjau persen — server tetap yang menghitung final).

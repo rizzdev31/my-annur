@@ -893,22 +893,43 @@ class TahfidzService
     }
 
     /** Urutan hafalan yang dipakai kelas — dasar penurunan juz dari posisi terakhir. */
-    public const POLA = ['belakang', 'amma_maju', 'depan'];
+    public const POLA = ['belakang', 'amma_maju', 'amma3_maju', 'depan'];
 
     /**
      * Daftar juz menurut urutan hafalan.
-     *  belakang  : 30, 29, 28 … 1
-     *  amma_maju : 30, 29, lalu 1, 2, 3 … 28   (paling umum di An-Nur)
-     *  depan     : 1, 2, 3 … 30
+     *  belakang   : 30, 29, 28 … 1
+     *  amma_maju  : 30, 29, lalu 1, 2, 3 … 28   (paling umum di An-Nur)
+     *  amma3_maju : 30, 29, 28, lalu 1, 2, 3 … 27
+     *  depan      : 1, 2, 3 … 30
+     *
+     * Nilai ini TIDAK disimpan di basis data — ia hanya dipakai sekali saat
+     * menurunkan juz-juz sebelum posisi terakhir. Jadi menambah urutan baru
+     * tidak mengubah satu pun data hafalan yang sudah ada.
      *
      * @return int[]
      */
     public static function urutanJuz(string $pola): array
     {
-        if ($pola === 'depan')     return range(1, 30);
-        if ($pola === 'amma_maju') return array_merge([30, 29], range(1, 28));
+        if ($pola === 'depan')      return range(1, 30);
+        if ($pola === 'amma_maju')  return self::belakangLaluMaju(2);
+        if ($pola === 'amma3_maju') return self::belakangLaluMaju(3);
 
         return range(30, 1);
+    }
+
+    /**
+     * $n juz dari belakang (30, 29, …), lalu maju dari juz 1.
+     *
+     * Dua pola "maju" hanya berbeda pada berapa juz yang diambil dari
+     * belakang; ditulis satu kali supaya pola berikutnya — kalau ada kelas
+     * yang mengambil empat — tinggal menambah satu baris, bukan menyalin
+     * susunan juznya lagi.
+     *
+     * @return int[]
+     */
+    private static function belakangLaluMaju(int $n): array
+    {
+        return array_merge(range(30, 31 - $n), range(1, 30 - $n));
     }
 
     /**

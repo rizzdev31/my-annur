@@ -108,6 +108,7 @@
                 <label class="block text-xs font-medium text-gray-500 mb-1">Urutan hafalan (dipakai bila mengisi posisi terakhir)</label>
                 <select v-model="sync.pola" :class="fieldCls" class="max-w-sm">
                     <option value="amma_maju">Juz 30 → 29 → lalu 1, 2, 3…</option>
+                    <option value="amma3_maju">Juz 30 → 29 → 28 → lalu 1, 2, 3…</option>
                     <option value="belakang">Juz 30 → 29 → 28…</option>
                     <option value="depan">Juz 1 → 2 → 3…</option>
                 </select>
