@@ -46,7 +46,22 @@ class JadwalShiftController extends Controller
             ];
         })->values();
 
+        // Papan roster: apa yang SEHARUSNYA berlaku pekan ini menurut aturan
+        // rotasi, berikut hasil pemeriksaan cakupan 24 jam & keadilan jam.
+        // Dibungkus try/catch karena papan hanya informasi — kalau datanya
+        // belum siap (mis. hari libur satpam belum diisi), halamannya tetap
+        // harus terbuka, dengan sebabnya tertulis.
+        try {
+            $papan = app(\App\Services\RosterSatpamService::class)->papan();
+            $papanGalat = null;
+        } catch (\Throwable $e) {
+            $papan = null;
+            $papanGalat = $e->getMessage();
+        }
+
         return Inertia::render('Admin/SmartPayroll/JadwalShift/Index', [
+            'papan'       => $papan,
+            'papanGalat'  => $papanGalat,
             'satpam'      => $satpam,
             'shiftOptions'=> SettingJamKerja::where('is_aktif', true)->get()
                 ->map(fn ($s) => [

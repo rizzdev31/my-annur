@@ -29,3 +29,6 @@ Thumbs.db
 # Backup env (jangan commit)
 .env.bak*
 .env.*.bak
+
+# Pengaturan Claude Code pribadi — memuat IP VPS, repo ini publik.
+.claude/settings.local.json

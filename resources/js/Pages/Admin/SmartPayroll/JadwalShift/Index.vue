@@ -7,6 +7,74 @@
             <p class="text-sm text-gray-400 mt-0.5">Atur shift bergilir. Shift menimpa jam kerja untuk rentang tanggalnya — tanpa mengubah setting jam kerja asli.</p>
         </div>
 
+        <!-- ══ Papan roster: apa yang SEHARUSNYA berlaku pekan ini ══
+             Dihitung dari aturan rotasi, bukan dibaca dari baris roster —
+             jadi kalau suatu saat yang tertulis menyimpang, selisihnya
+             justru yang terlihat di sini. -->
+        <div v-if="papan" class="bg-white rounded-2xl border border-gray-100 p-4 mb-6 overflow-x-auto">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h2 class="font-semibold text-gray-800">
+                    Roster Blok {{ papan.blok_ke }}
+                    <span class="text-gray-400 font-normal text-sm">{{ papan.dari }} s/d {{ papan.sampai }}</span>
+                </h2>
+                <div class="flex items-center gap-2 text-xs">
+                    <span :class="papan.celah.length
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'"
+                        class="px-2 py-1 rounded-lg border font-semibold">
+                        {{ papan.celah.length ? papan.celah.length + ' pos kosong' : 'Terjaga 24 jam penuh' }}
+                    </span>
+                    <span :class="papan.jam_rata
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'"
+                        class="px-2 py-1 rounded-lg border font-semibold">
+                        {{ papan.jam_rata ? 'Jam rata' : 'Jam timpang' }}
+                    </span>
+                </div>
+            </div>
+
+            <p v-if="papan.celah.length" class="text-xs text-red-700 mb-2">
+                Tidak ada penjaga pada:
+                <b v-for="(c, i) in papan.celah" :key="i">{{ c.dari }}–{{ c.sampai }}<span v-if="i < papan.celah.length - 1">, </span></b>
+            </p>
+
+            <table class="w-full text-xs border-separate" style="border-spacing: 2px">
+                <thead>
+                    <tr class="text-gray-400">
+                        <th class="text-left font-medium px-2 py-1">Petugas</th>
+                        <th v-for="h in papan.hari" :key="h" class="font-medium px-2 py-1 capitalize">{{ h }}</th>
+                        <th class="font-medium px-2 py-1 text-right">Jam</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="b in papan.baris" :key="b.tp_id">
+                        <td class="px-2 py-1.5 bg-gray-50 rounded-lg">
+                            <div class="font-semibold text-gray-800">{{ b.nama }}</div>
+                            <div class="text-gray-400 capitalize">{{ b.peran }} · libur {{ b.libur }}</div>
+                        </td>
+                        <td v-for="h in papan.hari" :key="h" class="px-1.5 py-1.5 text-center rounded-lg"
+                            :class="!b.hari[h] ? 'bg-gray-100 text-gray-400'
+                                : (b.hari[h].dua_belas ? 'bg-amber-50 text-amber-800 font-semibold'
+                                                       : 'bg-sky-50 text-sky-800')">
+                            {{ b.hari[h] ? b.hari[h].jam : 'libur' }}
+                        </td>
+                        <td class="px-2 py-1.5 text-right font-semibold text-gray-700">{{ b.jam }}j</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p class="text-[11px] text-gray-400 mt-2">
+                Kuning = giliran 12 jam karena salah satu rekan libur hari itu.
+                Rotasi maju tiap 2 pekan (pagi → siang → malam) dan terbit otomatis tiap malam,
+                jadi roster tidak pernah habis.
+            </p>
+        </div>
+
+        <div v-else-if="papanGalat" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+            <h2 class="font-semibold text-amber-900 text-sm">Papan roster belum bisa ditampilkan</h2>
+            <p class="text-xs text-amber-800 mt-1">{{ papanGalat }}</p>
+        </div>
+
         <div class="grid lg:grid-cols-2 gap-4 mb-6">
             <!-- Tetapkan manual -->
             <div class="bg-white rounded-2xl border border-gray-100 p-4">
@@ -85,7 +153,12 @@
 import { useForm, router, Head } from '@inertiajs/vue3'
 import AdminLayout from '@/Layouts/AdminLayout.vue'
 
-defineProps({ satpam: { type: Array, default: () => [] }, shiftOptions: { type: Array, default: () => [] } })
+defineProps({
+    papan: { type: Object, default: null },
+    papanGalat: { type: String, default: null },
+    satpam: { type: Array, default: () => [] },
+    shiftOptions: { type: Array, default: () => [] },
+})
 
 const f = useForm({ tenaga_pendidik_id: null, setting_jam_kerja_id: null, tanggal_mulai: '', tanggal_selesai: '', keterangan: '' })
 const r = useForm({ tenaga_pendidik_ids: [], setting_jam_kerja_ids: [], tanggal_mulai: '', interval: 'mingguan', jumlah_periode: 4 })

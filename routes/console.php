@@ -71,3 +71,9 @@ Schedule::command('periode:pastikan-berikutnya')->dailyAt('00:20');
 // seharusnya pasti lapse tanpa suara dan gurunya akan dialfa. Idempoten: hanya
 // mengisi tanggal yang belum punya baris libur, dan tidak menyentuh masa lalu.
 Schedule::command('libur:paten-generate')->dailyAt('00:25')->withoutOverlapping();
+
+// Roster shift satpam — jaga agar selalu terisi 8 blok (16 pekan) ke depan.
+// Alasannya sama dengan libur paten di atas, dan taruhannya lebih besar: kalau
+// roster habis diam-diam, yang kosong bukan angka di slip melainkan pos jaga.
+// Idempoten dan tidak pernah menyentuh tanggal sebelum jangkar rotasi.
+Schedule::command('satpam:roster-generate')->dailyAt('00:35')->withoutOverlapping();
