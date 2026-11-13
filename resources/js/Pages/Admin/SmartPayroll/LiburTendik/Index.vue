@@ -15,6 +15,41 @@
                 class="w-24 px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-indigo-500" />
         </div>
 
+        <!-- Peringatan: dua sumber hari libur yang berbeda.
+             "Paten" di sini berarti jatah libur asrama dipatok sehingga TIDAK
+             bisa diajukan — bukan "hari libur tetap". Kalau jam kerja guru
+             juga punya hari libur sendiri yang berbeda, gurunya libur dua
+             hari sepekan dan pengajuannya ikut terblokir. -->
+        <div v-if="liburGanda.length"
+            class="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-5">
+            <h3 class="text-sm font-bold text-amber-900 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                </svg>
+                {{ liburGanda.length }} guru punya dua hari libur yang berbeda
+            </h3>
+            <p class="text-xs text-amber-800 mt-1.5 leading-relaxed">
+                Mode <b>Paten</b> berarti jatah libur asramanya dipatok dan
+                <b>tidak bisa diajukan</b> — bukan sekadar hari libur tetap.
+                Guru di bawah ini harinya berbeda dengan hari libur di jam kerjanya,
+                jadi mereka libur dua hari sepekan dan pengajuan libur asramanya tertolak.
+                Bila hari libur di jam kerja yang benar, ubah modenya jadi
+                <b>Pengajuan</b> agar mereka bisa mengajukan libur asrama sendiri.
+            </p>
+            <ul class="mt-3 space-y-1.5">
+                <li v-for="g in liburGanda" :key="g.id"
+                    class="text-xs bg-white/70 border border-amber-200 rounded-xl px-3 py-2
+                           flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span class="font-semibold text-gray-800">{{ g.nama }}</span>
+                    <span class="text-gray-500">paten</span>
+                    <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold">{{ g.hari_paten }}</span>
+                    <span class="text-gray-500">tapi jam kerjanya libur</span>
+                    <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-semibold">{{ g.libur_jam_kerja }}</span>
+                </li>
+            </ul>
+        </div>
+
         <!-- Kelola Guru Mukim (tandai grup) -->
         <div class="bg-white border border-gray-200 rounded-2xl p-5 mb-5">
         <!-- MODE LIBUR ASRAMA per guru -->
@@ -294,6 +329,7 @@ const props = defineProps({
     liburList: { type: Array, default: () => [] },
     hariOpsi:  { type: Array, default: () => [] },
     ringkasan: { type: Object, default: () => ({}) },
+    liburGanda: { type: Array, default: () => [] },
 })
 
 const filterTahun = ref(props.tahun)

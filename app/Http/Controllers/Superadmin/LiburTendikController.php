@@ -88,7 +88,59 @@ class LiburTendikController extends Controller
                 'total_guru' => $guruMukim->count(),
                 'total_libur'=> $liburList->count(),
             ],
+            'liburGanda' => $this->periksaLiburGanda(),
         ]);
+    }
+
+    /**
+     * Guru yang punya DUA sumber hari libur yang saling berbeda.
+     *
+     * `hari_libur_paten` mudah disalahartikan: ia BUKAN "hari libur tetap",
+     * melainkan "jatah libur asrama sudah dipatok, jadi tidak bisa diajukan".
+     * Hari libur biasa tinggal di jam kerja guru. Kalau keduanya terisi dan
+     * harinya berbeda, guru itu diam-diam libur dua hari sepekan DAN
+     * pengajuan libur asramanya ikut terblokir.
+     *
+     * Terjadi beneran: migrasi 1 Nov 2026 mengisi `hari_libur_paten` dengan
+     * menebak dari baris libur lama (hari yang paling sering muncul). Untuk
+     * seorang guru tebakannya Jumat, padahal jam kerjanya libur Kamis —
+     * dan baru ketahuan setelah gurunya mengeluh tidak bisa mengajukan.
+     * Pemeriksaan ini supaya ketidakcocokan berikutnya terlihat di layar,
+     * bukan lewat keluhan.
+     *
+     * Hanya menandai, tidak mengubah apa pun.
+     */
+    private function periksaLiburGanda(): array
+    {
+        return TenagaPendidik::where('is_aktif', true)
+            ->whereNotNull('hari_libur_paten')
+            ->with('user:id,name')
+            ->get()
+            ->map(function ($g) {
+                // Hari yang jam kerjanya tandai TIDAK masuk.
+                $liburJamKerja = collect($g->jamKerjaAktif()?->jadwal_per_hari ?? [])
+                    ->reject(fn ($d) => $d['aktif'] ?? false)
+                    ->keys()
+                    ->map(fn ($h) => mb_strtolower((string) $h))
+                    ->values();
+
+                // Tidak punya hari libur dari jam kerja = memang murni
+                // mengandalkan libur paten (pola guru asrama). Itu benar.
+                if ($liburJamKerja->isEmpty()) return null;
+
+                $hariPaten = mb_strtolower((string) (self::HARI[((int) $g->hari_libur_paten) - 1] ?? ''));
+                if ($hariPaten === '' || $liburJamKerja->contains($hariPaten)) return null;
+
+                return [
+                    'id'              => $g->id,
+                    'nama'            => $g->user?->name ?? '—',
+                    'hari_paten'      => TimezoneHelper::namaHariIso((int) $g->hari_libur_paten),
+                    'libur_jam_kerja' => $liburJamKerja->map(fn ($h) => ucfirst($h))->implode(', '),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /** Tambah libur manual (satu atau beberapa tanggal sekaligus). */
